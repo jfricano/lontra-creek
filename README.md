@@ -21,6 +21,8 @@ This project uses StreamOtter the way any application does: the published [`stre
 | `apps/field-station` | The demo application: StreamOtter configuration and handlers, the simulation runner, sessions, and scenarios |
 | `apps/site` | The public site: Astro, with the live panel on the home page |
 | `docs/PLAN.md` | Scope, story, architecture, operating rules, phases, and launch criteria |
+| `docs/DEPLOYMENT_PLAN.md` | The engineering work from here to launch, in order |
+| `docs/HOSTING.md` | The owner's account and server checklist |
 
 ## Develop
 

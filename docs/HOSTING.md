@@ -1,6 +1,6 @@
 # Hosting checklist
 
-How streamotter.app and the Lontra Creek demo get onto the internet, on free tiers, per [PLAN.md](PLAN.md#architecture-and-hosting). Steps marked **Owner** need the owner's accounts, payment details, or approval; Claude can't do them. Steps marked **Claude** are code in this repository.
+How streamotter.app and the Lontra Creek demo get onto the internet, on free tiers, per [PLAN.md](PLAN.md#architecture-and-hosting). The engineering steps are in [DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md). Steps marked **Owner** need the owner's accounts, payment details, or approval; Claude can't do them. Steps marked **Claude** are code in this repository.
 
 ## 1. Accounts (Owner, now)
 

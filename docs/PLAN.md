@@ -4,7 +4,7 @@ September 25, 2026 · Phase 0 (foundation) in progress · Domain: `streamotter.a
 
 This repository holds StreamOtter's public home site and its live demo. The demo is a fictional river-otter study at Lontra Creek whose data moves through real Kafka, a real StreamOtter gateway, and the real browser SDK. The site's job is to take a developer from "what is this" to "I watched it survive a failure" to `npm install streamotter` in one visit.
 
-This document owns the site's scope, the demo's behavior and operating rules, and the launch criteria. StreamOtter's own behavior is defined by the library, not here.
+This document owns the site's scope, the demo's behavior and operating rules, and the launch criteria. StreamOtter's own behavior is defined by the library, not here. [DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md) holds the engineering steps to launch, and [HOSTING.md](HOSTING.md) the owner's account checklist.
 
 ## Ground rules
 

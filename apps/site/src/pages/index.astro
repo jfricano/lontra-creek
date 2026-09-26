@@ -1,5 +1,7 @@
 ---
+import { Picture } from "astro:assets";
 import { Code } from "astro:components";
+import otterMark from "../assets/brand/otter-mark.png";
 import fieldConfig from "../../../field-station/streamotter.json";
 import LiveCreek from "../components/LiveCreek.astro";
 import Base from "../layouts/Base.astro";
@@ -31,6 +33,7 @@ const states = [
   description="StreamOtter is a gateway and TypeScript SDK that takes state from Kafka to the browser. Every view starts from a snapshot, updates in revision order, and says when it's stale."
 >
   <section class="hero wrap">
+    <div class="hero-text">
     <p class="eyebrow">StreamOtter {RELEASE} · MIT · Kafka to the browser</p>
     <h1>Live state from Kafka to the browser. <span class="h1-second">Never silently wrong.</span></h1>
     <p class="lede">
@@ -44,6 +47,16 @@ const states = [
       </button>
       <a class="button button-quiet" href={LINKS.gettingStarted}>Get started</a>
     </div>
+    </div>
+    <Picture
+      src={otterMark}
+      formats={["avif", "webp"]}
+      widths={[360, 560, 820, 1100]}
+      sizes="(min-width: 1000px) 500px, 80vw"
+      alt="The StreamOtter otter swimming through a stream of code"
+      loading="eager"
+      pictureAttributes={{ class: "hero-otter" }}
+    />
   </section>
 
   <div class="wrap panel">
@@ -182,9 +195,30 @@ const states = [
 
 <style>
   .hero {
-    padding-block: clamp(48px, 8vw, 96px) 32px;
+    padding-block: clamp(40px, 7vw, 88px) 32px;
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    gap: 32px;
+    align-items: center;
+  }
+  .hero-text {
     display: grid;
     gap: 22px;
+  }
+  .hero :global(.hero-otter img) {
+    display: block;
+    width: 100%;
+    height: auto;
+    filter: drop-shadow(0 24px 40px rgba(1, 60, 140, 0.18));
+  }
+  @media (max-width: 1000px) {
+    .hero {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .hero :global(.hero-otter) {
+      order: -1;
+      max-width: 420px;
+    }
   }
   .hero h1 {
     max-width: 16ch;

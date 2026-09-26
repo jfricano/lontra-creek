@@ -3,6 +3,13 @@ import "@fontsource-variable/bricolage-grotesque";
 import "@fontsource-variable/figtree";
 import "@fontsource-variable/jetbrains-mono";
 import "../styles/global.css";
+import { Image } from "astro:assets";
+import logoDark from "../assets/brand/logo-dark.png";
+import logoLight from "../assets/brand/logo-light.png";
+import otterMark from "../assets/brand/otter-mark.png";
+import wordmarkDark from "../assets/brand/wordmark-dark.png";
+import wordmarkLight from "../assets/brand/wordmark-light.png";
+import ThemedImage from "../components/ThemedImage.astro";
 import { LINKS, PAGES, RELEASE } from "../site.ts";
 
 interface Props {
@@ -34,7 +41,10 @@ const current = Astro.url.pathname;
     <a class="skip" href="#main">Skip to content</a>
     <header class="site-header">
       <div class="wrap bar">
-        <a class="wordmark" href="/" aria-label="StreamOtter home">Stream<span>Otter</span></a>
+        <a class="lockup" href="/" aria-label="StreamOtter home">
+          <Image src={otterMark} alt="" height={38} densities={[1, 2]} format="webp" loading="eager" class="lockup-mark" />
+          <ThemedImage light={wordmarkLight} dark={wordmarkDark} width={132} alt="" loading="eager" class="lockup-word" />
+        </a>
         <nav class="nav" aria-label="Main">
           {PAGES.map(page => (
             <a href={page.href} aria-current={current.startsWith(page.href) ? "page" : undefined}>{page.label}</a>
@@ -60,7 +70,7 @@ const current = Astro.url.pathname;
     <footer class="site-footer">
       <div class="wrap foot">
         <div class="foot-brand">
-          <a class="wordmark" href="/">Stream<span>Otter</span></a>
+          <a href="/" aria-label="StreamOtter home"><ThemedImage light={logoLight} dark={logoDark} width={220} alt="StreamOtter" class="foot-logo" /></a>
           <p class="muted">Live state from Kafka to the browser. Release <code>{RELEASE}</code>, MIT licensed.</p>
           <p class="muted fiction">Lontra Creek, its field station, and its otters are fictional. The data pipeline is real.</p>
         </div>
@@ -108,18 +118,27 @@ const current = Astro.url.pathname;
     gap: 24px;
     min-height: 64px;
   }
-  .wordmark {
-    font: 800 1.4rem/1 var(--display);
-    letter-spacing: -0.025em;
-    color: var(--ink);
-    text-decoration: none;
-    white-space: nowrap;
+  .lockup {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
   }
-  .wordmark span {
-    background: linear-gradient(180deg, #01c4f7, #0091f5 55%, #0068e0);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+  .lockup :global(img) {
+    display: block;
+    height: auto;
+  }
+  .lockup :global(.lockup-mark) {
+    width: auto;
+    height: 38px;
+  }
+  .lockup :global(.lockup-word img) {
+    width: 132px;
+  }
+  .foot-brand :global(.foot-logo img) {
+    display: block;
+    width: 220px;
+    height: auto;
   }
   .nav {
     display: flex;

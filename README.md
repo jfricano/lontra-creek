@@ -1,4 +1,9 @@
-<p align="center"><img src="assets/streamotter-logo.png" alt="StreamOtter" width="360"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="apps/site/src/assets/brand/logo-dark.png">
+    <img src="apps/site/src/assets/brand/logo-light.png" alt="StreamOtter" width="360">
+  </picture>
+</p>
 
 # Lontra Creek
 
@@ -6,7 +11,7 @@ StreamOtter's home site and live demo. Lontra Creek is a fictional river-otter s
 
 This project uses StreamOtter the way any application does: the published [`streamotter`](https://www.npmjs.com/package/streamotter) package from npm, at an exact version. It has no other connection to the [StreamOtter repository](https://github.com/jfricano/StreamOtter).
 
-> **Status: Phase 0, foundation.** The simulation and the plan exist; the site and the hosted demo don't yet. See [docs/PLAN.md](docs/PLAN.md).
+> **Status: Phase 0, foundation.** The simulation, the field station's StreamOtter project, and the home page with a live panel run locally (`npm run dev`); the other pages and the hosted demo are in progress. See [docs/PLAN.md](docs/PLAN.md) and [docs/HOSTING.md](docs/HOSTING.md).
 
 ## Layout
 
@@ -14,7 +19,7 @@ This project uses StreamOtter the way any application does: the published [`stre
 | --- | --- |
 | `packages/creek-sim` | The simulation: a deterministic watershed, weather, gauges, otters, and camera traps, and the channel views the field station publishes |
 | `apps/field-station` | The demo application: StreamOtter configuration and handlers, the simulation runner, sessions, and scenarios |
-| `apps/site` | The public site (planned) |
+| `apps/site` | The public site: Astro, with the live panel on the home page |
 | `docs/PLAN.md` | Scope, story, architecture, operating rules, phases, and launch criteria |
 
 ## Develop
@@ -25,7 +30,10 @@ Node.js 24 or later.
 npm install
 npm test
 npm run typecheck
+npm run dev        # field station + site at http://127.0.0.1:4321
 ```
+
+`npm run dev` runs the field station without Kafka, replaying the simulation through a StreamOtter gateway in development mode, one study tick every two seconds, with the workbench at http://127.0.0.1:7401 (its one-time token is printed at startup).
 
 ## The simulation in brief
 

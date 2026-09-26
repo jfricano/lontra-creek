@@ -22,6 +22,17 @@
       "source": "field",
       "version": 1
     },
+    "notebook": {
+      "delivery": {
+        "kind": "state",
+        "overflow": "resync"
+      },
+      "handlersRef": "notebook",
+      "paramsSchema": "NotebookParams",
+      "payloadSchema": "Notebook",
+      "source": "notebooks",
+      "version": 1
+    },
     "otter": {
       "delivery": {
         "kind": "state",
@@ -540,6 +551,109 @@
       ],
       "type": "object"
     },
+    "Notebook": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "activity": {
+                "enum": [
+                  "resting",
+                  "foraging",
+                  "traveling",
+                  "grooming",
+                  "playing"
+                ],
+                "type": "string"
+              },
+              "at": {
+                "additionalProperties": false,
+                "properties": {
+                  "day": {
+                    "maximum": 1000000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "time": {
+                    "maxLength": 5,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "day",
+                  "time"
+                ],
+                "type": "object"
+              },
+              "otterId": {
+                "enum": [
+                  "LO-07",
+                  "LO-03",
+                  "LO-11",
+                  "untagged"
+                ],
+                "type": "string"
+              },
+              "reachId": {
+                "enum": [
+                  "alder-spring",
+                  "cedar-riffle",
+                  "kestrel-bend",
+                  "beaver-flats",
+                  "slate-canyon",
+                  "heron-marsh",
+                  "confluence"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "at",
+              "otterId",
+              "reachId",
+              "activity"
+            ],
+            "type": "object"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "observerId": {
+          "maxLength": 64,
+          "minLength": 8,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "expired"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "observerId",
+        "status",
+        "entries"
+      ],
+      "type": "object"
+    },
+    "NotebookParams": {
+      "additionalProperties": false,
+      "properties": {
+        "observerId": {
+          "maxLength": 64,
+          "minLength": 8,
+          "type": "string"
+        }
+      },
+      "required": [
+        "observerId"
+      ],
+      "type": "object"
+    },
     "OtterParams": {
       "additionalProperties": false,
       "properties": {
@@ -750,6 +864,11 @@
     "field": {
       "fixtureRef": "field",
       "generation": "field-fixture-1",
+      "kind": "fixture"
+    },
+    "notebooks": {
+      "fixtureRef": "notebooks",
+      "generation": "notebooks-fixture-1",
       "kind": "fixture"
     }
   }

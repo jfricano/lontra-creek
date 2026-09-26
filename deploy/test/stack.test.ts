@@ -43,6 +43,7 @@ type Role = "volunteer" | "researcher";
 /** One visitor: a cookie jar and badges from the site API, like a page's fetch with credentials. */
 class Visitor {
   cookie = "";
+  subject = "";
 
   async badge(role: Role): Promise<{ token: string; badge: { subject: string; role: Role }; response: Response }> {
     const response = await fetch(`${STACK}/api/badge`, {
@@ -54,7 +55,16 @@ class Visitor {
     const setCookie = response.headers.get("set-cookie");
     if (setCookie !== null) this.cookie = setCookie.split(";")[0]!;
     const body = await response.json() as { token: string; badge: { subject: string; role: Role } };
+    this.subject = body.badge.subject;
     return { ...body, response };
+  }
+
+  async sighting(sighting: { otterId: string; reachId: string; activity: string }): Promise<Response> {
+    return fetch(`${STACK}/api/notebook/sightings`, {
+      method: "POST",
+      headers: { origin: SITE, "content-type": "application/json", cookie: this.cookie },
+      body: JSON.stringify(sighting)
+    });
   }
 }
 
@@ -63,9 +73,8 @@ after(async () => {
   await Promise.all(clients.map(client => client.close()));
 });
 
-async function connect(role: Role): Promise<Client<AppChannels>> {
+async function connect(role: Role, visitor = new Visitor()): Promise<Client<AppChannels>> {
   const config = await (await fetch(`${STACK}/api/config`, { headers: { origin: SITE } })).json() as { gatewayOrigin: string; gatewayPath: string };
-  const visitor = new Visitor();
   const client = createClient<AppChannels>({ origin: config.gatewayOrigin, path: config.gatewayPath, getToken: async () => (await visitor.badge(role)).token });
   clients.push(client);
   return client;
@@ -119,6 +128,8 @@ describe("the demo host from outside", () => {
 
 describe("a volunteer at Kestrel Bend", () => {
   let client: Client<AppChannels>;
+  const notebookOwner = new Visitor();
+  const notebookEvents: StreamEvent<AppChannels["notebook"]["data"]>[] = [];
   const events: StreamEvent<AppChannels["station"]["data"]>[] = [];
   const states: SubscriptionState[] = [];
   let station: Subscription<AppChannels["station"]["data"]>;
@@ -159,6 +170,33 @@ describe("a volunteer at Kestrel Bend", () => {
     assert.equal(latest?.gridRef, "LC 4417 2203");
   });
 
+  test("logs a sighting in their own notebook and sees it arrive through Kafka", async () => {
+    await notebookOwner.badge("volunteer");
+    const owner = await connect("volunteer", notebookOwner);
+    const notebook = owner.subscribe("notebook", { channelVersion: 1, params: { observerId: notebookOwner.subject } });
+    notebook.on("data", event => notebookEvents.push(event));
+    await notebook.ready({ timeoutMs: 20_000 });
+    assert.equal(notebookEvents[0]?.kind, "snapshot");
+    assert.deepEqual(notebookEvents[0]?.data.entries, []);
+
+    const response = await notebookOwner.sighting({ otterId: "LO-07", reachId: "kestrel-bend", activity: "foraging" });
+    assert.equal(response.status, 200, await response.clone().text());
+    const { revision } = await response.json() as { revision: string };
+    await until(() => notebookEvents.some(event => event.kind === "update" && event.revision === revision), "the sighting to arrive");
+    const update = notebookEvents.find(event => event.revision === revision)!;
+    assert.equal(update.data.status, "open");
+    assert.deepEqual(update.data.entries.map(entry => [entry.otterId, entry.reachId, entry.activity]), [["LO-07", "kestrel-bend", "foraging"]]);
+  });
+
+  test("another visitor asking for that notebook is refused with FORBIDDEN", async () => {
+    const stranger = await connect("researcher");
+    const notebook = stranger.subscribe("notebook", { channelVersion: 1, params: { observerId: notebookOwner.subject } });
+    let received = 0;
+    notebook.on("data", () => { received += 1; });
+    await assert.rejects(notebook.ready({ timeoutMs: 20_000 }), (error: StreamError) => error.code === "FORBIDDEN");
+    assert.equal(received, 0);
+  });
+
   test("after a gateway restart, goes stale, then live again from a fresh snapshot", { skip: RESTART_GATEWAY === undefined && "STACK_RESTART_GATEWAY is not set" }, async () => {
     const before = events.length;
     const lastRevision = BigInt(events.at(-1)!.revision);
@@ -174,7 +212,7 @@ describe("a volunteer at Kestrel Bend", () => {
     for (let i = 1; i < recent.length; i++) assert.ok(recent[i]! > recent[i - 1]!, "revisions keep increasing");
   });
 
-  test("after a field station restart, the world carries on from its checkpoint", { skip: RESTART_FIELD_STATION === undefined && "STACK_RESTART_FIELD_STATION is not set" }, async () => {
+  test("after a field station restart, the world carries on from its checkpoint and notebooks from Kafka", { skip: RESTART_FIELD_STATION === undefined && "STACK_RESTART_FIELD_STATION is not set" }, async () => {
     const statusBefore = await (await fetch(`${STACK}/api/status`)).json() as { tick: number };
     const lastRevision = BigInt(events.at(-1)!.revision);
     await run(RESTART_FIELD_STATION!, { timeout: 120_000 });
@@ -183,5 +221,15 @@ describe("a volunteer at Kestrel Bend", () => {
     assert.ok(statusAfter.tick > statusBefore.tick);
     assert.equal(statusAfter.kafka, "connected");
     assert.equal(station.state, "live");
+
+    // A fresh subscription's snapshot comes from the notebook the field station rebuilt from field.notebooks.
+    const owner = await connect("volunteer", notebookOwner);
+    const notebook = owner.subscribe("notebook", { channelVersion: 1, params: { observerId: notebookOwner.subject } });
+    let snapshot: StreamEvent<AppChannels["notebook"]["data"]> | undefined;
+    notebook.on("data", event => { snapshot ??= event; });
+    await notebook.ready({ timeoutMs: 20_000 });
+    const logged = notebookEvents.at(-1)!;
+    assert.equal(snapshot?.revision, logged.revision);
+    assert.deepEqual(snapshot?.data, logged.data);
   });
 });

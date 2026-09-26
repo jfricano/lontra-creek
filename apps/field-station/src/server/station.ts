@@ -1,16 +1,14 @@
 /**
- * The field station's world on the wall clock, and the only writer to Kafka.
+ * The field station's world on the wall clock. The field station is the only
+ * writer to Kafka.
  *
  * Time. Tick n happens at epoch + n × tickMs, so a restarted station computes the
  * same world and carries on where it should be. The simulation is deterministic,
  * so recomputing a tick reproduces the data already published for it.
  *
  * Write, then publish. Each tick advances the world that the internal API serves
- * snapshots from, then publishes the views that changed. A snapshot is therefore
- * never older than anything already on Kafka. Views waiting to be published are
- * kept by instance, so while Kafka is away only the latest state of each one
- * waits: correct for full-state channels. One batch is in flight at a time, and a
- * view leaves the queue only when the broker has acknowledged it.
+ * snapshots from, then queues the views that changed for publishing (queue.ts).
+ * A snapshot is therefore never older than anything already on Kafka.
  *
  * Checkpoints. The world is plain JSON, written hourly (write, then rename), after
  * catching up at startup, and at shutdown. A checkpoint is used only if it belongs
@@ -24,6 +22,7 @@ import {
   type Emission, type WorldState
 } from "@lontra-creek/sim";
 import { toRecord } from "../records.ts";
+import type { OutgoingRecord, PublishQueue } from "./queue.ts";
 
 export const SEED = "lontra-creek";
 const CHECKPOINT_FORMAT = 1;
@@ -32,20 +31,8 @@ const CHECKPOINT_EVERY_MS = 60 * 60 * 1_000;
 /** Ticks computed per slice while catching up, so the process stays responsive. */
 const CATCH_UP_SLICE = 2_000;
 
-export interface OutgoingRecord {
-  topic: string;
-  key: string;
-  value: string;
-}
-
-/** Where views go. publish resolves once the broker has acknowledged every record. */
-export interface Publisher {
-  publish(records: readonly OutgoingRecord[]): Promise<void>;
-  close(): Promise<void>;
-}
-
 export interface StationOptions {
-  publisher: Publisher;
+  queue: PublishQueue;
   dataDir: string;
   /** Null: the checkpoint's epoch if it has a usable one, otherwise now. */
   epoch: string | null;
@@ -53,6 +40,11 @@ export interface StationOptions {
   generation: number;
   now?: () => number;
   log?: (message: string) => void;
+}
+
+export function outgoing(emission: Emission): OutgoingRecord {
+  const record = toRecord(emission);
+  return { topic: emission.topic, key: record.key, value: JSON.stringify(record.value) };
 }
 
 interface Checkpoint {
@@ -70,11 +62,6 @@ export class FieldStation {
   #world: WorldState | null = null;
   /** Every channel instance's current view: what snapshots are served from. */
   readonly #views = new Map<string, Emission>();
-  /** Views not yet acknowledged by the broker, latest per instance. */
-  readonly #pending = new Map<string, Emission>();
-  #flushing: Promise<void> | null = null;
-  #kafkaHealthy = false;
-  #lastKafkaError: string | null = null;
   #lastCheckpointAt = 0;
   #ready = false;
 
@@ -89,11 +76,11 @@ export class FieldStation {
   }
 
   get kafkaHealthy(): boolean {
-    return this.#kafkaHealthy;
+    return this.#options.queue.healthy;
   }
 
   get pendingCount(): number {
-    return this.#pending.size;
+    return this.#options.queue.size;
   }
 
   get epoch(): string {
@@ -125,7 +112,7 @@ export class FieldStation {
 
   status(): { tick: number; studyDay: number; studyTime: string; generation: number; kafka: "connected" | "unavailable"; pending: number } {
     const time = studyTime(this.tick);
-    return { tick: this.tick, studyDay: time.day, studyTime: time.clock, generation: this.generation, kafka: this.#kafkaHealthy ? "connected" : "unavailable", pending: this.#pending.size };
+    return { tick: this.tick, studyDay: time.day, studyTime: time.clock, generation: this.generation, kafka: this.kafkaHealthy ? "connected" : "unavailable", pending: this.pendingCount };
   }
 
   /**
@@ -162,12 +149,10 @@ export class FieldStation {
       await new Promise(resolve => setImmediate(resolve));
     }
     this.#world = world;
-    for (const emission of currentEmissions(world)) {
-      this.#views.set(emission.key, emission);
-      this.#pending.set(emission.key, emission);
-    }
+    const views = currentEmissions(world);
+    for (const emission of views) this.#write(emission);
     this.#ready = true;
-    this.#log(`At tick ${world.tick} (study day ${studyTime(world.tick).day}, ${studyTime(world.tick).clock}); republishing ${this.#pending.size} views.`);
+    this.#log(`At tick ${world.tick} (study day ${studyTime(world.tick).day}, ${studyTime(world.tick).clock}); republishing ${views.length} views.`);
     await this.checkpoint();
   }
 
@@ -175,42 +160,20 @@ export class FieldStation {
   async advance(): Promise<void> {
     const world = this.#world;
     if (world === null) throw new Error("The station has not started.");
-    for (const emission of advanceTo(world, this.targetTick())) {
-      this.#views.set(emission.key, emission);
-      this.#pending.set(emission.key, emission);
-    }
+    for (const emission of advanceTo(world, this.targetTick())) this.#write(emission);
     if (this.#now() - this.#lastCheckpointAt >= CHECKPOINT_EVERY_MS) await this.checkpoint();
     await this.flush();
   }
 
-  /** Publishes the pending views, unless a batch is already in flight. */
+  /** Serves a view, then queues it: write, then publish. */
+  #write(emission: Emission): void {
+    this.#views.set(emission.key, emission);
+    this.#options.queue.set(outgoing(emission));
+  }
+
+  /** Publishes the pending views and notebooks, unless a batch is already in flight. */
   flush(): Promise<void> {
-    if (this.#flushing !== null || this.#pending.size === 0) return this.#flushing ?? Promise.resolve();
-    const batch = [...this.#pending.values()];
-    const records = batch.map(emission => {
-      const record = toRecord(emission);
-      return { topic: emission.topic, key: record.key, value: JSON.stringify(record.value) };
-    });
-    this.#flushing = this.#options.publisher.publish(records).then(
-      () => {
-        // A newer view that arrived meanwhile stays queued.
-        for (const emission of batch) {
-          if (this.#pending.get(emission.key) === emission) this.#pending.delete(emission.key);
-        }
-        if (!this.#kafkaHealthy) this.#log(`Kafka acknowledged ${records.length} views.`);
-        this.#kafkaHealthy = true;
-        this.#lastKafkaError = null;
-      },
-      (error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        if (this.#kafkaHealthy || this.#lastKafkaError !== message) this.#log(`Publishing failed; ${this.#pending.size} views wait for Kafka: ${message}`);
-        this.#kafkaHealthy = false;
-        this.#lastKafkaError = message;
-      }
-    ).finally(() => {
-      this.#flushing = null;
-    });
-    return this.#flushing;
+    return this.#options.queue.flush();
   }
 
   async checkpoint(): Promise<void> {

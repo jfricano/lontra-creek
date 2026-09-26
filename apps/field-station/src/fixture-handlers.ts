@@ -8,8 +8,9 @@
  * advance it further.
  * With no field station process to ask, snapshots come from a read model fed by
  * the same records, so snapshots and updates describe one revision progression.
+ * Notebooks need the field station on Kafka: here every notebook is empty.
  */
-import { createWorld, currentEmissions, step, TENANT_ID, TICKS_PER_DAY, type ChannelName } from "@lontra-creek/sim";
+import { createWorld, currentEmissions, step, TENANT_ID, TICKS_PER_DAY } from "@lontra-creek/sim";
 import type { ChannelHandlers, DevelopmentOptions, HandlerRegistry, Json, Principal } from "streamotter/gateway";
 import { mayRead } from "./access.ts";
 import type { AppChannels } from "./generated/streamotter.generated.ts";
@@ -40,10 +41,10 @@ function apply(record: FieldRecord): void {
   if (current === undefined || BigInt(record.revision) > BigInt(current.revision)) readModel.set(key, record);
 }
 
-function channel<K extends ChannelName>(name: K): ChannelHandlers<AppChannels[K]> {
+function channel<K extends keyof AppChannels>(name: K): ChannelHandlers<AppChannels[K]> {
   type Contract = AppChannels[K];
   return {
-    authorize: ({ principal }) => mayRead(name, principal),
+    authorize: ({ principal, params }) => mayRead(name, principal, params),
     map: ({ record }) => {
       const field = fromRecord(record.value);
       if (field === null || field.channel !== name) return [];
@@ -52,8 +53,9 @@ function channel<K extends ChannelName>(name: K): ChannelHandlers<AppChannels[K]
     },
     snapshot: ({ params }) => {
       const current = readModel.get(instanceKey(name, params));
-      if (current === undefined) throw new Error(`No ${name} instance ${JSON.stringify(params)}`);
-      return { revision: current.revision, data: current.data as Contract["data"] };
+      if (current !== undefined) return { revision: current.revision, data: current.data as Contract["data"] };
+      if (name === "notebook") return { revision: "0", data: { ...params, status: "open", entries: [] } as unknown as Contract["data"] };
+      throw new Error(`No ${name} instance ${JSON.stringify(params)}`);
     }
   };
 }
@@ -67,7 +69,8 @@ export const handlers: HandlerRegistry<AppChannels> = {
     station: channel("station"),
     otter: channel("otter"),
     reach: channel("reach"),
-    holt: channel("holt")
+    holt: channel("holt"),
+    notebook: channel("notebook")
   }
 };
 
@@ -81,5 +84,5 @@ export const development: DevelopmentOptions = {
     volunteer: devPrincipal("volunteer-dev", "volunteer", "Volunteer"),
     researcher: devPrincipal("biologist-dev", "researcher", "Field biologist")
   },
-  fixtures: { field: fixture }
+  fixtures: { field: fixture, notebooks: [] }
 };

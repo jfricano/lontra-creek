@@ -34,17 +34,25 @@ describe("access rules", () => {
   const channels: ChannelName[] = ["creekOverview", "station", "otter", "reach", "holt"];
 
   test("volunteers read everything but den sites", () => {
-    for (const channel of channels) assert.equal(mayRead(channel, principal("volunteer")), channel !== "holt", channel);
+    for (const channel of channels) assert.equal(mayRead(channel, principal("volunteer"), {}), channel !== "holt", channel);
   });
 
   test("researchers read everything", () => {
-    for (const channel of channels) assert.equal(mayRead(channel, principal("researcher")), true, channel);
+    for (const channel of channels) assert.equal(mayRead(channel, principal("researcher"), {}), true, channel);
   });
 
   test("a principal without a role is not a researcher", () => {
     const anonymous = { ...principal("volunteer"), claims: {} };
-    assert.equal(mayRead("holt", anonymous), false);
-    assert.equal(mayRead("station", anonymous), true);
+    assert.equal(mayRead("holt", anonymous, {}), false);
+    assert.equal(mayRead("station", anonymous, {}), true);
+  });
+
+  test("a notebook is for its owner alone, whatever their role", () => {
+    for (const role of ["volunteer", "researcher"] as const) {
+      const reader = principal(role);
+      assert.equal(mayRead("notebook", reader, { observerId: reader.subject }), true, role);
+      assert.equal(mayRead("notebook", reader, { observerId: "someone-else" }), false, role);
+    }
   });
 });
 

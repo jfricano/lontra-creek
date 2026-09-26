@@ -8,7 +8,9 @@ import { advanceTo, createWorld, currentEmissions, seedFrom } from "@lontra-cree
 import { verifyToken } from "../src/identity.ts";
 import { readConfig, type ServerConfig } from "../src/server/config.ts";
 import { internalApi, publicApi, RateLimiter } from "../src/server/http.ts";
-import { FieldStation, SEED, type OutgoingRecord, type Publisher } from "../src/server/station.ts";
+import { Notebooks } from "../src/server/notebooks.ts";
+import { PublishQueue, type OutgoingRecord, type Publisher } from "../src/server/queue.ts";
+import { FieldStation, SEED } from "../src/server/station.ts";
 
 const EPOCH = "2026-09-01T00:00:00.000Z";
 const EPOCH_MS = Date.parse(EPOCH);
@@ -71,7 +73,7 @@ function clock(startTick: number): { now: () => number; to(tick: number): void }
 
 async function station(options: { dir: string; publisher: Publisher; now: () => number; generation?: number; epoch?: string | null }): Promise<FieldStation> {
   const created = new FieldStation({
-    publisher: options.publisher,
+    queue: new PublishQueue(options.publisher, () => undefined),
     dataDir: options.dir,
     epoch: options.epoch === undefined ? EPOCH : options.epoch,
     tickMs: TICK_MS,
@@ -187,7 +189,7 @@ describe("the field station's runner", () => {
     const logs: string[] = [];
     time.to(900);
     const publisher = new FakePublisher();
-    const second = new FieldStation({ publisher, dataDir: dir, epoch: EPOCH, tickMs: TICK_MS, generation: 1, now: time.now, log: line => logs.push(line) });
+    const second = new FieldStation({ queue: new PublishQueue(publisher, () => undefined), dataDir: dir, epoch: EPOCH, tickMs: TICK_MS, generation: 1, now: time.now, log: line => logs.push(line) });
     await second.start();
     assert.match(logs[0]!, /Restored the checkpoint at tick 520/);
     assert.equal(second.tick, 900);
@@ -207,7 +209,7 @@ describe("the field station's runner", () => {
 
     const logs: string[] = [];
     const publisher = new FakePublisher();
-    const next = new FieldStation({ publisher, dataDir: dir, epoch: EPOCH, tickMs: TICK_MS, generation: 2, now: time.now, log: line => logs.push(line) });
+    const next = new FieldStation({ queue: new PublishQueue(publisher, () => undefined), dataDir: dir, epoch: EPOCH, tickMs: TICK_MS, generation: 2, now: time.now, log: line => logs.push(line) });
     await next.start();
     await next.flush();
     assert.match(logs[0]!, /generation 1, not 2/);
@@ -219,7 +221,7 @@ describe("the field station's runner", () => {
     const time = clock(100);
     await (await station({ dir, publisher: new FakePublisher(), now: time.now })).stop(100);
     const logs: string[] = [];
-    const moved = new FieldStation({ publisher: new FakePublisher(), dataDir: dir, epoch: "2026-09-02T00:00:00.000Z", tickMs: TICK_MS, generation: 1, now: time.now, log: line => logs.push(line) });
+    const moved = new FieldStation({ queue: new PublishQueue(new FakePublisher(), () => undefined), dataDir: dir, epoch: "2026-09-02T00:00:00.000Z", tickMs: TICK_MS, generation: 1, now: time.now, log: line => logs.push(line) });
     await moved.start();
     assert.match(logs[0]!, /epoch 2026-09-01T00:00:00.000Z, not 2026-09-02/);
   });
@@ -240,6 +242,7 @@ describe("the field station's HTTP APIs", () => {
   const publisher = new FakePublisher();
   const token = "service-token-".padEnd(40, "x");
   let field: FieldStation;
+  let notebooks: Notebooks;
   let config: ServerConfig;
   let api: Server;
   let internal: Server;
@@ -255,9 +258,11 @@ describe("the field station's HTTP APIs", () => {
 
   before(async () => {
     config = { ...readConfig({ FIELD_STATION_SERVICE_TOKEN: token }), siteOrigins: ["https://streamotter.app"], gatewayOrigin: "https://demo.streamotter.app" };
-    field = new FieldStation({ publisher, dataDir: await dataDir(), epoch: EPOCH, tickMs: TICK_MS, generation: 1, now: time.now, log: () => undefined });
-    api = publicApi({ config, station: field, limiter: new RateLimiter({ burst: 5, perSecond: 0.001 }), log: () => undefined });
-    internal = internalApi({ serviceToken: token, station: field });
+    const queue = new PublishQueue(publisher, () => undefined);
+    field = new FieldStation({ queue, dataDir: await dataDir(), epoch: EPOCH, tickMs: TICK_MS, generation: 1, now: time.now, log: () => undefined });
+    notebooks = new Notebooks({ queue, tenantId: "lontra-creek", now: time.now, log: () => undefined });
+    api = publicApi({ config, station: field, notebooks, limiter: new RateLimiter({ burst: 5, perSecond: 0.001 }), log: () => undefined });
+    internal = internalApi({ serviceToken: token, station: field, notebooks });
     apiOrigin = await listen(api);
     internalOrigin = await listen(internal);
   });
@@ -276,6 +281,11 @@ describe("the field station's HTTP APIs", () => {
     assert.equal(view.status, 503);
     await field.start();
     await field.flush();
+    const loading = await fetch(`${apiOrigin}/healthz`);
+    assert.equal(loading.status, 503, "notebooks are still loading");
+    assert.equal(((await loading.json()) as { notebooks: string }).notebooks, "loading");
+    assert.equal((await fetch(`${internalOrigin}/internal/views/notebook/volunteer-12345678`, { headers: { authorization: `Bearer ${token}` } })).status, 503);
+    notebooks.load([]);
     assert.equal((await fetch(`${apiOrigin}/healthz`)).status, 200);
   });
 
@@ -326,7 +336,7 @@ describe("the field station's HTTP APIs", () => {
   });
 
   test("production cookies are Secure", async () => {
-    const secure = publicApi({ config: { ...config, production: true }, station: field, log: () => undefined });
+    const secure = publicApi({ config: { ...config, production: true }, station: field, notebooks, log: () => undefined });
     const origin = await listen(secure);
     const response = await fetch(`${origin}/api/badge`, { method: "POST", body: "{}" });
     assert.match(response.headers.get("set-cookie")!, /; Secure$/);
@@ -341,6 +351,44 @@ describe("the field station's HTTP APIs", () => {
     for (let i = 0; i < 7; i++) statuses.push((await fetch(`${apiOrigin}/api/status`, { headers: { "x-client-ip": "203.0.113.9" } })).status);
     assert.deepEqual(statuses, [200, 200, 200, 200, 200, 429, 429]);
     assert.equal((await fetch(`${apiOrigin}/api/status`, { headers: { "x-client-ip": "203.0.113.10" } })).status, 200);
+  });
+
+  test("a visitor logs sightings in their own notebook, and only there", async () => {
+    const headers = (ip: string, cookie?: string): Record<string, string> => ({
+      origin: "https://streamotter.app", "content-type": "application/json", "x-client-ip": ip, ...(cookie === undefined ? {} : { cookie })
+    });
+    const sighting = JSON.stringify({ otterId: "LO-07", reachId: "kestrel-bend", activity: "foraging" });
+    assert.equal((await fetch(`${apiOrigin}/api/notebook/sightings`, { method: "POST", headers: headers("192.0.2.1"), body: sighting })).status, 401);
+
+    const badge = await fetch(`${apiOrigin}/api/badge`, { method: "POST", headers: headers("192.0.2.1"), body: JSON.stringify({ role: "volunteer" }) });
+    const cookie = badge.headers.get("set-cookie")!.split(";")[0]!;
+    const { badge: { subject } } = await badge.json() as { badge: { subject: string } };
+
+    const logged = await fetch(`${apiOrigin}/api/notebook/sightings`, { method: "POST", headers: headers("192.0.2.1", cookie), body: sighting });
+    assert.equal(logged.status, 200);
+    const body = await logged.json() as { observerId: string; revision: string; entries: number };
+    assert.equal(body.observerId, subject);
+    assert.equal(body.entries, 1);
+
+    const tooSoon = await fetch(`${apiOrigin}/api/notebook/sightings`, { method: "POST", headers: headers("192.0.2.2", cookie), body: sighting });
+    assert.equal(tooSoon.status, 429);
+    const freeText = await fetch(`${apiOrigin}/api/notebook/sightings`, { method: "POST", headers: headers("192.0.2.2", cookie), body: JSON.stringify({ otterId: "LO-07", reachId: "kestrel-bend", activity: "saw it at my house" }) });
+    assert.equal(freeText.status, 400);
+    const foreign = await fetch(`${apiOrigin}/api/notebook/sightings`, { method: "POST", headers: { ...headers("192.0.2.3", cookie), origin: "https://elsewhere.example" }, body: sighting });
+    assert.equal(foreign.status, 403);
+
+    const snapshot = await fetch(`${internalOrigin}/internal/views/notebook/${subject}`, { headers: { authorization: `Bearer ${token}` } });
+    const view = await snapshot.json() as { revision: string; data: { observerId: string; status: string; entries: { otterId: string; at: { day: number; time: string } }[] } };
+    assert.equal(view.revision, body.revision);
+    assert.equal(view.data.status, "open");
+    assert.deepEqual(view.data.entries.map(entry => entry.otterId), ["LO-07"]);
+    assert.deepEqual(view.data.entries[0]!.at, { day: 1, time: "05:50" });
+
+    const nobody = await (await fetch(`${internalOrigin}/internal/views/notebook/volunteer-00000000`, { headers: { authorization: `Bearer ${token}` } })).json();
+    assert.deepEqual(nobody, { revision: "0", data: { observerId: "volunteer-00000000", status: "open", entries: [] } });
+
+    const published = publisher.batches.flatMap(batch => batch.records).filter(record => record.topic === "field.notebooks");
+    assert.ok(published.some(record => record.key === `notebook:${subject}`), "the notebook went to field.notebooks, keyed by observer");
   });
 
   test("status reports the study clock and Kafka", async () => {

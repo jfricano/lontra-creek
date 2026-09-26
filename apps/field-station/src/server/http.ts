@@ -1,19 +1,22 @@
 /**
  * The field station's two HTTP listeners.
  *
- * Public, behind Caddy at /api: where the gateway is, sign-in badges, and the
- * study's status, with CORS for the site's origin and credentials, and a request
- * budget per client. GET /healthz is for the container's health check; Caddy
- * doesn't route it.
+ * Public, behind Caddy at /api: where the gateway is, sign-in badges, the study's
+ * status, and sightings for the visitor's own notebook, with CORS for the site's
+ * origin and credentials, and a request budget per client. GET /healthz is for the
+ * container's health check; Caddy doesn't route it.
  *
  * Internal, on the compose network only: GET /internal/views/:channel/:id, the
- * current view the gateway's snapshot handler asks for, with the service token.
+ * current view or notebook the gateway's snapshot handler asks for, with the
+ * service token.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
+import { stamp } from "@lontra-creek/sim";
 import type { Role } from "../identity.ts";
-import { badgeFor } from "../sessions.ts";
+import { badgeFor, readSession } from "../sessions.ts";
 import type { ServerConfig } from "./config.ts";
+import { NotebookError, parseSighting, type Notebooks } from "./notebooks.ts";
 import type { FieldStation } from "./station.ts";
 
 type Headers = Record<string, string>;
@@ -81,8 +84,8 @@ export function clientAddress(request: IncomingMessage): string {
   return (typeof header === "string" && header !== "" ? header : request.socket.remoteAddress) ?? "unknown";
 }
 
-export function publicApi(options: { config: ServerConfig; station: FieldStation; limiter?: RateLimiter; log?: (message: string) => void }): Server {
-  const { config, station } = options;
+export function publicApi(options: { config: ServerConfig; station: FieldStation; notebooks: Notebooks; limiter?: RateLimiter; log?: (message: string) => void }): Server {
+  const { config, station, notebooks } = options;
   const limiter = options.limiter ?? new RateLimiter({ burst: 30, perSecond: 1 });
   const log = options.log ?? (message => console.error(message));
 
@@ -90,8 +93,14 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
     const url = new URL(request.url ?? "/", "http://field-station.invalid");
     try {
       if (url.pathname === "/healthz") {
-        const healthy = station.ready && station.kafkaHealthy;
-        return send(response, healthy ? 200 : 503, { ready: station.ready, kafka: station.kafkaHealthy ? "connected" : "unavailable", tick: station.tick, target: station.targetTick() });
+        const healthy = station.ready && station.kafkaHealthy && notebooks.ready;
+        return send(response, healthy ? 200 : 503, {
+          ready: station.ready,
+          kafka: station.kafkaHealthy ? "connected" : "unavailable",
+          notebooks: notebooks.ready ? "ready" : "loading",
+          tick: station.tick,
+          target: station.targetTick()
+        });
       }
       if (!url.pathname.startsWith("/api/")) return send(response, 404, { error: "Not found." });
 
@@ -125,6 +134,22 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
         return send(response, 200, { badge: result.badge, token: result.token.token, expiresAt: result.token.expiresAt },
           result.setCookie === null ? cors : { ...cors, "set-cookie": result.setCookie });
       }
+      if (request.method === "POST" && url.pathname === "/api/notebook/sightings") {
+        if (origin !== undefined && cors["access-control-allow-origin"] === undefined) return send(response, 403, { error: "Origin not allowed." }, cors);
+        // The notebook is the session's own: its owner is the badge subject the cookie names.
+        const session = readSession(request.headers.cookie, config.secret);
+        if (session === null) return send(response, 401, { error: "Sign in first." }, cors);
+        const sighting = parseSighting(await readJson(request));
+        if (sighting === null) return send(response, 400, { error: "Choose an otter, a reach, and an activity from the lists." }, cors);
+        try {
+          const result = notebooks.add(session.subject, session.exp, sighting, stamp(station.tick));
+          void notebooks.flush();
+          return send(response, 200, { observerId: session.subject, ...result }, cors);
+        } catch (error) {
+          if (error instanceof NotebookError) return send(response, error.status, { error: error.message }, cors);
+          throw error;
+        }
+      }
       send(response, 404, { error: "Not found." }, cors);
     } catch (error) {
       log(`Request failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -133,7 +158,7 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
   });
 }
 
-export function internalApi(options: { serviceToken: string; station: FieldStation }): Server {
+export function internalApi(options: { serviceToken: string; station: FieldStation; notebooks: Notebooks }): Server {
   const expected = Buffer.from(`Bearer ${options.serviceToken}`);
   const authorized = (request: IncomingMessage): boolean => {
     const provided = Buffer.from(request.headers.authorization ?? "");
@@ -145,13 +170,17 @@ export function internalApi(options: { serviceToken: string; station: FieldStati
     const url = new URL(request.url ?? "/", "http://field-station.invalid");
     const match = /^\/internal\/views\/([A-Za-z]+)\/([^/]+)$/.exec(url.pathname);
     if (request.method !== "GET" || match === null) return send(response, 404, { error: "Not found." });
-    if (!options.station.ready) return send(response, 503, { error: "Catching up." });
     let id: string;
     try {
       id = decodeURIComponent(match[2]!);
     } catch {
       return send(response, 404, { error: "Not found." });
     }
+    if (match[1] === "notebook") {
+      if (!options.notebooks.ready) return send(response, 503, { error: "Loading notebooks." });
+      return send(response, 200, options.notebooks.view(id));
+    }
+    if (!options.station.ready) return send(response, 503, { error: "Catching up." });
     const view = options.station.view(`${match[1]}:${id}`);
     if (view === undefined) return send(response, 404, { error: "No such view." });
     send(response, 200, { revision: view.revision, data: view.data });

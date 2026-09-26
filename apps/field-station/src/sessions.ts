@@ -14,9 +14,10 @@ const TOKEN_SECONDS = 10 * 60;
 
 const NAMES: Readonly<Record<Role, string>> = { volunteer: "Volunteer", researcher: "Field biologist" };
 
-interface SessionClaims {
+export interface SessionClaims {
   subject: string;
   role: Role;
+  /** Expiry, in epoch milliseconds. */
   exp: number;
 }
 
@@ -32,7 +33,8 @@ function readCookie(header: string | undefined, name: string): string | null {
   return null;
 }
 
-function readSession(cookieHeader: string | undefined, secret: string, now: number): SessionClaims | null {
+/** The visitor's session from their cookie, or null if there is none or it is forged or expired. */
+export function readSession(cookieHeader: string | undefined, secret: string, now = Date.now()): SessionClaims | null {
   const raw = readCookie(cookieHeader, SESSION_COOKIE);
   if (raw === null) return null;
   const [payload, signature] = raw.split(".");

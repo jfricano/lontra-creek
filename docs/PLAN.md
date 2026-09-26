@@ -91,7 +91,7 @@ GitHub Actions: builds arm64 images and deploys over SSH; no Docker needed on a 
 
 ### Budget protection
 
-- Keep the instance from counting as idle. Oracle may reclaim an Always Free instance whose CPU, network, and memory all stay under 20% for a week; its documentation doesn't say whether that spares paid accounts. The stack holds well over 20% of memory (2.4 GB) by design: the broker runs with a fixed, pre-touched 3 GB heap, and the gateways, app, and benches add to it. (A pre-touched 2 GB heap measured 2.35 GiB for the whole stack in CI: too close.) The host's monitoring records memory use, and an alert fires if it drops under 25%.
+- Keep the instance from counting as idle. Oracle may reclaim an Always Free instance whose CPU, network, and memory all stay under 20% for a week; its documentation doesn't say whether that spares paid accounts. The stack holds well over 20% of memory (2.4 GB) by design: the broker runs with a fixed, pre-touched 3 GB heap, and the gateways, app, and benches add to it. Measured in CI: 3.36 GiB for the whole stack with the 3 GB heap (28% of 12 GB before the operating system), against 2.35 GiB with a 2 GB heap, which was too close. The host's monitoring records memory use, and an alert fires if it drops under 25%.
 - Upgrade the Oracle account to Pay As You Go. Always Free resources stay free, the account can't fall back to reduced Free Tier treatment, and community reports say paid accounts aren't reclaimed. That is not official, so the memory rule above still applies.
 - Create an Oracle budget with an alert at $1 of actual spend. Any charge at all means something outside Always Free was created. A budget alarm notifies; it doesn't stop spending.
 - Use only Always Free shapes and storage, recorded in the infrastructure code.
@@ -108,7 +108,7 @@ The simulation (`packages/creek-sim`) is deterministic: the world is a pure func
 - **Snapshots.** The gateway's snapshot handler reads the app's internal snapshot API with a service token.
 - **Checkpoints.** The app writes a world checkpoint to local disk hourly, so a restart replays at most an hour of ticks.
 - **Sessions** are signed badges with expiry, so the server keeps no session table.
-- **Notebooks** live in the app's memory and in a compacted Kafka topic, `field.notebooks`, which keeps the latest record for each key. On startup the app rebuilds them from that topic. A notebook's revision is the write time in milliseconds, kept strictly increasing, so a restart can never reuse a revision for different data. Notebooks expire with their session and are then deleted with a tombstone.
+- **Notebooks** live in the app's memory and in a compacted Kafka topic, `field.notebooks`, which keeps the latest record for each key. On startup the app rebuilds them from that topic. A notebook's revision is the write time in milliseconds, kept strictly increasing, so a restart can never reuse a revision for different data. Notebooks expire with their session: each is published once more as expired and empty (StreamOtter V1 pauses a source on a tombstone), and the topic's delete retention, two hours, removes old records.
 
 Channels: `station` (stationId), `otter` (otterId), `reach` (reachId, camera traps), `holt` (holtId, researchers only), `creekOverview` (watershed), and `notebook` (observerId, its owner only). Topics: `field.gauges`, `field.telemetry`, `field.cameras`, `field.holts`, `creek.overview`, and `field.notebooks`, in two sources so a notebook problem can't pause the world.
 

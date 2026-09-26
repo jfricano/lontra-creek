@@ -1,0 +1,16 @@
+{
+  "name": "@lontra-creek/field-station",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The Lontra Creek field station: the demo application that runs the simulation and serves StreamOtter.",
+  "license": "MIT",
+  "scripts": {
+    "validate": "streamotter validate --config streamotter.json",
+    "generate": "streamotter generate --config streamotter.json --out src/generated"
+  },
+  "dependencies": {
+    "@lontra-creek/sim": "0.0.0",
+    "streamotter": "0.1.0-rc.3"
+  }
+}

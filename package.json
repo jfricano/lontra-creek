@@ -1,0 +1,23 @@
+{
+  "name": "lontra-creek",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "StreamOtter's home site and live demo: a fictional river-otter study running on real Kafka.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "node --test --test-force-exit \"packages/*/test/**/*.test.ts\" \"apps/*/test/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@lontra-creek/sim",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The Lontra Creek simulation: a deterministic watershed, its instruments, and its otters.",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

@@ -6,8 +6,10 @@
   "description": "The Lontra Creek field station: the demo application that runs the simulation and serves StreamOtter.",
   "license": "MIT",
   "scripts": {
+    "configs": "node scripts/configs.ts",
     "validate": "streamotter validate --config streamotter.json",
-    "generate": "streamotter generate --config streamotter.json --out src/generated"
+    "generate": "streamotter generate --config streamotter.json --out src/generated",
+    "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "@lontra-creek/sim": "0.0.0",

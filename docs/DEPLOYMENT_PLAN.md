@@ -48,14 +48,17 @@ Each workstream ends with its tests green in CI. Do them in this order; 1–4 ne
 
 ### 1. Production project and Kafka handlers
 
-- `src/project.ts`: add a `production` environment and write `streamotter.production.json`.
+Done on branch `ws1-production-config`.
+
+- `src/project.ts` has a `production` environment and writes `streamotter.production.json`.
   - Gateway: host `0.0.0.0`, port 7400, path `/streamotter/socket.io`, `allowedOrigins: ["https://streamotter.app"]`.
   - Connection `field`: brokers `["kafka:9094"]`, `tls: { caFile: "/etc/lontra/kafka/ca.pem" }`, SASL `scram-sha-512` with `{ env: "KAFKA_GATEWAY_USERNAME" }` / `{ env: "KAFKA_GATEWAY_PASSWORD" }`.
-  - Sources: `field` (the five `field.*` / `creek.overview` topics, group `streamotter-lontra-creek-field`, `startFrom: "latest"`, generation `field-prod-1`) and `notebooks` (`field.notebooks`, its own group), so a notebook problem can't pause the creek.
-  - The `local-kafka` environment mirrors it with plaintext on `127.0.0.1:19092`.
-- `src/kafka-handlers.ts`: `authenticate` verifies badges with `FIELD_STATION_SECRET`; `authorize` allows `holt` only to researchers and `notebook` only to its owner (`params.observerId === principal.subject`); `map` uses `fromRecord` and keeps its own channel; `snapshot` calls the field station's internal API with `FIELD_STATION_SERVICE_TOKEN` and the handler's `AbortSignal`, throwing on 404 or non-2xx.
-- Check early whether `streamotter start --handlers src/kafka-handlers.ts` loads a `.ts` module under Node 24's type stripping. If it doesn't, compile the handlers with `tsc` (`rewriteRelativeImportExtensions`) into `dist/`.
-- Proof: `npx streamotter validate` accepts all three configs; unit tests for the access rules; the end-to-end run is in workstream 4.
+  - Source `field`: the five `field.*` / `creek.overview` topics, group `streamotter-lontra-creek-field`, `startFrom: "latest"`, generation `field-prod-1`. The `notebooks` source (`field.notebooks`, its own group, so a notebook problem can't pause the creek) arrives with the notebook channel in workstream 2.
+  - Limits: `maxConnections: 300` and `maxSubscriptionsPerConnection: 12`, the starting values from PLAN.md, to be measured on the real host.
+  - The `local-kafka` environment (`streamotter.json`) mirrors it with plaintext on `127.0.0.1:19092`.
+- `src/kafka-handlers.ts`: `authenticate` verifies badges with `FIELD_STATION_SECRET`; `authorize` uses the shared rules in `src/access.ts` (`holt` only for researchers); `map` uses `fromRecord`, keeps its own channel, and throws (pausing the source, never skipping) on a record it can't read or a view on the wrong topic; `snapshot` calls the field station's internal API (`FIELD_STATION_INTERNAL_URL`, `GET /internal/views/:channel/:id`) with `FIELD_STATION_SERVICE_TOKEN` and the handler's `AbortSignal`, throwing on 404, non-2xx, or a malformed answer. Both secrets are required in production.
+- `streamotter start` refuses a `.ts` handler module by its extension (exit 2), before Node is involved. `npm run build -w @lontra-creek/field-station` compiles the handlers with `tsc` (`tsconfig.build.json`, `rewriteRelativeImportExtensions`) into `apps/field-station/dist/`. The compiled module still imports `@lontra-creek/sim` as TypeScript, which Node 24 strips because the workspace link resolves outside `node_modules`; `tsc` doesn't emit it.
+- Proof (`npm test`): the published CLI validates all three configs; unit tests for the access rules and every handler; and `streamotter start` with the compiled handlers refuses to load them without the secrets (exit 1) and, with them, stops at the missing Kafka CA (exit 2) without printing any secret.
 
 ### 2. The field station's production runner
 

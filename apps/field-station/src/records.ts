@@ -47,3 +47,8 @@ export function fromRecord(value: Json): FieldRecord | null {
 export function instanceKey(channel: ChannelName, params: Readonly<Record<string, string | number | boolean>>): string {
   return `${channel}:${Object.values(params).join(",")}`;
 }
+
+/** Where the field station's internal API serves one channel instance's current view. */
+export function viewPath(channel: ChannelName, params: Readonly<Record<string, string | number | boolean>>): string {
+  return `/internal/views/${channel}/${encodeURIComponent(Object.values(params).join(","))}`;
+}

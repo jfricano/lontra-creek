@@ -1,7 +1,8 @@
 /**
- * The field station's StreamOtter project, defined once. `npm run configs` writes
- * it out as the streamotter*.json files the CLI reads, one per environment, since
- * hosts, origins, and sources differ between them while channels and schemas don't.
+ * The field station's StreamOtter project, defined once. `node scripts/configs.ts`
+ * writes it out as the streamotter*.json files the CLI reads, one per environment,
+ * since hosts, origins, and connections differ between them while channels and
+ * schemas don't.
  * Enumerations come from the simulation's own geography, so the schemas can't
  * drift from what the simulation publishes.
  */
@@ -9,13 +10,18 @@ import {
   CAMERAS, HOLTS, OTTERS, REACHES, STATIONS, TOPICS, WATERSHED_ID,
   type ChannelName
 } from "@lontra-creek/sim";
-import type { KafkaConnection, ProjectConfig, Schema, Source } from "streamotter/contracts";
+import type { KafkaConnection, Limits, ProjectConfig, Schema, Source } from "streamotter/contracts";
 import type { AppChannels } from "./generated/streamotter.generated.ts";
 
-export type Environment = "fixture" | "local-kafka";
+/**
+ * fixture: no Kafka, for `npm run dev`. local-kafka: a plaintext broker on this
+ * machine. production: the demo host's compose stack, Kafka over TLS with SCRAM.
+ */
+export type Environment = "fixture" | "local-kafka" | "production";
 
 export const PROJECT_ID = "lontra-creek";
 export const CHANNEL_VERSION = 1 as const;
+export const SITE_ORIGIN = "https://streamotter.app";
 const SITE_DEV_ORIGINS = ["http://localhost:4321", "http://127.0.0.1:4321"];
 
 const RECEIVERS = REACHES.map(reach => reach.receiver);
@@ -121,11 +127,25 @@ const CHANNELS: Record<ChannelName, { paramsSchema: string; payloadSchema: strin
 
 const LOCAL_KAFKA: KafkaConnection = { brokers: ["127.0.0.1:19092"], tls: false };
 
+/** The broker in the demo host's compose stack; see deploy/compose.yaml. */
+const PRODUCTION_KAFKA: KafkaConnection = {
+  brokers: ["kafka:9094"],
+  tls: { caFile: "/etc/lontra/kafka/ca.pem" },
+  sasl: { mechanism: "scram-sha-512", username: { env: "KAFKA_GATEWAY_USERNAME" }, password: { env: "KAFKA_GATEWAY_PASSWORD" } }
+};
+
+/**
+ * Starting bounds for the hosted demo (docs/PLAN.md, Limits and operations): one
+ * connection per open page, and no page needs more than a dozen views. They are
+ * to be measured on the real host before launch, not published as capacity.
+ */
+const HOSTED_LIMITS: Partial<Limits> = { maxConnections: 300, maxSubscriptionsPerConnection: 12 };
+
 function fieldSource(environment: Environment): Source {
   if (environment === "fixture") return { kind: "fixture", generation: "field-fixture-1", fixtureRef: "field" };
   return {
     kind: "kafka",
-    generation: "field-local-1",
+    generation: environment === "production" ? "field-prod-1" : "field-local-1",
     connectionRef: "field",
     topics: [...new Set(Object.values(TOPICS))],
     consumerGroup: "streamotter-lontra-creek-field",
@@ -133,6 +153,24 @@ function fieldSource(environment: Environment): Source {
     // Snapshots come from the field station, so a new consumer group needs only what follows.
     startFrom: "latest"
   };
+}
+
+function gateway(environment: Environment): ProjectConfig["gateway"] {
+  const path = "/streamotter/socket.io";
+  // In production the gateway listens on the compose network; only Caddy publishes a port.
+  if (environment === "production") return { host: "0.0.0.0", port: 7400, path, allowedOrigins: [SITE_ORIGIN] };
+  return { host: "127.0.0.1", port: 7400, path, allowedOrigins: SITE_DEV_ORIGINS };
+}
+
+function connections(environment: Environment): Record<string, KafkaConnection> {
+  switch (environment) {
+    case "fixture":
+      return {};
+    case "local-kafka":
+      return { field: LOCAL_KAFKA };
+    case "production":
+      return { field: PRODUCTION_KAFKA };
+  }
 }
 
 function channel<K extends ChannelName>(name: K) {
@@ -149,8 +187,8 @@ export function projectConfig(environment: Environment): ProjectConfig<AppChanne
   return {
     configVersion: 1,
     projectId: PROJECT_ID,
-    gateway: { host: "127.0.0.1", port: 7400, path: "/streamotter/socket.io", allowedOrigins: SITE_DEV_ORIGINS },
-    connections: environment === "fixture" ? {} : { field: LOCAL_KAFKA },
+    gateway: gateway(environment),
+    connections: connections(environment),
     sources: { field: fieldSource(environment) },
     schemas: SCHEMAS,
     channels: {
@@ -159,14 +197,16 @@ export function projectConfig(environment: Environment): ProjectConfig<AppChanne
       otter: channel("otter"),
       reach: channel("reach"),
       holt: channel("holt")
-    }
+    },
+    ...(environment === "fixture" ? {} : { limits: HOSTED_LIMITS })
   };
 }
 
 /** Where each environment's configuration file lives, relative to the app. */
 export const CONFIG_FILES: Readonly<Record<Environment, string>> = {
   fixture: "streamotter.fixture.json",
-  "local-kafka": "streamotter.json"
+  "local-kafka": "streamotter.json",
+  production: "streamotter.production.json"
 };
 
 export function payloadSchema(channel: ChannelName): Schema {

@@ -17,6 +17,8 @@ type Overview = AppChannels["creekOverview"]["data"];
 
 const BASEFLOW_LC02 = 61;
 const TICKS_PER_GENERATION = 10n ** 12n;
+/** How long to wait for a first connection before saying the demo is unavailable; the SDK keeps trying. */
+const UNAVAILABLE_AFTER_MS = 15_000;
 
 interface Card {
   label: string;
@@ -85,16 +87,23 @@ export async function mountLiveCreek(root: HTMLElement): Promise<void> {
   ];
   const canvas = new CreekCanvas($(root, "canvas") as HTMLCanvasElement, lanes);
 
+  function unavailable(why: string): void {
+    if (root.dataset["status"] === "unavailable") return;
+    root.dataset["status"] = "unavailable";
+    source.textContent = "Field station unavailable";
+    drop.disabled = true;
+    log(`<span class="w">${why}</span>`, "The live demo is unavailable right now.");
+  }
+
   let config;
   try {
     config = await fetchConfig();
   } catch {
-    root.dataset["status"] = "unavailable";
-    source.textContent = "Field station unavailable";
-    log('<span class="w">The field station is not answering.</span>', "The field station is unavailable.");
+    unavailable("The field station is not answering.");
     return;
   }
-  source.textContent = config.mode === "fixture" ? "Local replay of the simulation" : "Live on Kafka";
+  const liveSource = config.mode === "fixture" ? "Local replay of the simulation" : "Live on Kafka";
+  source.textContent = liveSource;
 
   const { createClient } = await import("streamotter/client");
   const client: Client<AppChannels> = createClient<AppChannels>({
@@ -103,11 +112,25 @@ export async function mountLiveCreek(root: HTMLElement): Promise<void> {
     getToken: async ({ signal }) => (await requestBadge("volunteer", signal)).token
   });
 
+  let everConnected = false;
   client.on("state", ({ state }) => {
     connection.textContent = state;
     root.dataset["connection"] = state;
     log(`<span class="${state === "connected" ? "k" : "w"}">connection</span> ${state}`);
+    if (state === "connected") {
+      everConnected = true;
+      if (root.dataset["status"] === "unavailable") {
+        delete root.dataset["status"];
+        source.textContent = liveSource;
+        drop.disabled = root.dataset["network"] === "offline";
+        announcer.textContent = "Connected to the field station.";
+      }
+    }
   });
+  // The gateway may be down while the site API answers; say so rather than spin.
+  setTimeout(() => {
+    if (!everConnected && root.dataset["network"] !== "offline") unavailable("The gateway can't be reached; still trying.");
+  }, UNAVAILABLE_AFTER_MS);
 
   const cards: Card[] = [];
 

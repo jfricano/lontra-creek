@@ -25,14 +25,24 @@ export interface IssuedToken {
   expiresAt: string;
 }
 
-const DEVELOPMENT_SECRET = "lontra-creek-development-secret-never-use-in-production";
-
-/** The signing secret: FIELD_STATION_SECRET (32+ characters), required in production. */
-export function fieldStationSecret(env: NodeJS.ProcessEnv = process.env): string {
-  const configured = env["FIELD_STATION_SECRET"];
+function secret(env: NodeJS.ProcessEnv, name: string, development: string): string {
+  const configured = env[name];
   if (configured !== undefined && configured.length >= 32) return configured;
-  if (env["NODE_ENV"] === "production") throw new Error("FIELD_STATION_SECRET (at least 32 characters) is required in production.");
-  return DEVELOPMENT_SECRET;
+  if (env["NODE_ENV"] === "production") throw new Error(`${name} (at least 32 characters) is required in production.`);
+  return development;
+}
+
+/** The badge signing secret: FIELD_STATION_SECRET (32+ characters), required in production. */
+export function fieldStationSecret(env: NodeJS.ProcessEnv = process.env): string {
+  return secret(env, "FIELD_STATION_SECRET", "lontra-creek-development-secret-never-use-in-production");
+}
+
+/**
+ * What the gateway's snapshot handler presents to the field station's internal API:
+ * FIELD_STATION_SERVICE_TOKEN (32+ characters), required in production.
+ */
+export function serviceToken(env: NodeJS.ProcessEnv = process.env): string {
+  return secret(env, "FIELD_STATION_SERVICE_TOKEN", "lontra-creek-development-service-token-never-in-production");
 }
 
 function sign(payload: string, secret: string): string {

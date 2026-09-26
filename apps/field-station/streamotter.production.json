@@ -60,17 +60,27 @@
   "connections": {
     "field": {
       "brokers": [
-        "127.0.0.1:19092"
+        "kafka:9094"
       ],
-      "tls": false
+      "sasl": {
+        "mechanism": "scram-sha-512",
+        "password": {
+          "env": "KAFKA_GATEWAY_PASSWORD"
+        },
+        "username": {
+          "env": "KAFKA_GATEWAY_USERNAME"
+        }
+      },
+      "tls": {
+        "caFile": "/etc/lontra/kafka/ca.pem"
+      }
     }
   },
   "gateway": {
     "allowedOrigins": [
-      "http://localhost:4321",
-      "http://127.0.0.1:4321"
+      "https://streamotter.app"
     ],
-    "host": "127.0.0.1",
+    "host": "0.0.0.0",
     "path": "/streamotter/socket.io",
     "port": 7400
   },
@@ -762,7 +772,7 @@
       "codec": "json",
       "connectionRef": "field",
       "consumerGroup": "streamotter-lontra-creek-field",
-      "generation": "field-local-1",
+      "generation": "field-prod-1",
       "kind": "kafka",
       "startFrom": "latest",
       "topics": [

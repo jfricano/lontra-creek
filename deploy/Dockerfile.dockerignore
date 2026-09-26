@@ -1,0 +1,10 @@
+# The image copies named paths only; this keeps the build context small.
+**/node_modules
+**/dist
+**/.astro
+**/.data
+.git
+.local
+deploy/secrets
+apps/site/src
+apps/site/public

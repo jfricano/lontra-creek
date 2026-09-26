@@ -36,7 +36,7 @@ How streamotter.app and the Lontra Creek demo get onto the internet, on free tie
 - [x] The field station's production runner: the simulation on the wall clock, write then publish to Kafka, hourly checkpoints, the site API.
 - [x] Notebooks on a compacted topic (expired without tombstones).
 - [ ] The Failure Lab: three benches, leases, the relay-cut proxy, the slow client, the redacted trace feed.
-- [x] `compose.yaml`: Caddy, Kafka 4.1.2, the gateway from npm, the field station; the broker with a fixed, pre-touched 2 GB heap (see PLAN.md, Budget protection). Tested in CI on amd64 and arm64.
+- [x] `compose.yaml`: Caddy, Kafka 4.1.2, the gateway from npm, the field station; the broker with a fixed, pre-touched 3 GB heap (see PLAN.md, Budget protection). Tested in CI on amd64 and arm64.
 - [ ] The Failure Lab's benches in `compose.yaml`.
 - [ ] A server setup script: Docker, the firewall, directories, secrets generated on the server.
 - [ ] GitHub Actions: build arm64 images; deploy to the server over SSH; deploy the static site to Cloudflare.

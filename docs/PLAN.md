@@ -1,6 +1,6 @@
 # Lontra Creek: the StreamOtter site and live demo
 
-September 25, 2026 · Phase 0 (foundation) in progress · Visual blueprint: [StreamOtter Site Blueprint](https://claude.ai/artifact/6Zfj7bgjuXaSShKDQ5LJuv)
+September 25, 2026 · Phase 0 (foundation) in progress · Domain: `streamotter.app` · Visual blueprint: [StreamOtter Site Blueprint](https://claude.ai/artifact/6Zfj7bgjuXaSShKDQ5LJuv)
 
 This repository holds StreamOtter's public home site and its live demo. The demo is a fictional river-otter study at Lontra Creek whose data moves through real Kafka, a real StreamOtter gateway, and the real browser SDK. The site's job is to take a developer from "what is this" to "I watched it survive a failure" to `npm install streamotter` in one visit.
 
@@ -57,7 +57,7 @@ About three minutes, validated by a timed walkthrough before launch. Visitors st
 
 ## The Failure Lab (`/lab`)
 
-A fixed pool of three benches, not one per visitor. Each bench has its own gateway process, topic, and consumer group, is leased to one visitor for five minutes, and is reset between leases. When every bench is busy, the page shows the visitor's place in line and the local-run instructions.
+The Lab ships with the launch. It uses a fixed pool of three benches, not one per visitor. Each bench has its own gateway process, topic, and consumer group, is leased to one visitor for five minutes, and is reset between leases. When every bench is busy, the page shows the visitor's place in line and the local-run instructions.
 
 | Scenario | What the visitor does | What they see |
 | --- | --- | --- |
@@ -68,64 +68,75 @@ A fixed pool of three benches, not one per visitor. Each bench has its own gatew
 
 Benches run `streamotter dev` so their traces can be read. Their management API listens only on the bench's loopback interface; the field station app reads traces server-side and exposes a redacted feed. The field station itself runs `streamotter start` in production mode. The relay cut needs a per-bench network proxy in front of Kafka; it is the one Lab mechanism not yet prototyped.
 
-## Architecture
+## Architecture and hosting
+
+The whole stack runs on free tiers. The only fixed cost is the domain.
 
 ```
-visitor ──HTTPS──▶ CloudFront + S3            static site: pages, docs map, playground, recordings
-   │
-   └──HTTPS/WSS──▶ demo host (one EC2 instance, Docker Compose)
-                     Caddy (TLS, rate limits, port 443 only)
-                       ├─ /streamotter/*  ─▶ gateway: `streamotter start`, production mode, from npm
-                       ├─ /api/*          ─▶ field station app: sessions, scenarios, simulation, snapshot API
-                       └─ /lab/*          ─▶ Failure Lab benches (dev-mode gateways)
-                     Kafka 4.1.2, KRaft single node, TLS + SCRAM-SHA-512, private
-                   DynamoDB: visitor sessions and notebooks (TTL), simulation checkpoints
-                   GitHub Actions: builds images and deploys; no Docker needed on a laptop
+visitor ─HTTPS─▶ Cloudflare (free plan): DNS for streamotter.app, the static site, and a proxy in front of the demo host
+                   │
+                   └─HTTPS/WSS─▶ demo host: one Oracle Cloud Always Free Ampere A1 VM (2 OCPUs, 12 GB), Docker Compose
+                                   Caddy (TLS, rate limits, port 443 only)
+                                     ├─ /streamotter/*  ─▶ gateway: `streamotter start`, production mode, from npm
+                                     ├─ /api/*          ─▶ field station app: sessions, scenarios, simulation, snapshot API
+                                     └─ /lab/*          ─▶ Failure Lab benches (dev-mode gateways)
+                                   Kafka 4.1.2, KRaft single node, TLS + SCRAM-SHA-512, private
+GitHub Actions: builds arm64 images and deploys over SSH; no Docker needed on a laptop
 ```
 
 - **One gateway** is StreamOtter V1's supported topology, so the demo runs what its docs recommend, behind Caddy.
-- **Kafka 4.1.2** is the broker version StreamOtter's Kafka tests use, with TLS and SCRAM as in its production check. MSK Serverless requires IAM authentication, which V1 doesn't support.
-- **The static site deploys separately**, so pages, the docs map, and the playground stay up when the demo host is down. The live panels then show an unavailable state, a labeled recording, and local-run instructions.
+- **Kafka 4.1.2** is the broker version StreamOtter's Kafka tests use, with TLS and SCRAM as in its production check. Managed Kafka free tiers are small, and managed services are outside StreamOtter's verified matrix.
+- **Oracle Cloud's Always Free tier** is the only free option large enough for a JVM broker plus several Node processes: Ampere A1 with 2 OCPUs and 12 GB of memory, 200 GB of block storage, and 10 TB of monthly egress. Oracle halved the A1 allowance on June 15, 2026 without announcing it, so the design stays portable: plain Docker Compose and Caddy, which move to any Linux host by redeploying.
+- **Cloudflare** registers the domain at cost ($14.20 a year for `.app`), serves the static site, and proxies the demo host with WebSockets on its free plan. The static site deploys separately, so pages, the docs map, and the playground stay up when the demo host is down. Live panels then show an unavailable state, a labeled recording, and local-run instructions.
+
+### Budget protection
+
+- Keep the instance from counting as idle. Oracle may reclaim an Always Free instance whose CPU, network, and memory all stay under 20% for a week; its documentation doesn't say whether that spares paid accounts. The stack holds well over 20% of memory (2.4 GB) by design: the broker runs with a fixed 2 GB heap, and the gateways, app, and benches add to it. The host's monitoring records memory use, and an alert fires if it drops under 25%.
+- Upgrade the Oracle account to Pay As You Go. Always Free resources stay free, the account can't fall back to reduced Free Tier treatment, and community reports say paid accounts aren't reclaimed. That is not official, so the memory rule above still applies.
+- Create an Oracle budget with an alert at $1 of actual spend. Any charge at all means something outside Always Free was created. A budget alarm notifies; it doesn't stop spending.
+- Use only Always Free shapes and storage, recorded in the infrastructure code.
+- Cloudflare's and GitHub's free plans have no usage charges. GitHub Actions minutes are free for public repositories; a private repository gets 2,000 minutes a month with a $0 spending limit by default.
+- Fallback if Oracle stops working out: the same Compose stack on an AWS t4g.medium at about $33–42 a month.
 
 ## Data flow and consistency
 
-The simulation (`packages/creek-sim`) is deterministic: the world is a pure function of its seed and tick. The field station app is the only writer.
+The simulation (`packages/creek-sim`) is deterministic: the world is a pure function of its seed and tick. The field station app is the only writer. There is no separate database.
 
 - **Ticks and time.** One tick is five simulated minutes. In the hosted demo a tick happens every two real seconds, so a simulated day lasts 9.6 minutes. The target tick comes from the wall clock, so a restarted app computes the same world and continues where it should be.
 - **Revisions.** A shared-world entity's revision is `generation × 10¹² + tick`, where tick is when it last changed. The generation increases whenever the simulation's logic changes or the world is reset, so revisions only move forward even when a new version recomputes history differently. Without that, a replayed tick with different data would be a `REVISION_CONFLICT` and pause the source.
 - **Write, then publish.** Each tick, the app updates the state its snapshot API serves, then publishes the changed entities to Kafka, keyed by entity ID so each one stays on one partition. A snapshot is therefore never older than anything already published. After a crash, the app republishes the current state of every entity; equal revisions with equal data are dropped as duplicates. A catch-up after downtime publishes only the latest state, which is correct for full-state channels.
-- **Snapshots.** The gateway's snapshot handler reads the app's internal snapshot API with a service token. Visitor notebooks live in DynamoDB and are read with strongly consistent reads, written with a conditional check that the revision increases, and expire through TTL (reads also check expiry, because TTL deletion runs late).
-- **Checkpoints.** The app checkpoints the world hourly so a restart replays at most an hour of ticks.
+- **Snapshots.** The gateway's snapshot handler reads the app's internal snapshot API with a service token.
+- **Checkpoints.** The app writes a world checkpoint to local disk hourly, so a restart replays at most an hour of ticks.
+- **Sessions** are signed badges with expiry, so the server keeps no session table.
+- **Notebooks** live in the app's memory and in a compacted Kafka topic, `field.notebooks`, which keeps the latest record for each key. On startup the app rebuilds them from that topic. A notebook's revision is the write time in milliseconds, kept strictly increasing, so a restart can never reuse a revision for different data. Notebooks expire with their session and are then deleted with a tombstone.
 
 Channels: `station` (stationId), `otter` (otterId), `reach` (reachId, camera traps), `holt` (holtId, researchers only), `creekOverview` (watershed), and `notebook` (observerId, its owner only). Topics: `field.gauges`, `field.telemetry`, `field.cameras`, `field.holts`, `creek.overview`, and `field.notebooks`, in two sources so a notebook problem can't pause the world.
 
 ## Limits and operations
 
-Record these on the real host before launch: concurrent visitors (start at 300), subscriptions per visitor (12), scenario actions (one per second), session lifetime (30 minutes), idle expiry (10 minutes), Kafka retention, and gateway queue limits. Two sessions must not be able to read or affect each other's notebook. Keep deployment, rollback, health checks, and a budget alarm with the infrastructure code. The operator is the repository owner.
+Record these on the real host before launch: concurrent visitors (start at 300), subscriptions per visitor (12), scenario actions (one per second), session lifetime (30 minutes), idle expiry (10 minutes), Kafka retention, and gateway queue limits. Two sessions must not be able to read or affect each other's notebook. Keep deployment, rollback, health checks, and the budget alarm with the infrastructure code. The operator is the repository owner.
 
-Estimated cost: about $33–42 a month on AWS on-demand prices (EC2 t4g.medium, public IPv4, 30 GB gp3, DynamoDB on-demand, CloudFront and S3, Route 53), plus the domain. Confirm with the AWS pricing calculator.
+Cost: $0 a month on the free tiers above, plus $14.20 a year for `streamotter.app`.
 
 ## Phases
 
 | Phase | Delivers | Needs |
 | --- | --- | --- |
-| 0. Foundation | This repository, the plan, design tokens, the site scaffold, the creek simulation with tests, and the field station's StreamOtter configuration validated with the published CLI. | Nothing further. |
-| 1. Static site | Home with a recorded hero, When it breaks, Workbench tour, Playground validator, the docs map, Releases. Deployable on its own. | Domain. |
-| 2. Field station | Production gateway, app, simulation, DynamoDB; the six chapters; containers; staging on AWS. | AWS account and budget; local Kafka. |
-| 3. Failure Lab | Bench pool, relay-cut proxy, slow client, redacted trace feed. | Decision: before or after launch. |
+| 0. Foundation | This repository, the plan, the creek simulation with tests, the field station's StreamOtter project validated and exercised with the published package, design tokens, and the site scaffold. | Nothing further. |
+| 1. Static site | Home with a recorded hero, When it breaks, Workbench tour, Playground validator, the docs map, Releases. Deployable on its own. | `streamotter.app` registered; a Cloudflare account. |
+| 2. Field station | Production gateway, app, simulation runner, notebooks; the six chapters; containers; staging on the demo host. | An Oracle Cloud account on Pay As You Go, with the budget alarm; local Kafka. |
+| 3. Failure Lab | Bench pool, relay-cut proxy, slow client, redacted trace feed. Ships with the launch. | Nothing further. |
 | 4. Launch | The criteria below, then publication. | Owner's go-ahead. |
 
 ## Launch criteria
 
 - Every route and call to action works; install commands and code samples are checked against the pinned `streamotter` version.
-- The hosted walkthrough passes on the real deployment, including session isolation, expiry, cleanup, denial, reconnect, and the busy and unavailable states.
+- The hosted walkthrough and the Failure Lab pass on the real deployment, including session isolation, expiry, cleanup, denial, reconnect, bench leasing, and the busy and unavailable states.
 - Keyboard navigation, visible focus, readable contrast, screen-reader labels, reduced motion, and narrow screens work on every page. Supported browsers are named and checked.
 - Titles, descriptions, social previews, a sitemap, canonical URLs, and a useful not-found page exist. Page load and demo startup are measured on a named device and network profile.
-- HTTPS, WebSocket connectivity through the proxy, secrets handling, quotas, health monitoring, rollback, and the fallback recording are verified on staging. Operating limits, budget, and operator are recorded here.
+- HTTPS, WebSocket connectivity through the proxy, secrets handling, quotas, health monitoring, rollback, the budget alarm, and the fallback recording are verified on staging. Operating limits and the operator are recorded here.
 
 ## Open decisions
 
-- Domain. `streamotter.com` was registered on May 8, 2026 (GoDaddy, Cloudflare DNS); the owner is confirming whether it's theirs. `streamotter.io` and `streamotter.org` appeared unregistered on September 25.
-- AWS account and monthly ceiling (proposed budget alarm: $60).
-- Whether the Failure Lab ships with the launch or after it.
+- Confirm the hosting above (Oracle Cloud Always Free and Cloudflare), or choose the AWS fallback.
 - Whether this repository is public on GitHub, and when it is first pushed.

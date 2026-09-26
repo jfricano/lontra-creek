@@ -12,6 +12,7 @@ import {
 } from "@lontra-creek/sim";
 import type { KafkaConnection, Limits, ProjectConfig, Schema, Source } from "streamotter/contracts";
 import type { AppChannels } from "./generated/streamotter.generated.ts";
+import { NOTEBOOK_TOPIC } from "./records.ts";
 
 /**
  * fixture: no Kafka, for `npm run dev`. local-kafka: a plaintext broker on this
@@ -32,6 +33,15 @@ const TRENDS = ["rising", "falling", "steady"];
 const WEATHER = ["clear", "rain", "storm"];
 const OTTER_NAMES = OTTERS.map(otter => otter.name);
 
+/**
+ * Field notebooks (walkthrough chapter 6): what a visitor can log is chosen from
+ * these lists, never typed, and dens stay off them.
+ */
+export const NOTEBOOK_MAX_ENTRIES = 20;
+export const SIGHTING_OTTERS: readonly string[] = [...OTTERS.map(otter => otter.id), "untagged"];
+export const SIGHTING_REACHES: readonly string[] = REACHES.map(reach => reach.id);
+export const SIGHTING_ACTIVITIES: readonly string[] = ["resting", "foraging", "traveling", "grooming", "playing"];
+
 const text = (maxLength: number): Schema => ({ type: "string", maxLength });
 const oneOf = (values: readonly string[]): Schema => ({ type: "string", enum: values });
 const integer = (minimum: number, maximum: number): Schema => ({ type: "integer", minimum, maximum });
@@ -44,6 +54,8 @@ function object(properties: Record<string, Schema>): Schema {
 const studyStamp = object({ day: integer(0, 1_000_000), time: text(5) });
 const publicReach = oneOf([...REACHES.map(reach => reach.id), "withheld", "outside"]);
 const publicActivity = oneOf([...ACTIVITIES, "away"]);
+/** A notebook's owner: the badge's subject. */
+const observerId: Schema = { type: "string", minLength: 8, maxLength: 64 };
 
 const SCHEMAS: Record<string, Schema> = {
   WatershedParams: object({ watershed: oneOf([WATERSHED_ID]) }),
@@ -115,6 +127,17 @@ const SCHEMAS: Record<string, Schema> = {
     },
     lastEntry: studyStamp,
     lastExit: studyStamp
+  }),
+  NotebookParams: object({ observerId }),
+  Notebook: object({
+    observerId,
+    // An expired notebook is published once more, empty: StreamOtter sources take no tombstones.
+    status: oneOf(["open", "expired"]),
+    entries: {
+      type: "array",
+      maxItems: NOTEBOOK_MAX_ENTRIES,
+      items: object({ at: studyStamp, otterId: oneOf(SIGHTING_OTTERS), reachId: oneOf(SIGHTING_REACHES), activity: oneOf(SIGHTING_ACTIVITIES) })
+    }
   })
 };
 
@@ -156,6 +179,20 @@ function fieldSource(environment: Environment): Source {
   };
 }
 
+/** Notebooks are a source of their own, so a notebook problem can't pause the creek. */
+function notebooksSource(environment: Environment): Source {
+  if (environment === "fixture") return { kind: "fixture", generation: "notebooks-fixture-1", fixtureRef: "notebooks" };
+  return {
+    kind: "kafka",
+    generation: environment === "production" ? "notebooks-prod-1" : "notebooks-local-1",
+    connectionRef: "field",
+    topics: [NOTEBOOK_TOPIC],
+    consumerGroup: "streamotter-lontra-creek-notebooks",
+    codec: "json",
+    startFrom: "latest"
+  };
+}
+
 function gateway(environment: Environment): ProjectConfig["gateway"] {
   const path = GATEWAY_PATH;
   // In production the gateway listens on the compose network; only Caddy publishes a port.
@@ -190,14 +227,22 @@ export function projectConfig(environment: Environment): ProjectConfig<AppChanne
     projectId: PROJECT_ID,
     gateway: gateway(environment),
     connections: connections(environment),
-    sources: { field: fieldSource(environment) },
+    sources: { field: fieldSource(environment), notebooks: notebooksSource(environment) },
     schemas: SCHEMAS,
     channels: {
       creekOverview: channel("creekOverview"),
       station: channel("station"),
       otter: channel("otter"),
       reach: channel("reach"),
-      holt: channel("holt")
+      holt: channel("holt"),
+      notebook: {
+        version: CHANNEL_VERSION,
+        source: "notebooks",
+        paramsSchema: "NotebookParams",
+        payloadSchema: "Notebook",
+        handlersRef: "notebook",
+        delivery: { kind: "state", overflow: "resync" }
+      }
     },
     ...(environment === "fixture" ? {} : { limits: HOSTED_LIMITS })
   };

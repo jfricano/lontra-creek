@@ -1,7 +1,8 @@
 /**
  * Compile-time proof that the simulation's views are exactly the payloads the
  * generated channel types expect, in both directions. `npm run typecheck` fails if
- * the simulation and the schemas in project.ts drift apart.
+ * the simulation and the schemas in project.ts drift apart. Notebooks are the one
+ * channel the simulation doesn't publish.
  */
 import type { ChannelParams, ChannelViews } from "@lontra-creek/sim";
 import type { AppChannels } from "./generated/streamotter.generated.ts";
@@ -10,7 +11,7 @@ type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 type Expect<T extends true> = T;
 
 export type ChannelContractsMatch = [
-  Expect<Same<keyof AppChannels, keyof ChannelViews>>,
+  Expect<Same<Exclude<keyof AppChannels, "notebook">, keyof ChannelViews>>,
   Expect<Same<AppChannels["creekOverview"]["data"], ChannelViews["creekOverview"]>>,
   Expect<Same<AppChannels["station"]["data"], ChannelViews["station"]>>,
   Expect<Same<AppChannels["otter"]["data"], ChannelViews["otter"]>>,

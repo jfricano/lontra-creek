@@ -1,6 +1,6 @@
 /**
  * The field station on Kafka: the simulation on the wall clock, publishing every
- * changed view, with the site API and the gateway's snapshot API.
+ * changed view, visitors' notebooks, the site API, and the gateway's snapshot API.
  *
  *   node --disable-warning=TimeoutNegativeWarning src/server/main.ts
  *
@@ -9,15 +9,24 @@
  * silences only that warning.
  */
 import type { Server } from "node:http";
+import { TENANT_ID } from "@lontra-creek/sim";
+import { NOTEBOOK_TOPIC } from "../records.ts";
 import { readConfig } from "./config.ts";
 import { internalApi, publicApi } from "./http.ts";
-import { createKafkaPublisher } from "./kafka.ts";
+import { connectKafka } from "./kafka.ts";
+import { Notebooks } from "./notebooks.ts";
+import { PublishQueue } from "./queue.ts";
 import { FieldStation } from "./station.ts";
+
+const NOTEBOOK_SWEEP_MS = 10_000;
+const RETRY_MS = 5_000;
 
 const log = (message: string): void => console.log(`${new Date().toISOString()} ${message}`);
 const config = readConfig();
-const publisher = await createKafkaPublisher(config.kafka, log);
-const station = new FieldStation({ publisher, dataDir: config.dataDir, epoch: config.epoch, tickMs: config.tickMs, generation: config.generation, log });
+const kafka = await connectKafka(config.kafka, log);
+const queue = new PublishQueue(kafka.publisher, log);
+const station = new FieldStation({ queue, dataDir: config.dataDir, epoch: config.epoch, tickMs: config.tickMs, generation: config.generation, log });
+const notebooks = new Notebooks({ queue, tenantId: TENANT_ID, log });
 
 function listen(server: Server, port: number, name: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -30,39 +39,71 @@ function listen(server: Server, port: number, name: string): Promise<void> {
 }
 
 // Listen first so the health check can say "catching up" instead of timing out.
-const api = publicApi({ config, station, log });
-const internal = internalApi({ serviceToken: config.serviceToken, station });
+const api = publicApi({ config, station, notebooks, log });
+const internal = internalApi({ serviceToken: config.serviceToken, station, notebooks });
 await listen(api, config.port, "Site API");
 await listen(internal, config.internalPort, "Internal API");
 
 await station.start();
 log(`Field station running: generation ${config.generation}, epoch ${station.epoch}, a tick every ${config.tickMs} ms.`);
 
-let timer: NodeJS.Timeout | undefined;
 let stopping = false;
-function schedule(): void {
+const timers = new Set<NodeJS.Timeout>();
+function later(delayMs: number, run: () => void): void {
   if (stopping) return;
-  timer = setTimeout(() => {
+  const timer = setTimeout(() => {
+    timers.delete(timer);
+    run();
+  }, delayMs);
+  timers.add(timer);
+}
+
+function tick(): void {
+  later(Math.max(0, station.nextTickAt() - Date.now()), () => {
     station.advance()
       .catch((error: unknown) => log(`Advancing failed: ${error instanceof Error ? error.message : String(error)}`))
-      .finally(schedule);
-  }, Math.max(0, station.nextTickAt() - Date.now()));
+      .finally(tick);
+  });
 }
+
+/** Rebuilds notebooks from their topic, retrying until Kafka answers. */
+function loadNotebooks(): void {
+  kafka.readAll(NOTEBOOK_TOPIC).then(
+    values => {
+      notebooks.load(values);
+      void queue.flush();
+      sweepNotebooks();
+    },
+    (error: unknown) => {
+      log(`Reading ${NOTEBOOK_TOPIC} failed; retrying: ${error instanceof Error ? error.message : String(error)}`);
+      later(RETRY_MS, loadNotebooks);
+    }
+  );
+}
+
+function sweepNotebooks(): void {
+  later(NOTEBOOK_SWEEP_MS, () => {
+    if (notebooks.expire() > 0) void queue.flush();
+    sweepNotebooks();
+  });
+}
+
 // Publish the startup republish now rather than on the first tick.
-void station.flush();
-schedule();
+void queue.flush();
+tick();
+loadNotebooks();
 
 async function stop(signal: string): Promise<void> {
   if (stopping) return;
   stopping = true;
   log(`${signal}: stopping.`);
-  clearTimeout(timer);
+  for (const timer of timers) clearTimeout(timer);
   await Promise.all([api, internal].map(server => new Promise<void>(resolve => {
     server.close(() => resolve());
     server.closeIdleConnections();
   })));
   await station.stop();
-  await publisher.close().catch(() => undefined);
+  await kafka.publisher.close().catch(() => undefined);
   log("Stopped.");
   process.exit(0);
 }

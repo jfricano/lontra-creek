@@ -1,0 +1,51 @@
+# The demo host's only public entrance, on port 443. Cloudflare proxies visitors
+# here; in CI, the test connects directly with a throwaway certificate.
+#
+#   /streamotter/*  the gateway (WebSocket upgrades and the browser's Origin pass through)
+#   /api/*          the field station's site API
+#   anything else   404, including the field station's health check and internal API
+#
+# Environment: DEMO_HOST (default demo.streamotter.app), HTTPS_PORT (default 443),
+# GATEWAY_UPSTREAM and FIELD_STATION_UPSTREAM (the compose service addresses), and
+# ORIGIN_CERT_DIR (cert.pem and key.pem, default /etc/caddy/origin).
+{
+	# Certificates come from files (the Cloudflare origin certificate), not ACME,
+	# and nothing listens on port 80.
+	auto_https off
+	servers {
+		# Behind Cloudflare, the visitor's address is in CF-Connecting-IP. Only
+		# Cloudflare's published ranges (www.cloudflare.com/ips) may set it.
+		trusted_proxies static 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+		client_ip_headers CF-Connecting-IP
+	}
+}
+
+https://{$DEMO_HOST:demo.streamotter.app}:{$HTTPS_PORT:443} {
+	tls {$ORIGIN_CERT_DIR:/etc/caddy/origin}/cert.pem {$ORIGIN_CERT_DIR:/etc/caddy/origin}/key.pem
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		X-Frame-Options DENY
+		-Server
+	}
+
+	handle /streamotter/* {
+		reverse_proxy {$GATEWAY_UPSTREAM:gateway:7400}
+	}
+
+	handle /api/* {
+		request_body {
+			max_size 8KB
+		}
+		reverse_proxy {$FIELD_STATION_UPSTREAM:field-station:7402} {
+			# The field station's per-client request budget keys on this.
+			header_up X-Client-IP {client_ip}
+		}
+	}
+
+	handle {
+		respond 404
+	}
+}

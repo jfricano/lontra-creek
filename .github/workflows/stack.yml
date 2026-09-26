@@ -1,0 +1,88 @@
+name: Stack
+
+# The demo host's whole stack in containers, tested from outside: the image from
+# deploy/Dockerfile, Kafka 4.1.2 over TLS with SCRAM, the gateway from npm, the
+# field station, and Caddy, with throwaway secrets and certificates. It runs on
+# amd64 and on arm64, the Oracle Ampere host's architecture.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  stack:
+    name: Stack (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          load: true
+          tags: lontra-creek:ci
+          cache-from: type=gha,scope=stack-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=stack-${{ matrix.arch }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Make throwaway secrets and certificates
+        run: |
+          stack="$RUNNER_TEMP/lontra"
+          deploy/make-secrets.sh "$stack/.env"
+          deploy/make-certs.sh kafka "$stack/secrets/kafka"
+          deploy/make-certs.sh test-origin "$stack/secrets/origin" demo.streamotter.app
+          {
+            echo "LONTRA_IMAGE=lontra-creek:ci"
+            echo "LONTRA_SECRETS=$stack/secrets"
+            # A study that began a day ago: the field station catches up 43,200 ticks at startup.
+            echo "FIELD_EPOCH=$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$stack/.env"
+          echo "STACK_ENV=$stack/.env" >> "$GITHUB_ENV"
+          # The test reaches Caddy by the production host name.
+          echo "127.0.0.1 demo.streamotter.app" | sudo tee -a /etc/hosts
+
+      - name: Start the stack
+        run: docker compose -f deploy/compose.yaml --env-file "$STACK_ENV" up --detach --wait --wait-timeout 300
+
+      - name: Test the stack from outside
+        env:
+          NODE_EXTRA_CA_CERTS: ${{ runner.temp }}/lontra/secrets/origin/ca.pem
+          STACK_ORIGIN: https://demo.streamotter.app
+          STACK_RESTART_GATEWAY: docker compose -f deploy/compose.yaml --env-file ${{ runner.temp }}/lontra/.env restart gateway
+          STACK_RESTART_FIELD_STATION: docker compose -f deploy/compose.yaml --env-file ${{ runner.temp }}/lontra/.env restart field-station
+        run: node --test --test-force-exit deploy/test/stack.test.ts
+
+      - name: Resource use
+        if: always()
+        run: docker stats --no-stream
+
+      - name: Logs
+        if: always()
+        run: docker compose -f deploy/compose.yaml --env-file "$STACK_ENV" logs --no-color --timestamps
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose -f deploy/compose.yaml --env-file "$STACK_ENV" down --volumes

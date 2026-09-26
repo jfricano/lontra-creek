@@ -9,7 +9,8 @@ export const LINKS = {
   guides: "https://github.com/jfricano/StreamOtter/tree/main/docs/guides",
   gettingStarted: "https://github.com/jfricano/StreamOtter/blob/main/docs/guides/getting-started.md",
   status: "https://github.com/jfricano/StreamOtter/blob/main/docs/IMPLEMENTATION_STATUS.md",
-  changelog: "https://github.com/jfricano/StreamOtter/blob/main/CHANGELOG.md"
+  changelog: "https://github.com/jfricano/StreamOtter/blob/main/CHANGELOG.md",
+  demoRepo: "https://github.com/jfricano/lontra-creek"
 } as const;
 
 export interface Page {

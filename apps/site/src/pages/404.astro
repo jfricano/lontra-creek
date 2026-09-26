@@ -1,0 +1,35 @@
+---
+import Base from "../layouts/Base.astro";
+import { LINKS, PAGES } from "../site.ts";
+---
+
+<Base title="Not found · StreamOtter" description="This page doesn't exist on streamotter.app." noindex>
+  <section class="wrap missing">
+    <p class="eyebrow">404 · Not found</p>
+    <h1>This reach of the creek isn't on the map.</h1>
+    <p class="lede">
+      The page you asked for doesn't exist here. If a link on this site brought you here,
+      please <a href={`${LINKS.demoRepo}/issues`}>open an issue</a>.
+    </p>
+    <nav class="missing-links" aria-label="Where to go instead">
+      <a class="button button-primary" href="/">Home</a>
+      {PAGES.map(page => <a class="button button-quiet" href={page.href}>{page.label}</a>)}
+    </nav>
+  </section>
+</Base>
+
+<style>
+  .missing {
+    padding-block: clamp(56px, 10vw, 120px);
+    display: grid;
+    gap: 18px;
+    max-width: 820px;
+    margin-inline: auto;
+  }
+  .missing-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 8px;
+  }
+</style>

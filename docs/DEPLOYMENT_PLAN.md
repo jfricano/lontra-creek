@@ -75,9 +75,12 @@ The runner is done on branch `ws2-runner`; notebooks are next.
 
 ### 3. The site's production wiring
 
-- `src/scripts/field-api.ts`: a base origin from `import.meta.env.PUBLIC_FIELD_STATION_ORIGIN`; empty in development, where Vite proxies `/api`. Use `credentials: "include"`.
-- The unavailable state: a clear message, a labeled recording of the live panel (to be recorded), and the local-run instructions.
-- A 404 page, `robots.txt`, a sitemap, and a social preview image generated from the brand assets.
+Done on branch `ws3-site-wiring`, except the recording.
+
+- `src/scripts/field-api.ts` calls `${PUBLIC_FIELD_STATION_ORIGIN}/api/…` with `credentials: "include"`. The variable is set at build time (`https://demo.streamotter.app` for production) and empty in development, where Vite proxies `/api`.
+- The unavailable state: when `/api/config` fails, or the gateway can't be reached within 15 seconds (the SDK keeps trying, and the notice clears on connecting), the live panel says the demo isn't answering, hides its connection controls, and shows how to run the demo locally. Still to do: a labeled recording of the live panel, once there's a hosted run to record.
+- `src/pages/404.astro`, `public/robots.txt`, and `src/pages/sitemap.xml.ts`, which lists the home page and every page marked `ready`; placeholder pages and the 404 are `noindex`.
+- `public/social-preview.png` (1200 × 630), made by `scripts/brand-assets.mjs` from the logo, and the Open Graph and Twitter card tags that use it.
 
 ### 4. Containers and a full-stack test in CI
 

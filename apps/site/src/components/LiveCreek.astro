@@ -2,7 +2,9 @@
 /**
  * The live panel: real subscriptions to the Lontra Creek field station, a creek
  * that moves with its real flow, and controls that cut this page's own connection.
+ * When the demo host doesn't answer, it says so and shows how to run the demo locally.
  */
+import { LINKS } from "../site.ts";
 ---
 
 <section class="live-creek" data-live-creek data-connection="idle" data-network="online" aria-label="Live data from the Lontra Creek field station">
@@ -59,9 +61,17 @@
     <p class="lc-note" data-note>Try it: cut this page's connection. The creek keeps moving without you, and every view says it's stale until fresh snapshots arrive.</p>
   </div>
   <ol class="lc-log" data-log aria-label="What the SDK reported"></ol>
-  <p class="lc-unavailable">
-    The field station isn't answering right now. To run it yourself, clone the repository and run <code>npm install</code>, then <code>npm run dev</code>.
-  </p>
+  <div class="lc-unavailable">
+    <p>
+      <b>The live demo isn't answering right now.</b> The field station's server may be restarting or down; the rest of
+      this site works without it. You can run the same demo on your machine with Node.js 24 or later, no Kafka needed:
+    </p>
+    <pre><code>git clone {LINKS.demoRepo}.git
+cd lontra-creek
+npm install
+npm run dev</code></pre>
+    <p>Then open <code>http://127.0.0.1:4321</code>. <a href={LINKS.demoRepo}>The demo's source is on GitHub.</a></p>
+  </div>
   <div class="sr-only" aria-live="polite" data-announce></div>
 </section>
 
@@ -364,17 +374,39 @@
   }
   .lc-unavailable {
     display: none;
+    gap: 10px;
     padding: 14px 18px;
     background: rgba(242, 184, 75, 0.12);
     color: var(--p-ink);
     font-size: 0.92rem;
   }
   .live-creek[data-status="unavailable"] .lc-unavailable {
-    display: block;
+    display: grid;
+  }
+  .live-creek[data-status="unavailable"] .lc-controls {
+    display: none;
+  }
+  .lc-unavailable b {
+    color: var(--stale);
   }
   .lc-unavailable code {
     background: rgba(255, 255, 255, 0.08);
     color: var(--p-ink);
+  }
+  .lc-unavailable pre {
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(2, 10, 28, 0.6);
+    overflow-x: auto;
+    font: 400 0.8rem/1.6 var(--mono);
+  }
+  .lc-unavailable pre code {
+    background: none;
+    padding: 0;
+  }
+  .lc-unavailable a {
+    color: var(--live);
   }
   @media (max-width: 880px) {
     .lc-body {

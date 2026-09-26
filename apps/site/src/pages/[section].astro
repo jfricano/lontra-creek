@@ -9,7 +9,7 @@ export function getStaticPaths() {
 const { page } = Astro.props as { page: Page };
 ---
 
-<Base title={`${page.label} · StreamOtter`} description={page.summary}>
+<Base title={`${page.label} · StreamOtter`} description={page.summary} noindex={!page.ready}>
   <section class="wrap upcoming">
     <p class="eyebrow">{page.question}</p>
     <h1>{page.label}</h1>

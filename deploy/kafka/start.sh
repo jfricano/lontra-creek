@@ -23,7 +23,7 @@ DATA="${KAFKA_DATA_DIR:-/var/lib/kafka/data}"
 CERTS="${KAFKA_CERT_DIR:-/etc/lontra/kafka}"
 ADVERTISED_HOST="${KAFKA_ADVERTISED_HOST:-kafka}"
 CONFIG="${KAFKA_CONFIG:-/tmp/lontra-kafka.properties}"
-export KAFKA_HEAP_OPTS="${KAFKA_HEAP_OPTS:--Xms2g -Xmx2g -XX:+AlwaysPreTouch}"
+export KAFKA_HEAP_OPTS="${KAFKA_HEAP_OPTS:--Xms3g -Xmx3g -XX:+AlwaysPreTouch}"
 
 for name in KAFKA_GATEWAY_USERNAME KAFKA_GATEWAY_PASSWORD KAFKA_FIELD_STATION_USERNAME KAFKA_FIELD_STATION_PASSWORD; do
   value="${!name:-}"

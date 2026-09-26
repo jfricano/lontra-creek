@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@lontra-creek/sim": "0.0.0",
+    "kafkajs": "2.2.4",
     "streamotter": "0.1.0-rc.3"
   }
 }

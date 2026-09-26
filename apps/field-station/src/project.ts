@@ -22,6 +22,7 @@ export type Environment = "fixture" | "local-kafka" | "production";
 export const PROJECT_ID = "lontra-creek";
 export const CHANNEL_VERSION = 1 as const;
 export const SITE_ORIGIN = "https://streamotter.app";
+export const GATEWAY_PATH = "/streamotter/socket.io";
 const SITE_DEV_ORIGINS = ["http://localhost:4321", "http://127.0.0.1:4321"];
 
 const RECEIVERS = REACHES.map(reach => reach.receiver);
@@ -156,7 +157,7 @@ function fieldSource(environment: Environment): Source {
 }
 
 function gateway(environment: Environment): ProjectConfig["gateway"] {
-  const path = "/streamotter/socket.io";
+  const path = GATEWAY_PATH;
   // In production the gateway listens on the compose network; only Caddy publishes a port.
   if (environment === "production") return { host: "0.0.0.0", port: 7400, path, allowedOrigins: [SITE_ORIGIN] };
   return { host: "127.0.0.1", port: 7400, path, allowedOrigins: SITE_DEV_ORIGINS };

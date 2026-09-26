@@ -1,0 +1,283 @@
+/*
+ * streamotter.app design tokens. Colors are sampled from the StreamOtter logo:
+ * ink (#05122F) and azure (#0091F5) from the wordmark, deep channel water
+ * (#01448A), the cyan code lines in the water (#01E1FC, which means "live"),
+ * and otter brown and cream for the cast. Stale borrows the color of silt.
+ */
+:root {
+  color-scheme: light;
+  --ground: #f3f7fb;
+  --surface: #ffffff;
+  --surface-2: #e8f0f8;
+  --line: #d0dce8;
+  --ink: #05122f;
+  --ink-2: #41506b;
+  --ink-3: #62708a;
+  --accent: #0068c2;
+  --accent-ink: #ffffff;
+  --azure: #0091f5;
+  --channel: #01448a;
+  --signal: #01e1fc;
+  --splash: #00acfd;
+  --otter: #693f39;
+  --fur: #9a5d49;
+  --cream: #fae9d4;
+  --otter-ink: #6e3f33;
+  --live: #00728a;
+  --live-bg: #d6f5fb;
+  --sync: #0058a6;
+  --sync-bg: #dceafa;
+  --stale: #7f4f00;
+  --stale-bg: #fae9c6;
+  --resync: #9c4300;
+  --resync-bg: #fbe3cf;
+  --failed: #ae1f2c;
+  --failed-bg: #fbe0e2;
+  --code-bg: #07142e;
+  --code-ink: #d6e5f8;
+  --shadow: 0 1px 2px rgba(5, 18, 47, 0.05), 0 12px 32px rgba(5, 18, 47, 0.08);
+
+  --display: "Bricolage Grotesque Variable", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body: "Figtree Variable", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --radius: 14px;
+  --radius-lg: 22px;
+  --gutter: clamp(16px, 4vw, 40px);
+  --max: 1180px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --ground: #030b1f;
+    --surface: #081631;
+    --surface-2: #0d1f42;
+    --line: #1b2f5a;
+    --ink: #e9f2fc;
+    --ink-2: #a9bad5;
+    --ink-3: #7d90b1;
+    --accent: #52b8ff;
+    --accent-ink: #031027;
+    --otter-ink: #e3a98c;
+    --live: #01e1fc;
+    --live-bg: #062f3d;
+    --sync: #7cc4ff;
+    --sync-bg: #0c2747;
+    --stale: #f2b84b;
+    --stale-bg: #33260b;
+    --resync: #ff9c52;
+    --resync-bg: #3a230e;
+    --failed: #ff6f76;
+    --failed-bg: #3b1519;
+    --code-bg: #040e24;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.3);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-padding-top: 88px;
+}
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font: 400 17px/1.62 var(--body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+img,
+svg,
+canvas {
+  max-width: 100%;
+}
+
+a {
+  color: var(--accent);
+  text-underline-offset: 3px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--display);
+  margin: 0;
+  text-wrap: balance;
+  color: var(--ink);
+}
+
+h1 {
+  font-size: clamp(2.5rem, 6.2vw, 4.6rem);
+  font-weight: 800;
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+  font-variation-settings: "opsz" 96;
+}
+
+h2 {
+  font-size: clamp(1.8rem, 3.6vw, 2.6rem);
+  font-weight: 760;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  font-variation-settings: "opsz" 72;
+}
+
+h3 {
+  font-size: 1.16rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+p {
+  margin: 0;
+}
+
+code,
+kbd,
+.mono {
+  font-family: var(--mono);
+  font-size: 0.88em;
+}
+
+:not(pre) > code {
+  background: var(--surface-2);
+  padding: 0.08em 0.36em;
+  border-radius: 5px;
+}
+
+.wrap {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding-inline: var(--gutter);
+}
+
+.eyebrow {
+  font: 600 0.74rem/1.2 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.lede {
+  color: var(--ink-2);
+  font-size: clamp(1.05rem, 1.6vw, 1.22rem);
+  max-width: 62ch;
+}
+
+.muted {
+  color: var(--ink-3);
+}
+
+.section {
+  padding-block: clamp(56px, 9vw, 104px);
+}
+
+.section + .section {
+  border-top: 1px solid var(--line);
+}
+
+.section-head {
+  display: grid;
+  gap: 14px;
+  margin-bottom: clamp(28px, 4vw, 44px);
+  max-width: 760px;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 600 0.98rem/1 var(--body);
+  padding: 13px 18px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.button:hover {
+  transform: translateY(-1px);
+}
+
+.button-primary {
+  background: var(--azure);
+  color: #ffffff;
+}
+
+.button-primary:hover {
+  background: #007fe0;
+}
+
+.button-quiet {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.button-quiet:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chip {
+  display: inline-block;
+  font: 600 0.7rem/1 var(--mono);
+  letter-spacing: 0.04em;
+  padding: 5px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.chip[data-state="live"] { color: var(--live); background: var(--live-bg); }
+.chip[data-state="idle"],
+.chip[data-state="authorizing"],
+.chip[data-state="synchronizing"] { color: var(--sync); background: var(--sync-bg); }
+.chip[data-state="stale"] { color: var(--stale); background: var(--stale-bg); }
+.chip[data-state="resync-required"] { color: var(--resync); background: var(--resync-bg); }
+.chip[data-state="failed"],
+.chip[data-state="closed"] { color: var(--failed); background: var(--failed-bg); }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+pre.astro-code {
+  margin: 0;
+  padding: 16px 18px;
+  border-radius: var(--radius);
+  font: 400 0.84rem/1.65 var(--mono);
+  overflow-x: auto;
+  background-color: var(--code-bg) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

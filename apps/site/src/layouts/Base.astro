@@ -1,0 +1,248 @@
+---
+import "@fontsource-variable/bricolage-grotesque";
+import "@fontsource-variable/figtree";
+import "@fontsource-variable/jetbrains-mono";
+import "../styles/global.css";
+import { LINKS, PAGES, RELEASE } from "../site.ts";
+
+interface Props {
+  title: string;
+  description: string;
+}
+
+const { title, description } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const current = Astro.url.pathname;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    <meta name="theme-color" content="#05122f" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="wrap bar">
+        <a class="wordmark" href="/" aria-label="StreamOtter home">Stream<span>Otter</span></a>
+        <nav class="nav" aria-label="Main">
+          {PAGES.map(page => (
+            <a href={page.href} aria-current={current.startsWith(page.href) ? "page" : undefined}>{page.label}</a>
+          ))}
+        </nav>
+        <div class="bar-end">
+          <a class="gh" href={LINKS.github}>GitHub</a>
+          <details class="menu">
+            <summary aria-label="Menu">Menu</summary>
+            <nav aria-label="Main, small screens">
+              {PAGES.map(page => <a href={page.href}>{page.label}</a>)}
+              <a href={LINKS.github}>GitHub</a>
+            </nav>
+          </details>
+        </div>
+      </div>
+    </header>
+
+    <main id="main">
+      <slot />
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap foot">
+        <div class="foot-brand">
+          <a class="wordmark" href="/">Stream<span>Otter</span></a>
+          <p class="muted">Live state from Kafka to the browser. Release <code>{RELEASE}</code>, MIT licensed.</p>
+          <p class="muted fiction">Lontra Creek, its field station, and its otters are fictional. The data pipeline is real.</p>
+        </div>
+        <nav class="foot-links" aria-label="Site">
+          {PAGES.map(page => <a href={page.href}>{page.label}</a>)}
+        </nav>
+        <nav class="foot-links" aria-label="Project">
+          <a href={LINKS.github}>GitHub</a>
+          <a href={LINKS.npm}>npm</a>
+          <a href={LINKS.gettingStarted}>Getting started</a>
+          <a href={LINKS.changelog}>Changelog</a>
+        </nav>
+      </div>
+      <div class="wrap copyright muted">© 2026 Orca Solutions</div>
+    </footer>
+  </body>
+</html>
+
+<style>
+  .skip {
+    position: absolute;
+    left: -9999px;
+  }
+  .skip:focus {
+    left: var(--gutter);
+    top: 12px;
+    z-index: 100;
+    background: var(--surface);
+    padding: 8px 12px;
+    border-radius: 8px;
+  }
+
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: color-mix(in srgb, var(--ground) 82%, transparent);
+    backdrop-filter: saturate(1.4) blur(12px);
+    -webkit-backdrop-filter: saturate(1.4) blur(12px);
+    border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  }
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    min-height: 64px;
+  }
+  .wordmark {
+    font: 800 1.4rem/1 var(--display);
+    letter-spacing: -0.025em;
+    color: var(--ink);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .wordmark span {
+    background: linear-gradient(180deg, #01c4f7, #0091f5 55%, #0068e0);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .nav {
+    display: flex;
+    gap: 2px;
+    flex: 1;
+    flex-wrap: wrap;
+  }
+  .nav a {
+    color: var(--ink-2);
+    text-decoration: none;
+    font-size: 0.93rem;
+    font-weight: 500;
+    padding: 8px 10px;
+    border-radius: 8px;
+  }
+  .nav a:hover,
+  .nav a[aria-current="page"] {
+    color: var(--ink);
+    background: var(--surface-2);
+  }
+  .bar-end {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .gh {
+    font-weight: 600;
+    font-size: 0.93rem;
+    color: var(--ink);
+    text-decoration: none;
+    border: 1px solid var(--line);
+    padding: 7px 12px;
+    border-radius: 10px;
+  }
+  .gh:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .menu {
+    display: none;
+    position: relative;
+  }
+  .menu summary {
+    list-style: none;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.93rem;
+    border: 1px solid var(--line);
+    padding: 7px 12px;
+    border-radius: 10px;
+  }
+  .menu summary::-webkit-details-marker {
+    display: none;
+  }
+  .menu nav {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    display: grid;
+    min-width: 220px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 6px;
+    box-shadow: var(--shadow);
+  }
+  .menu nav a {
+    padding: 10px 12px;
+    border-radius: 8px;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .menu nav a:hover {
+    background: var(--surface-2);
+  }
+  @media (max-width: 1080px) {
+    .nav,
+    .gh {
+      display: none;
+    }
+    .menu {
+      display: block;
+    }
+  }
+
+  .site-footer {
+    border-top: 1px solid var(--line);
+    padding-block: 48px 28px;
+    background: var(--surface);
+  }
+  .foot {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(0, 1fr));
+    gap: 32px;
+  }
+  .foot-brand {
+    display: grid;
+    gap: 10px;
+    align-content: start;
+  }
+  .fiction {
+    font-size: 0.9rem;
+  }
+  .foot-links {
+    display: grid;
+    gap: 8px;
+    align-content: start;
+  }
+  .foot-links a {
+    color: var(--ink-2);
+    text-decoration: none;
+  }
+  .foot-links a:hover {
+    color: var(--accent);
+  }
+  .copyright {
+    margin-top: 32px;
+    font-size: 0.85rem;
+  }
+  @media (max-width: 720px) {
+    .foot {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

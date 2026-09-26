@@ -1,0 +1,398 @@
+---
+/**
+ * The live panel: real subscriptions to the Lontra Creek field station, a creek
+ * that moves with its real flow, and controls that cut this page's own connection.
+ */
+---
+
+<section class="live-creek" data-live-creek data-connection="idle" data-network="online" aria-label="Live data from the Lontra Creek field station">
+  <div class="lc-top">
+    <span class="lc-clock"><i class="lc-dot" aria-hidden="true"></i><span data-clock>Connecting to the field station…</span></span>
+    <span class="lc-source" data-source>Lontra Creek field station</span>
+  </div>
+
+  <div class="lc-body">
+    <div class="lc-water">
+      <canvas role="img" aria-label="Lontra Creek flowing into the StreamOtter gateway. Its speed follows the live flow at Kestrel Bend."></canvas>
+      <span class="lc-caption">field instruments → Kafka → gateway</span>
+    </div>
+
+    <div class="lc-views">
+      <div class="lc-views-top"><span>Your browser</span><span>connection <b data-connection>connecting</b></span></div>
+
+      <article class="lc-card" data-card>
+        <header><span class="lc-id">LC-02</span><span class="lc-name">Kestrel Bend gauge</span><span class="chip" data-state="idle">idle</span></header>
+        <dl>
+          <div><dt>Flow</dt><dd><span data-v="flow">—</span> <small>cfs</small></dd></div>
+          <div><dt>Water</dt><dd><span data-v="temp">—</span> <small>°C</small></dd></div>
+          <div><dt>Oxygen</dt><dd><span data-v="do">—</span> <small>mg/L</small></dd></div>
+        </dl>
+        <footer><span data-rev>—</span><span data-v="trend"></span><span data-age>waiting</span></footer>
+      </article>
+
+      <article class="lc-card" data-card>
+        <header><span class="lc-id">LO-07</span><span class="lc-name">Pebble, adult female</span><span class="chip" data-state="idle">idle</span></header>
+        <dl class="lc-otter">
+          <div><dt>Where</dt><dd><span data-v="reach">—</span></dd></div>
+          <div><dt>Doing</dt><dd><span data-v="activity">—</span></dd></div>
+          <div><dt>Dives/hr</dt><dd><span data-v="dives">—</span></dd></div>
+        </dl>
+        <p class="lc-otter-note" data-v="note"></p>
+        <footer><span data-rev>—</span><span data-age>waiting</span></footer>
+      </article>
+
+      <article class="lc-card" data-card>
+        <header><span class="lc-id">LC-03</span><span class="lc-name">Slate Canyon gauge</span><span class="chip" data-state="idle">idle</span></header>
+        <dl>
+          <div><dt>Stage</dt><dd><span data-v="stage">—</span> <small>ft</small></dd></div>
+          <div><dt>Turbidity</dt><dd><span data-v="turbidity">—</span> <small>NTU</small></dd></div>
+          <div><dt>Trend</dt><dd><span data-v="trend">—</span></dd></div>
+        </dl>
+        <footer><span data-rev>—</span><span data-age>waiting</span></footer>
+      </article>
+    </div>
+  </div>
+
+  <div class="lc-controls">
+    <button class="lc-button lc-drop" type="button" data-drop>Drop my connection</button>
+    <button class="lc-button lc-restore" type="button" data-restore disabled>Restore it</button>
+    <p class="lc-note" data-note>Try it: cut this page's connection. The creek keeps moving without you, and every view says it's stale until fresh snapshots arrive.</p>
+  </div>
+  <ol class="lc-log" data-log aria-label="What the SDK reported"></ol>
+  <p class="lc-unavailable">
+    The field station isn't answering right now. To run it yourself, clone the repository and run <code>npm install</code>, then <code>npm run dev</code>.
+  </p>
+  <div class="sr-only" aria-live="polite" data-announce></div>
+</section>
+
+<script>
+  import "../scripts/live-creek.ts";
+</script>
+
+<style is:global>
+  .live-creek {
+    --p-ink: #e9f2fc;
+    --p-dim: #93a9cc;
+    --p-line: rgba(1, 225, 252, 0.22);
+    --live: #01e1fc;
+    --live-bg: rgba(1, 225, 252, 0.12);
+    --sync: #8fcbff;
+    --sync-bg: rgba(0, 145, 245, 0.18);
+    --stale: #f2b84b;
+    --stale-bg: rgba(242, 184, 75, 0.14);
+    --resync: #ff9c52;
+    --resync-bg: rgba(255, 156, 82, 0.14);
+    --failed: #ff6f76;
+    --failed-bg: rgba(255, 111, 118, 0.14);
+    position: relative;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: radial-gradient(120% 90% at 20% 0%, #0a3d86 0%, #04173a 55%, #020a1c 100%);
+    color: var(--p-ink);
+    box-shadow: 0 40px 80px -40px rgba(1, 30, 80, 0.6);
+  }
+  .lc-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--p-line);
+    font: 500 0.78rem/1.3 var(--mono);
+    color: var(--p-dim);
+  }
+  .lc-clock {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--p-ink);
+  }
+  .lc-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--sync);
+  }
+  .live-creek[data-overview="live"] .lc-dot {
+    background: var(--live);
+    box-shadow: 0 0 0 0 rgba(1, 225, 252, 0.6);
+    animation: lc-pulse 2s infinite;
+  }
+  .live-creek[data-overview="stale"] .lc-dot {
+    background: var(--stale);
+  }
+  @keyframes lc-pulse {
+    to {
+      box-shadow: 0 0 0 8px rgba(1, 225, 252, 0);
+    }
+  }
+  .lc-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  }
+  .lc-water {
+    position: relative;
+    min-height: 360px;
+  }
+  .lc-water canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .lc-caption {
+    position: absolute;
+    left: 16px;
+    top: 12px;
+    font: 500 0.72rem/1.3 var(--mono);
+    color: var(--p-dim);
+  }
+  .lc-views {
+    padding: 16px 18px 16px 20px;
+    display: grid;
+    gap: 10px;
+    align-content: start;
+    border-left: 2px solid var(--live);
+    transition: border-color 0.4s;
+  }
+  .live-creek[data-network="offline"] .lc-views,
+  .live-creek[data-connection="reconnecting"] .lc-views {
+    border-left: 2px dashed var(--stale);
+  }
+  .lc-views-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font: 500 0.72rem/1.3 var(--mono);
+    color: var(--p-dim);
+  }
+  .lc-views-top b {
+    color: var(--live);
+    font-weight: 600;
+  }
+  .live-creek[data-connection="reconnecting"] .lc-views-top b,
+  .live-creek[data-connection="connecting"] .lc-views-top b {
+    color: var(--stale);
+  }
+  .lc-card {
+    position: relative;
+    display: grid;
+    gap: 7px;
+    padding: 11px 13px 10px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid var(--p-line);
+    overflow: hidden;
+    transition: background 0.5s, border-color 0.5s;
+  }
+  .lc-card header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .lc-id {
+    font: 600 0.74rem/1 var(--mono);
+    color: var(--live);
+  }
+  .lc-name {
+    flex: 1;
+    min-width: 0;
+    font-weight: 600;
+    font-size: 0.92rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .lc-card dl {
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    transition: opacity 0.6s, filter 0.6s;
+  }
+  .lc-card dl.lc-otter {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.1fr) minmax(0, 0.7fr);
+  }
+  .lc-card dt {
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--p-dim);
+  }
+  .lc-card dd {
+    margin: 0;
+    font: 600 0.98rem/1.25 var(--mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .lc-card dd small {
+    font-weight: 400;
+    font-size: 0.72rem;
+    color: var(--p-dim);
+  }
+  .lc-otter-note {
+    font-size: 0.8rem;
+    color: var(--p-dim);
+    min-height: 1.2em;
+  }
+  .lc-card footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font: 400 0.7rem/1.2 var(--mono);
+    color: var(--p-dim);
+  }
+  .lc-card footer [data-rev] {
+    color: var(--p-ink);
+  }
+  .lc-card .bump {
+    animation: lc-bump 0.9s ease-out;
+  }
+  @keyframes lc-bump {
+    from {
+      color: var(--live);
+    }
+  }
+  .lc-card.is-stale {
+    background: rgba(120, 84, 22, 0.16);
+    border-color: rgba(242, 184, 75, 0.32);
+  }
+  .lc-card.is-stale dl,
+  .lc-card.is-stale .lc-otter-note {
+    opacity: 0.5;
+    filter: saturate(0.2);
+  }
+  .lc-card.is-stale::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      repeating-linear-gradient(115deg, rgba(242, 184, 75, 0.05) 0 6px, transparent 6px 13px),
+      linear-gradient(180deg, rgba(160, 112, 40, 0.08), rgba(90, 60, 20, 0.2));
+  }
+  .lc-card.flash::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    background: #ffffff;
+    pointer-events: none;
+    animation: lc-shutter 0.55s ease-out forwards;
+  }
+  @keyframes lc-shutter {
+    from {
+      opacity: 0.7;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  .lc-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    padding: 14px 18px;
+    border-top: 1px solid var(--p-line);
+    background: rgba(2, 10, 28, 0.45);
+  }
+  .lc-button {
+    font: 600 0.92rem/1 var(--body);
+    padding: 11px 15px;
+    border-radius: 10px;
+    border: 0;
+    cursor: pointer;
+  }
+  .lc-drop {
+    background: #f2b84b;
+    color: #221400;
+  }
+  .lc-restore {
+    background: #01e1fc;
+    color: #02202a;
+  }
+  .lc-button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .lc-note {
+    flex: 1 1 280px;
+    min-width: 0;
+    font: 500 0.8rem/1.45 var(--mono);
+    color: var(--p-dim);
+  }
+  .lc-note b {
+    color: var(--p-ink);
+    font-weight: 600;
+  }
+  .lc-log {
+    margin: 0;
+    padding: 10px 18px 14px;
+    list-style: none;
+    display: grid;
+    gap: 1px;
+    min-height: 9.6em;
+    background: rgba(2, 10, 28, 0.45);
+    font: 400 0.74rem/1.55 var(--mono);
+    color: var(--p-dim);
+  }
+  .lc-log li {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .lc-log li:first-child {
+    color: var(--p-ink);
+  }
+  .lc-log .t {
+    color: var(--p-dim);
+    white-space: pre;
+  }
+  .lc-log .k {
+    color: var(--live);
+  }
+  .lc-log .w {
+    color: var(--stale);
+  }
+  .lc-log .s {
+    color: var(--sync);
+  }
+  .lc-unavailable {
+    display: none;
+    padding: 14px 18px;
+    background: rgba(242, 184, 75, 0.12);
+    color: var(--p-ink);
+    font-size: 0.92rem;
+  }
+  .live-creek[data-status="unavailable"] .lc-unavailable {
+    display: block;
+  }
+  .lc-unavailable code {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--p-ink);
+  }
+  @media (max-width: 880px) {
+    .lc-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .lc-water {
+      min-height: 220px;
+    }
+    .lc-views,
+    .live-creek[data-network="offline"] .lc-views,
+    .live-creek[data-connection="reconnecting"] .lc-views {
+      border-left: 0;
+      border-top: 2px solid var(--live);
+    }
+    .live-creek[data-network="offline"] .lc-views,
+    .live-creek[data-connection="reconnecting"] .lc-views {
+      border-top-style: dashed;
+      border-top-color: var(--stale);
+    }
+  }
+</style>

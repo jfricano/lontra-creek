@@ -1,0 +1,22 @@
+{
+  "name": "@lontra-creek/site",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "streamotter.app: StreamOtter's home site and the Lontra Creek live demo.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "@fontsource-variable/bricolage-grotesque": "5.3.0",
+    "@fontsource-variable/figtree": "5.3.0",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
+    "@lontra-creek/sim": "0.0.0",
+    "astro": "7.3.5",
+    "streamotter": "0.1.0-rc.3"
+  }
+}

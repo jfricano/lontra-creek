@@ -2,8 +2,10 @@
  * Gateway handlers for running without Kafka:
  *   npx streamotter dev --config streamotter.fixture.json --handlers src/fixture-handlers.ts
  *
- * The fixture is the first two study days of the Lontra Creek simulation, recorded
- * as the records the field station would publish. Advance it from the workbench.
+ * The fixture is the start of the Lontra Creek simulation (two study days, or
+ * FIELD_FIXTURE_DAYS), recorded as the records the field station would publish.
+ * Advance it from the workbench, or run `npm run dev`, which advances one tick
+ * every two seconds.
  * With no field station process to ask, snapshots come from a read model fed by
  * the same records, so snapshots and updates describe one revision progression.
  */
@@ -13,16 +15,22 @@ import type { AppChannels } from "./generated/streamotter.generated.ts";
 import { fieldStationSecret, isResearcher, verifyToken } from "./identity.ts";
 import { fromRecord, instanceKey, toRecord, type FieldRecord } from "./records.ts";
 
-export const FIXTURE_TICKS = 2 * TICKS_PER_DAY;
+const days = Number(process.env["FIELD_FIXTURE_DAYS"] ?? "2");
+if (!Number.isInteger(days) || days < 1 || days > 30) throw new RangeError("FIELD_FIXTURE_DAYS must be an integer from 1 to 30");
+export const FIXTURE_TICKS = days * TICKS_PER_DAY;
+/** How many records each tick added to the fixture, in order; advancing by these replays one tick at a time. */
+export const fixtureTickSizes: number[] = [];
 
 const world = createWorld({ seed: "lontra-creek" });
 const readModel = new Map<string, FieldRecord>(currentEmissions(world).map(emission => [emission.key, toRecord(emission).value]));
 const fixture: { key: string; value: Json }[] = [];
 while (world.tick < FIXTURE_TICKS) {
-  for (const emission of step(world)) {
+  const emissions = step(world);
+  for (const emission of emissions) {
     const record = toRecord(emission);
     fixture.push({ key: record.key, value: record.value as unknown as Json });
   }
+  fixtureTickSizes.push(emissions.length);
 }
 
 function apply(record: FieldRecord): void {

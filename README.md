@@ -11,15 +11,16 @@ StreamOtter's home site and live demo. Lontra Creek is a fictional river-otter s
 
 This project uses StreamOtter the way any application does: the published [`streamotter`](https://www.npmjs.com/package/streamotter) package from npm, at an exact version. It has no other connection to the [StreamOtter repository](https://github.com/jfricano/StreamOtter).
 
-> **Status: Phase 0, foundation.** The simulation, the field station's StreamOtter project, and the home page with a live panel run locally (`npm run dev`); the other pages and the hosted demo are in progress. See [docs/PLAN.md](docs/PLAN.md) and [docs/HOSTING.md](docs/HOSTING.md).
+> **Status: the production stack is proven in CI; not yet hosted.** The simulation, the field station, and the home page with a live panel run locally (`npm run dev`). The production stack (Kafka over TLS with SCRAM, the gateway, the field station, and Caddy, in containers) passes a full-stack test on every pull request. The hosted demo, the other pages, and the Failure Lab are in progress. See [docs/PLAN.md](docs/PLAN.md), [docs/DEPLOYMENT_PLAN.md](docs/DEPLOYMENT_PLAN.md), and [docs/HOSTING.md](docs/HOSTING.md).
 
 ## Layout
 
 | Path | What it is |
 | --- | --- |
 | `packages/creek-sim` | The simulation: a deterministic watershed, weather, gauges, otters, and camera traps, and the channel views the field station publishes |
-| `apps/field-station` | The demo application: StreamOtter configuration and handlers, the simulation runner, sessions, and scenarios |
+| `apps/field-station` | The demo application: StreamOtter configuration and handlers, the simulation runner that publishes to Kafka, the site API, and sessions |
 | `apps/site` | The public site: Astro, with the live panel on the home page |
+| `deploy` | The demo host: one container image, the Compose stack (Kafka, the gateway, the field station, Caddy), its secret and certificate scripts, and the full-stack test CI runs |
 | `docs/PLAN.md` | Scope, story, architecture, operating rules, phases, and launch criteria |
 | `docs/DEPLOYMENT_PLAN.md` | The engineering work from here to launch, in order |
 | `docs/HOSTING.md` | The owner's account and server checklist |
@@ -36,6 +37,8 @@ npm run dev        # field station + site at http://127.0.0.1:4321
 ```
 
 `npm run dev` runs the field station without Kafka, replaying the simulation through a StreamOtter gateway in development mode, one study tick every two seconds, with the workbench at http://127.0.0.1:7401 (its one-time token is printed at startup).
+
+In production the field station runs the simulation on the wall clock and publishes to Kafka (`apps/field-station/src/server/main.ts`), and the gateway is `streamotter start` with compiled handlers (`npm run build -w @lontra-creek/field-station`). [`deploy/compose.yaml`](deploy/compose.yaml) runs them with Kafka 4.1.2 and Caddy; [`.github/workflows/stack.yml`](.github/workflows/stack.yml) shows how to bring the stack up with throwaway secrets and test it from outside.
 
 ## The simulation in brief
 

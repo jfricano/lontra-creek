@@ -1,6 +1,6 @@
 # Lontra Creek: the StreamOtter site and live demo
 
-September 25, 2026 · Phase 0 (foundation) in progress · Domain: `streamotter.app` · Visual blueprint: [StreamOtter Site Blueprint](https://claude.ai/artifact/6Zfj7bgjuXaSShKDQ5LJuv)
+September 26, 2026 · Phase 0 done; Phase 2 in progress (the production stack is proven in CI, not yet hosted) · Domain: `streamotter.app` · Visual blueprint: [StreamOtter Site Blueprint](https://claude.ai/artifact/6Zfj7bgjuXaSShKDQ5LJuv)
 
 This repository holds StreamOtter's public home site and its live demo. The demo is a fictional river-otter study at Lontra Creek whose data moves through real Kafka, a real StreamOtter gateway, and the real browser SDK. The site's job is to take a developer from "what is this" to "I watched it survive a failure" to `npm install streamotter` in one visit.
 

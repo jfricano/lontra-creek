@@ -25,8 +25,10 @@ services:
     image: apache/kafka:4.1.2
     entrypoint: ["/bin/bash", "/opt/lontra/start.sh"]
     environment:
-      # A fixed heap: it also keeps the host above Oracle's idle-memory threshold (docs/PLAN.md, Budget protection).
-      KAFKA_HEAP_OPTS: ${KAFKA_HEAP_OPTS:--Xms2g -Xmx2g}
+      # A fixed, pre-touched heap: it also keeps the host above Oracle's idle-memory threshold
+      # (docs/PLAN.md, Budget protection). Without AlwaysPreTouch the JVM reserves the heap but
+      # holds only what it has used: 452 MiB resident in CI.
+      KAFKA_HEAP_OPTS: ${KAFKA_HEAP_OPTS:--Xms2g -Xmx2g -XX:+AlwaysPreTouch}
       KAFKA_GATEWAY_USERNAME: gateway
       KAFKA_GATEWAY_PASSWORD: ${KAFKA_GATEWAY_PASSWORD:?}
       KAFKA_FIELD_STATION_USERNAME: field-station

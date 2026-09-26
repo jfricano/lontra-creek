@@ -6,14 +6,15 @@ September 25, 2026 · Engineering plan for taking Lontra Creek from local develo
 
 ## Where things stand
 
-`main` at `b2af3f0` in [jfricano/lontra-creek](https://github.com/jfricano/lontra-creek) (public). CI (`.github/workflows/ci.yml`: typecheck, 30 tests, site build, Node 24) passes on GitHub.
+Milestone A (the stack proven in CI) is reached: workstreams 1–4 are merged into `main` in [jfricano/lontra-creek](https://github.com/jfricano/lontra-creek) (public), whose CI passes: `ci.yml` (typecheck, 63 tests, site build on Node 24) and `stack.yml` (the whole stack in containers, tested from outside on amd64 and arm64).
 
 | Piece | State |
 | --- | --- |
 | `packages/creek-sim` | Done. Deterministic world, checkpoints, emissions with revisions `generation × 10¹² + tick`, den privacy. 18 tests. |
-| `apps/field-station` | Local only. `src/project.ts` writes `streamotter.json` (local plaintext Kafka) and `streamotter.fixture.json`; generated types with a two-way contract check; signed badges (`identity.ts`); cookie sessions (`sessions.ts`); fixture handlers; `scripts/dev.ts` (gateway on the fixture, advanced one tick every 2 s, workbench on 7401, site API on 7402). 12 tests, including a real gateway from npm with the real SDK. |
-| `apps/site` | Astro 7. Home page with the live panel (real subscriptions; "Drop my connection" really closes the page's WebSocket), brand images, placeholder pages for the other seven routes. `npm run dev` at the root starts it with the field station. |
-| Production | Nothing yet: no production config, Kafka handlers, real-time runner, notebooks, Failure Lab, containers, server setup, or deploy workflows. |
+| `apps/field-station` | The StreamOtter project for three environments (`fixture`, `local-kafka`, `production`), fixture and Kafka handlers (the latter compiled for `streamotter start`), signed badges and cookie sessions, `scripts/dev.ts` for `npm run dev`, and the production runner in `src/server/` (workstreams 1 and 2). Notebooks are next. 45 tests, including a real gateway from npm with the real SDK and `streamotter start` failing closed. |
+| `apps/site` | Astro 7. Home page with the live panel (real subscriptions; "Drop my connection" really closes the page's WebSocket) and its unavailable state, brand images and a social preview, a 404 page, `robots.txt`, a sitemap, and placeholder pages for the other seven routes. Calls the demo host at `PUBLIC_FIELD_STATION_ORIGIN` in production (workstream 3). |
+| `deploy/` | One image, the compose stack (Kafka 4.1.2 over SASL_SSL with SCRAM, the gateway, the field station, Caddy on 443), certificate and secret scripts, and `test/stack.test.ts`, which `stack.yml` runs from outside on amd64 and arm64 (workstream 4). |
+| Not yet | Notebooks, the recorded fallback, server setup and deploy workflows (workstream 5, after HOSTING.md sections 1–3), the Failure Lab, and the other pages. |
 
 ## Rules that apply to every step
 
@@ -48,7 +49,7 @@ Each workstream ends with its tests green in CI. Do them in this order; 1–4 ne
 
 ### 1. Production project and Kafka handlers
 
-Done on branch `ws1-production-config`.
+Done ([#1](https://github.com/jfricano/lontra-creek/pull/1)).
 
 - `src/project.ts` has a `production` environment and writes `streamotter.production.json`.
   - Gateway: host `0.0.0.0`, port 7400, path `/streamotter/socket.io`, `allowedOrigins: ["https://streamotter.app"]`.
@@ -62,7 +63,7 @@ Done on branch `ws1-production-config`.
 
 ### 2. The field station's production runner
 
-The runner is done on branch `ws2-runner`; notebooks are next.
+The runner is done ([#2](https://github.com/jfricano/lontra-creek/pull/2)); notebooks are next.
 
 `apps/field-station/src/server/`, entry `main.ts` (`node --disable-warning=TimeoutNegativeWarning src/server/main.ts`), configured entirely by environment variables (`config.ts`): `KAFKA_BROKERS`, `KAFKA_CA_FILE`, the field station's own SCRAM user (`KAFKA_FIELD_STATION_USERNAME`, `KAFKA_FIELD_STATION_PASSWORD`), `FIELD_STATION_SECRET`, `FIELD_STATION_SERVICE_TOKEN`, `FIELD_DATA_DIR`, `FIELD_EPOCH` (fixed ISO time when the hosted study began), `FIELD_TICK_MS` (2000), `FIELD_GENERATION`, `SITE_ORIGIN`, `GATEWAY_PUBLIC_ORIGIN`, and `FIELD_HOST`, `FIELD_PORT` (7402), `FIELD_INTERNAL_PORT` (7410). Production refuses to start without the secrets, the epoch, the origins, or Kafka over TLS with SCRAM.
 
@@ -75,7 +76,7 @@ The runner is done on branch `ws2-runner`; notebooks are next.
 
 ### 3. The site's production wiring
 
-Done on branch `ws3-site-wiring`, except the recording.
+Done ([#5](https://github.com/jfricano/lontra-creek/pull/5)), except the recording.
 
 - `src/scripts/field-api.ts` calls `${PUBLIC_FIELD_STATION_ORIGIN}/api/…` with `credentials: "include"`. The variable is set at build time (`https://demo.streamotter.app` for production) and empty in development, where Vite proxies `/api`.
 - The unavailable state: when `/api/config` fails, or the gateway can't be reached within 15 seconds (the SDK keeps trying, and the notice clears on connecting), the live panel says the demo isn't answering, hides its connection controls, and shows how to run the demo locally. Still to do: a labeled recording of the live panel, once there's a hosted run to record.
@@ -84,15 +85,19 @@ Done on branch `ws3-site-wiring`, except the recording.
 
 ### 4. Containers and a full-stack test in CI
 
-- `deploy/Dockerfile`: `node:24-bookworm-slim`, multi-arch (arm64 for the Oracle VM, amd64 for CI), `npm ci --omit=dev` for the needed workspaces, a non-root user, no build tools in the final image.
-- `deploy/compose.yaml`:
-  - `kafka`: `apache/kafka:4.1.2`, KRaft single node, a `SASL_SSL` listener on 9094 with PEM keystores, SCRAM-SHA-512 users for the gateway and the field station created when storage is formatted (`kafka-storage format --add-scram`), heap `-Xms2g -Xmx2g` (this keeps the VM above Oracle's idle-memory threshold; see PLAN.md, Budget protection), a volume for its log.
-  - `gateway`: `npx streamotter start --config streamotter.production.json --handlers …`, the CA mounted read-only.
-  - `field-station`: `node src/server/main.ts`, a volume for `FIELD_DATA_DIR`.
-  - `caddy`: port 443 only, the Cloudflare origin certificate, the routes above, security headers, and a request rate limit on `/api`.
-  - Health checks for every service; `restart: unless-stopped`.
-- The StreamOtter repository's `scripts/kafka` shows a verified SASL_SSL setup for this broker version. Read it as a reference and write this project's own configuration.
-- `.github/workflows/stack.yml` on pull requests: build the image, generate throwaway certificates and secrets, `docker compose up`, wait for health, then run a Node test through Caddy with a test CA. The test gets a badge, subscribes with `streamotter/client` to `station LC-02` (snapshot, live, newer revisions), is refused `holt A` as a volunteer, and restarts the gateway and sees stale, then live again with a fresh snapshot. This is the first full production-shaped proof, and it needs nobody's Docker.
+Done ([#3](https://github.com/jfricano/lontra-creek/pull/3), merged to `main` as #4).
+
+- `deploy/Dockerfile`: `node:24.21.0-bookworm-slim` for linux/amd64 and linux/arm64. A build stage installs the field station's workspace with dev dependencies and compiles the gateway's handlers; the final stage has `npm ci --omit=dev` for the field station's workspace only (34 packages, 12 MB of `node_modules`; none of the site's), the sources it runs, the compiled handlers, and the unprivileged `node` user. `deploy/Dockerfile.dockerignore` keeps the context small.
+- `deploy/compose.yaml`, driven by one env file (`deploy/make-secrets.sh` writes the secrets; `LONTRA_IMAGE`, `LONTRA_SECRETS`, and `FIELD_EPOCH` are added per host):
+  - `kafka`: `apache/kafka:4.1.2` with `deploy/kafka/start.sh` as its entrypoint: KRaft single node, `SASL_SSL` with SCRAM-SHA-512 on 9094 (advertised as `kafka:9094`) with a PEM keystore, a plaintext listener on the container's loopback for the broker and its health check, and both SCRAM users created when the storage is formatted. Heap `-Xms2g -Xmx2g -XX:+AlwaysPreTouch`: without pre-touching, the JVM keeps only the heap it has used resident (452 MiB in CI), which wouldn't hold the host above Oracle's idle-memory threshold (PLAN.md, Budget protection). A volume for its data.
+  - `field-station`: `node --disable-warning=TimeoutNegativeWarning src/server/main.ts`, a volume for its checkpoints, healthy once caught up and acknowledged by Kafka.
+  - `gateway`: `streamotter start --config streamotter.production.json --handlers dist/kafka-handlers.js`, after the field station is healthy (it creates the topics). A TCP health check, since V1 has no production health endpoint; a 15-second stop grace period.
+  - `caddy`: `caddy:2.11.4-alpine`, port 443 only, certificates from files (the Cloudflare origin certificate in production), `/streamotter/*` to the gateway, `/api/*` to the field station with the visitor's address in `X-Client-IP` (from `CF-Connecting-IP`, trusted only from Cloudflare's published ranges), security headers, an 8 KB body limit, and 404 for everything else. The stock Caddy image has no rate limiter, so the field station keeps the per-client request budget.
+  - Health checks for every service, `init: true` for the Node services, `restart: unless-stopped`, and rotated JSON logs.
+- `deploy/make-certs.sh kafka <dir>` makes the Kafka CA and the broker's certificate for `kafka`; `deploy/make-certs.sh test-origin <dir> <host>` makes CI's stand-in for the origin certificate.
+- `.github/workflows/stack.yml`, on pull requests and `main`, on `ubuntu-24.04` and `ubuntu-24.04-arm`: build the image natively, make throwaway secrets and certificates, map `demo.streamotter.app` to the runner, `docker compose up --wait` with a study epoch a day in the past (43,200 ticks to catch up), then run `deploy/test/stack.test.ts` through Caddy with the test CA. It checks that only the site API and the gateway are exposed; badges come with a `Secure; HttpOnly; SameSite=Strict` cookie; a page from another origin is refused with `FORBIDDEN`; `station LC-02` goes authorizing, synchronizing, live from a snapshot, then newer revisions in order; a volunteer's `holt A` request is refused with `FORBIDDEN` and receives nothing, while the field biologist sees Holt A; after `docker compose restart gateway` the view goes stale, then live again from a fresh snapshot; and after `docker compose restart field-station` the world continues from its checkpoint. Measured in CI: the stack is healthy about 30 seconds after `up`.
+- The same test passes against the same broker script, Caddyfile, compiled handlers, and runner run natively (Node 24.21, Kafka 4.1.2, Caddy 2.11.4), which is how to iterate without Docker.
+- The multi-arch manifest is published by `images.yml` in workstream 5; CI builds and runs each architecture's image natively.
 
 ### 5. Server setup and deployment
 
@@ -139,7 +144,7 @@ Everything in [PLAN.md's launch criteria](PLAN.md#launch-criteria) on the real d
 
 | Milestone | Contains | Needs from the owner |
 | --- | --- | --- |
-| A. Stack proven in CI | Workstreams 1, 2, and 4 (notebooks may follow), plus 3's wiring | Nothing |
+| A. Stack proven in CI | Workstreams 1, 2, and 4 (notebooks may follow), plus 3's wiring. **Reached.** | Nothing |
 | B. Staging on the real host | Workstream 5 | HOSTING.md sections 1–3 |
 | C. Complete | Workstreams 6 and 7 | Content review |
 | D. Launch | Workstream 8 | Go-ahead |
@@ -155,3 +160,7 @@ Everything in [PLAN.md's launch criteria](PLAN.md#launch-criteria) on the real d
 - **The tool sandbox** on the owner's Mac can't read `~/Desktop` or `~/Documents`; ask before reaching outside the project.
 - **Oracle A1:** capacity can be short when creating the instance, and an instance whose CPU, network, and memory all stay under 20% for a week may be reclaimed.
 - **`.app` is HTTPS-only** in every browser.
+- **`streamotter start` refuses `.ts` handler modules** by extension, so the gateway's handlers are compiled (`npm run build -w @lontra-creek/field-station`).
+- **No tombstones on StreamOtter sources.** V1 pauses a source on a null record value; represent deletion as explicit state.
+- **Production gateways require the browser's `Origin`.** Node's `ws` client under the SDK sends none, and the SDK has no option for it, so `deploy/test/stack.test.ts` adds the header a page would send. A foreign origin completes the WebSocket upgrade and is then refused in the Socket.IO handshake with `FORBIDDEN`.
+- **A JVM heap isn't resident until touched.** `-Xms` alone left Kafka at 452 MiB; `-XX:+AlwaysPreTouch` makes the heap count toward the host's memory use.

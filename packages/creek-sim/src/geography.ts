@@ -74,10 +74,12 @@ export const STATIONS: readonly Station[] = [
 ];
 
 export type CameraId = "CT-1" | "CT-2" | "CT-3";
+/** The reaches with a camera trap; the `reach` channel covers only these. */
+export type CameraReachId = "cedar-riffle" | "beaver-flats" | "heron-marsh";
 
 export interface Camera {
   id: CameraId;
-  reach: ReachId;
+  reach: CameraReachId;
 }
 
 export const CAMERAS: readonly Camera[] = [
@@ -102,11 +104,12 @@ export const HOLTS: readonly Holt[] = [
 ];
 
 export type OtterId = "LO-07" | "LO-03" | "LO-11";
+export type OtterName = "Pebble" | "Birch" | "Juniper";
 export type PupName = "Sprout" | "Skipper";
 
 export interface OtterProfile {
   id: OtterId;
-  name: string;
+  name: OtterName;
   sex: "female" | "male";
   ageClass: "adult" | "yearling";
   /** Home range as reach indices, inclusive. */

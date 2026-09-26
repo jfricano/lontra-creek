@@ -11,7 +11,8 @@ import type { Species } from "./cameras.ts";
 import { studyTime, type Daylight } from "./clock.ts";
 import {
   CAMERAS, HOLTS, OTTERS, REACHES, STATIONS, WATERSHED_ID,
-  type CameraId, type HoltId, type OtterId, type OtterProfile, type ReachId, type ReceiverId, type StationId
+  type CameraId, type CameraReachId, type HoltId, type OtterId, type OtterName, type OtterProfile, type PupName, type ReachId,
+  type ReceiverId, type StationId
 } from "./geography.ts";
 import { weatherLabel, type Weather } from "./hydrology.ts";
 import type { Activity, OtterState } from "./otters.ts";
@@ -43,7 +44,7 @@ export interface StationView {
 
 export interface OtterView {
   otterId: OtterId;
-  name: string;
+  name: OtterName;
   sex: "female" | "male";
   ageClass: "adult" | "yearling";
   status: "in-watershed" | "left-watershed";
@@ -56,7 +57,7 @@ export interface OtterView {
 }
 
 export interface ReachView {
-  reachId: ReachId;
+  reachId: CameraReachId;
   name: string;
   cameraId: CameraId;
   lastFrame: { frame: string; at: StudyStamp; species: Species | "none"; count: number };
@@ -70,7 +71,7 @@ export interface HoltView {
   reachId: ReachId;
   gridRef: string;
   occupied: boolean;
-  occupants: string[];
+  occupants: (OtterName | PupName)[];
   lastEntry: StudyStamp;
   lastExit: StudyStamp;
 }
@@ -81,7 +82,7 @@ export interface OverviewView {
   daylight: Daylight;
   weather: Weather;
   stations: { stationId: StationId; name: string; flowCfs: number; trend: Trend }[];
-  otters: { otterId: OtterId; name: string; reachId: PublicReach; activity: PublicActivity }[];
+  otters: { otterId: OtterId; name: OtterName; reachId: PublicReach; activity: PublicActivity }[];
 }
 
 export interface ChannelViews {
@@ -95,7 +96,7 @@ export interface ChannelViews {
 export interface ChannelParams {
   station: { stationId: StationId };
   otter: { otterId: OtterId };
-  reach: { reachId: ReachId };
+  reach: { reachId: CameraReachId };
   holt: { holtId: HoltId };
   creekOverview: { watershed: typeof WATERSHED_ID };
 }
@@ -212,7 +213,7 @@ function reachView(world: WorldState, id: CameraId): ReachView {
   const state = world.cameras[id];
   const frame = state.lastFrame;
   return {
-    reachId: reach.id,
+    reachId: camera.reach,
     name: reach.name,
     cameraId: id,
     lastFrame: frame === null

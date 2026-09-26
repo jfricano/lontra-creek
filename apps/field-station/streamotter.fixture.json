@@ -1,0 +1,756 @@
+{
+  "channels": {
+    "creekOverview": {
+      "delivery": {
+        "kind": "state",
+        "overflow": "resync"
+      },
+      "handlersRef": "creekOverview",
+      "paramsSchema": "WatershedParams",
+      "payloadSchema": "CreekOverview",
+      "source": "field",
+      "version": 1
+    },
+    "holt": {
+      "delivery": {
+        "kind": "state",
+        "overflow": "resync"
+      },
+      "handlersRef": "holt",
+      "paramsSchema": "HoltParams",
+      "payloadSchema": "HoltStatus",
+      "source": "field",
+      "version": 1
+    },
+    "otter": {
+      "delivery": {
+        "kind": "state",
+        "overflow": "resync"
+      },
+      "handlersRef": "otter",
+      "paramsSchema": "OtterParams",
+      "payloadSchema": "OtterStatus",
+      "source": "field",
+      "version": 1
+    },
+    "reach": {
+      "delivery": {
+        "kind": "state",
+        "overflow": "resync"
+      },
+      "handlersRef": "reach",
+      "paramsSchema": "ReachParams",
+      "payloadSchema": "CameraTrap",
+      "source": "field",
+      "version": 1
+    },
+    "station": {
+      "delivery": {
+        "kind": "state",
+        "overflow": "resync"
+      },
+      "handlersRef": "station",
+      "paramsSchema": "StationParams",
+      "payloadSchema": "GaugeReading",
+      "source": "field",
+      "version": 1
+    }
+  },
+  "configVersion": 1,
+  "connections": {},
+  "gateway": {
+    "allowedOrigins": [
+      "http://localhost:4321",
+      "http://127.0.0.1:4321"
+    ],
+    "host": "127.0.0.1",
+    "path": "/streamotter/socket.io",
+    "port": 7400
+  },
+  "projectId": "lontra-creek",
+  "schemas": {
+    "CameraTrap": {
+      "additionalProperties": false,
+      "properties": {
+        "cameraId": {
+          "enum": [
+            "CT-1",
+            "CT-2",
+            "CT-3"
+          ],
+          "type": "string"
+        },
+        "framesToday": {
+          "maximum": 100000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "lastFrame": {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "additionalProperties": false,
+              "properties": {
+                "day": {
+                  "maximum": 1000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "time": {
+                  "maxLength": 5,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "day",
+                "time"
+              ],
+              "type": "object"
+            },
+            "count": {
+              "maximum": 50,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "frame": {
+              "maxLength": 16,
+              "type": "string"
+            },
+            "species": {
+              "enum": [
+                "river otter",
+                "American beaver",
+                "great blue heron",
+                "American mink",
+                "raccoon",
+                "white-tailed deer",
+                "belted kingfisher",
+                "none"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "frame",
+            "at",
+            "species",
+            "count"
+          ],
+          "type": "object"
+        },
+        "name": {
+          "maxLength": 60,
+          "type": "string"
+        },
+        "otterFramesToday": {
+          "maximum": 100000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reachId": {
+          "enum": [
+            "cedar-riffle",
+            "beaver-flats",
+            "heron-marsh"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "reachId",
+        "name",
+        "cameraId",
+        "lastFrame",
+        "framesToday",
+        "otterFramesToday"
+      ],
+      "type": "object"
+    },
+    "CreekOverview": {
+      "additionalProperties": false,
+      "properties": {
+        "daylight": {
+          "enum": [
+            "dawn",
+            "day",
+            "dusk",
+            "night"
+          ],
+          "type": "string"
+        },
+        "observed": {
+          "additionalProperties": false,
+          "properties": {
+            "day": {
+              "maximum": 1000000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "time": {
+              "maxLength": 5,
+              "type": "string"
+            }
+          },
+          "required": [
+            "day",
+            "time"
+          ],
+          "type": "object"
+        },
+        "otters": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "activity": {
+                "enum": [
+                  "denning",
+                  "resting",
+                  "foraging",
+                  "traveling",
+                  "grooming",
+                  "playing",
+                  "away"
+                ],
+                "type": "string"
+              },
+              "name": {
+                "enum": [
+                  "Pebble",
+                  "Birch",
+                  "Juniper"
+                ],
+                "type": "string"
+              },
+              "otterId": {
+                "enum": [
+                  "LO-07",
+                  "LO-03",
+                  "LO-11"
+                ],
+                "type": "string"
+              },
+              "reachId": {
+                "enum": [
+                  "alder-spring",
+                  "cedar-riffle",
+                  "kestrel-bend",
+                  "beaver-flats",
+                  "slate-canyon",
+                  "heron-marsh",
+                  "confluence",
+                  "withheld",
+                  "outside"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "otterId",
+              "name",
+              "reachId",
+              "activity"
+            ],
+            "type": "object"
+          },
+          "maxItems": 3,
+          "type": "array"
+        },
+        "stations": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "flowCfs": {
+                "maximum": 100000,
+                "minimum": 0,
+                "type": "number"
+              },
+              "name": {
+                "maxLength": 40,
+                "type": "string"
+              },
+              "stationId": {
+                "enum": [
+                  "LC-01",
+                  "LC-02",
+                  "LC-03",
+                  "LC-04"
+                ],
+                "type": "string"
+              },
+              "trend": {
+                "enum": [
+                  "rising",
+                  "falling",
+                  "steady"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "stationId",
+              "name",
+              "flowCfs",
+              "trend"
+            ],
+            "type": "object"
+          },
+          "maxItems": 4,
+          "type": "array"
+        },
+        "watershed": {
+          "enum": [
+            "lontra"
+          ],
+          "type": "string"
+        },
+        "weather": {
+          "enum": [
+            "clear",
+            "rain",
+            "storm"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "watershed",
+        "observed",
+        "daylight",
+        "weather",
+        "stations",
+        "otters"
+      ],
+      "type": "object"
+    },
+    "GaugeReading": {
+      "additionalProperties": false,
+      "properties": {
+        "dissolvedOxygenMgL": {
+          "maximum": 25,
+          "minimum": 0,
+          "type": "number"
+        },
+        "flowCfs": {
+          "maximum": 100000,
+          "minimum": 0,
+          "type": "number"
+        },
+        "name": {
+          "maxLength": 40,
+          "type": "string"
+        },
+        "observed": {
+          "additionalProperties": false,
+          "properties": {
+            "day": {
+              "maximum": 1000000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "time": {
+              "maxLength": 5,
+              "type": "string"
+            }
+          },
+          "required": [
+            "day",
+            "time"
+          ],
+          "type": "object"
+        },
+        "reachId": {
+          "enum": [
+            "alder-spring",
+            "cedar-riffle",
+            "kestrel-bend",
+            "beaver-flats",
+            "slate-canyon",
+            "heron-marsh",
+            "confluence"
+          ],
+          "type": "string"
+        },
+        "stageFt": {
+          "maximum": 40,
+          "minimum": 0,
+          "type": "number"
+        },
+        "stationId": {
+          "enum": [
+            "LC-01",
+            "LC-02",
+            "LC-03",
+            "LC-04"
+          ],
+          "type": "string"
+        },
+        "trend": {
+          "enum": [
+            "rising",
+            "falling",
+            "steady"
+          ],
+          "type": "string"
+        },
+        "turbidityNtu": {
+          "maximum": 5000,
+          "minimum": 0,
+          "type": "number"
+        },
+        "waterTempC": {
+          "maximum": 40,
+          "minimum": -5,
+          "type": "number"
+        },
+        "weather": {
+          "enum": [
+            "clear",
+            "rain",
+            "storm"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "stationId",
+        "name",
+        "reachId",
+        "observed",
+        "stageFt",
+        "flowCfs",
+        "waterTempC",
+        "dissolvedOxygenMgL",
+        "turbidityNtu",
+        "trend",
+        "weather"
+      ],
+      "type": "object"
+    },
+    "HoltParams": {
+      "additionalProperties": false,
+      "properties": {
+        "holtId": {
+          "enum": [
+            "A",
+            "B"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "holtId"
+      ],
+      "type": "object"
+    },
+    "HoltStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "gridRef": {
+          "maxLength": 20,
+          "type": "string"
+        },
+        "holtId": {
+          "enum": [
+            "A",
+            "B"
+          ],
+          "type": "string"
+        },
+        "lastEntry": {
+          "additionalProperties": false,
+          "properties": {
+            "day": {
+              "maximum": 1000000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "time": {
+              "maxLength": 5,
+              "type": "string"
+            }
+          },
+          "required": [
+            "day",
+            "time"
+          ],
+          "type": "object"
+        },
+        "lastExit": {
+          "additionalProperties": false,
+          "properties": {
+            "day": {
+              "maximum": 1000000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "time": {
+              "maxLength": 5,
+              "type": "string"
+            }
+          },
+          "required": [
+            "day",
+            "time"
+          ],
+          "type": "object"
+        },
+        "name": {
+          "maxLength": 40,
+          "type": "string"
+        },
+        "occupants": {
+          "items": {
+            "enum": [
+              "Pebble",
+              "Sprout",
+              "Skipper",
+              "Birch",
+              "Juniper"
+            ],
+            "type": "string"
+          },
+          "maxItems": 8,
+          "type": "array"
+        },
+        "occupied": {
+          "type": "boolean"
+        },
+        "reachId": {
+          "enum": [
+            "alder-spring",
+            "cedar-riffle",
+            "kestrel-bend",
+            "beaver-flats",
+            "slate-canyon",
+            "heron-marsh",
+            "confluence"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "holtId",
+        "name",
+        "reachId",
+        "gridRef",
+        "occupied",
+        "occupants",
+        "lastEntry",
+        "lastExit"
+      ],
+      "type": "object"
+    },
+    "OtterParams": {
+      "additionalProperties": false,
+      "properties": {
+        "otterId": {
+          "enum": [
+            "LO-07",
+            "LO-03",
+            "LO-11"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "otterId"
+      ],
+      "type": "object"
+    },
+    "OtterStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "activity": {
+          "enum": [
+            "denning",
+            "resting",
+            "foraging",
+            "traveling",
+            "grooming",
+            "playing",
+            "away"
+          ],
+          "type": "string"
+        },
+        "ageClass": {
+          "enum": [
+            "adult",
+            "yearling"
+          ],
+          "type": "string"
+        },
+        "divesThisHour": {
+          "maximum": 10000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "lastDetection": {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "additionalProperties": false,
+              "properties": {
+                "day": {
+                  "maximum": 1000000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "time": {
+                  "maxLength": 5,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "day",
+                "time"
+              ],
+              "type": "object"
+            },
+            "receiver": {
+              "enum": [
+                "RX-01",
+                "RX-02",
+                "RX-03",
+                "RX-04",
+                "RX-05",
+                "RX-06",
+                "RX-07",
+                "withheld",
+                "none"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "at",
+            "receiver"
+          ],
+          "type": "object"
+        },
+        "name": {
+          "enum": [
+            "Pebble",
+            "Birch",
+            "Juniper"
+          ],
+          "type": "string"
+        },
+        "note": {
+          "maxLength": 120,
+          "type": "string"
+        },
+        "otterId": {
+          "enum": [
+            "LO-07",
+            "LO-03",
+            "LO-11"
+          ],
+          "type": "string"
+        },
+        "reachId": {
+          "enum": [
+            "alder-spring",
+            "cedar-riffle",
+            "kestrel-bend",
+            "beaver-flats",
+            "slate-canyon",
+            "heron-marsh",
+            "confluence",
+            "withheld",
+            "outside"
+          ],
+          "type": "string"
+        },
+        "reachName": {
+          "maxLength": 60,
+          "type": "string"
+        },
+        "sex": {
+          "enum": [
+            "female",
+            "male"
+          ],
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "in-watershed",
+            "left-watershed"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "otterId",
+        "name",
+        "sex",
+        "ageClass",
+        "status",
+        "reachId",
+        "reachName",
+        "activity",
+        "divesThisHour",
+        "lastDetection",
+        "note"
+      ],
+      "type": "object"
+    },
+    "ReachParams": {
+      "additionalProperties": false,
+      "properties": {
+        "reachId": {
+          "enum": [
+            "cedar-riffle",
+            "beaver-flats",
+            "heron-marsh"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "reachId"
+      ],
+      "type": "object"
+    },
+    "StationParams": {
+      "additionalProperties": false,
+      "properties": {
+        "stationId": {
+          "enum": [
+            "LC-01",
+            "LC-02",
+            "LC-03",
+            "LC-04"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "stationId"
+      ],
+      "type": "object"
+    },
+    "WatershedParams": {
+      "additionalProperties": false,
+      "properties": {
+        "watershed": {
+          "enum": [
+            "lontra"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "watershed"
+      ],
+      "type": "object"
+    }
+  },
+  "sources": {
+    "field": {
+      "fixtureRef": "field",
+      "generation": "field-fixture-1",
+      "kind": "fixture"
+    }
+  }
+}

@@ -11,7 +11,9 @@
  */
 import { initialCamera, stepCamera, type CameraState } from "./cameras.ts";
 import { studyTime } from "./clock.ts";
-import { CAMERAS, HOLTS, OTTERS, REACHES, STATIONS, type CameraId, type HoltId, type OtterId, type StationId } from "./geography.ts";
+import {
+  CAMERAS, HOLTS, OTTERS, REACHES, STATIONS, type CameraId, type HoltId, type OtterId, type OtterName, type PupName, type StationId
+} from "./geography.ts";
 import { initialStations, initialWeather, isHighFlow, stepStations, stepWeather, type StationState, type WeatherState } from "./hydrology.ts";
 import { initialOtter, stepOtter, type OtterState } from "./otters.ts";
 import { createRng, seedFrom } from "./random.ts";
@@ -21,7 +23,7 @@ export const WORLD_FORMAT = 1;
 const TICKS_PER_GENERATION = 10n ** 12n;
 
 export interface HoltState {
-  occupants: string[];
+  occupants: (OtterName | PupName)[];
   lastEntryTick: number | null;
   lastExitTick: number | null;
 }
@@ -156,7 +158,7 @@ function collect(world: WorldState): Emission[] {
 
 function updateHolts(world: WorldState): void {
   for (const holt of HOLTS) {
-    const occupants: string[] = [];
+    const occupants: (OtterName | PupName)[] = [];
     for (const profile of OTTERS) {
       const otter = world.otters[profile.id];
       if (otter.den === holt.id) occupants.push(profile.name);

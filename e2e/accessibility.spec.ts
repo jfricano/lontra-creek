@@ -21,7 +21,7 @@
  * design team's fix lands, so none of the three can be quietly forgotten.
  */
 import { AxeBuilder } from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import type { NodeResult, Result } from "axe-core";
 
 const SERIOUS_OR_CRITICAL = ["serious", "critical"];
@@ -52,15 +52,16 @@ function isNightOwlCommentNode(node: NodeResult): boolean {
 
 /**
  * True if this node is the footer's release-version tag in `Base.astro`: a
- * bare `<code>` element whose only content is the release version (4.34:1,
- * `#62708a` on `#e8f0f8`). Astro also stamps this element with a per-build
- * `data-astro-cid-*` scope attribute (currently `data-astro-cid-hkbrpulz`);
- * that hash changes whenever `Base.astro`'s `<style>` block changes, so this
- * matches the element's structure (a bare `code` tag holding a version
- * string) instead of keying on the hash.
+ * `<code>` element with no child markup, holding only the release version
+ * (4.34:1, `#62708a` on `#e8f0f8`). Astro stamps this element with build- and
+ * mode-specific attributes — a per-build `data-astro-cid-*` scope hash
+ * (currently `data-astro-cid-hkbrpulz`, which changes whenever `Base.astro`'s
+ * `<style>` block changes) and, in dev-mode CI runs, `data-astro-source-*`
+ * debug attributes — so this matches the element's tag and text content
+ * instead of keying on any attribute.
  */
 function isFooterVersionCodeNode(node: NodeResult): boolean {
-  const match = /^<code(?:\s+data-astro-cid-[a-z0-9]+="")?>([^<]*)<\/code>$/i.exec(node.html.trim());
+  const match = /^<code\b[^>]*>([^<]*)<\/code>$/i.exec(node.html.trim());
   const text = match?.[1];
   return text !== undefined && /^\d+\.\d+\.\d+(?:-[\w.]+)?$/.test(text);
 }
@@ -70,11 +71,28 @@ function isFooterVersionCodeNode(node: NodeResult): boolean {
  * violation with other nodes keeps those nodes; a violation that is entirely
  * known-issue nodes is dropped.
  */
-function filterKnownIssues(violations: readonly Result[]): Result[] {
+async function filterKnownIssues(violations: readonly Result[], page: Page): Promise<Result[]> {
+  // Axe may use only `code` for the footer's shortest unique selector. Resolve
+  // that selector against the live DOM, so version snippets elsewhere cannot
+  // accidentally inherit the footer exception.
+  const footerNodes = new Set<NodeResult>();
+  for (const violation of violations) {
+    if (violation.id !== "color-contrast") continue;
+    for (const node of violation.nodes) {
+      if (!isFooterVersionCodeNode(node) || node.target.length !== 1) continue;
+      const selector = node.target[0];
+      if (typeof selector !== "string") continue;
+      const hasKnownColors = node.any.some(check => check.id === "color-contrast"
+        && check.data?.fgColor === "#62708a" && check.data?.bgColor === "#e8f0f8");
+      if (hasKnownColors && await page.evaluate(target => document.querySelector(target)?.matches("footer code") === true, selector)) {
+        footerNodes.add(node);
+      }
+    }
+  }
   return violations
     .map(violation =>
       violation.id === "color-contrast"
-        ? { ...violation, nodes: violation.nodes.filter(node => !isButtonPrimaryNode(node) && !isNightOwlCommentNode(node) && !isFooterVersionCodeNode(node)) }
+        ? { ...violation, nodes: violation.nodes.filter(node => !isButtonPrimaryNode(node) && !isNightOwlCommentNode(node) && !footerNodes.has(node)) }
         : violation
     )
     .filter(violation => violation.nodes.length > 0);
@@ -87,7 +105,7 @@ test("home page has no serious or critical axe violations", async ({ page }) => 
   await expect(page.locator("[data-live-creek] [data-card] [data-state]").first()).toHaveAttribute("data-state", "live", { timeout: 30_000 });
 
   const results = await new AxeBuilder({ page }).analyze();
-  const serious = filterKnownIssues(results.violations.filter(violation => SERIOUS_OR_CRITICAL.includes(violation.impact ?? "")));
+  const serious = await filterKnownIssues(results.violations.filter(violation => SERIOUS_OR_CRITICAL.includes(violation.impact ?? "")), page);
   expect(serious, describeViolations(serious)).toEqual([]);
 });
 
@@ -95,7 +113,7 @@ test("404 page has no serious or critical axe violations", async ({ page }) => {
   await page.goto("/this-page-does-not-exist-anywhere-on-the-site");
 
   const results = await new AxeBuilder({ page }).analyze();
-  const serious = filterKnownIssues(results.violations.filter(violation => SERIOUS_OR_CRITICAL.includes(violation.impact ?? "")));
+  const serious = await filterKnownIssues(results.violations.filter(violation => SERIOUS_OR_CRITICAL.includes(violation.impact ?? "")), page);
   expect(serious, describeViolations(serious)).toEqual([]);
 });
 

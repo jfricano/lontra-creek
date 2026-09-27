@@ -4,10 +4,9 @@
  *
  * `npm run dev` starts the field station in fixture mode (no Kafka) plus the site,
  * on the defaults from docs/DEPLOYMENT_PLAN.md: site 4321, gateway 7400, workbench
- * 7401, site API 7402. `devops`'s F.1 story adds LONTRA_SITE_PORT and its siblings
- * to the dev scripts; until that lands, `npm run dev` only understands the
- * defaults, so LONTRA_SITE_PORT below has no effect yet, but tests and CI already
- * read it so nothing here needs to change when F.1 merges.
+ * 7401, site API 7402. Set LONTRA_SITE_PORT, LONTRA_GATEWAY_PORT,
+ * LONTRA_WORKBENCH_PORT, and LONTRA_API_PORT to use a separate port block;
+ * the dev stack and this harness both read those overrides.
  */
 import { defineConfig, devices } from "@playwright/test";
 

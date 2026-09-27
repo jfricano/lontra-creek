@@ -5,14 +5,20 @@
  * test and lists what it found. If a fix needs a change outside this story's
  * files, that goes in this story's report instead of being patched over here.
  *
- * One exception: the primary button's white text on #0091f5 measures 3.29:1,
- * and WCAG AA needs 4.5:1. That's the design team's theme work, not ours, and
- * the owner has decided to merge this harness with it marked as a known issue
- * rather than block on it. `filterKnownIssues` strips only the color-contrast
- * nodes that target a `.button-primary` element; every other serious or
- * critical violation, including any other color-contrast node, still fails.
- * The "known issue tracker" test below fails on purpose until the design
- * team's fix lands, so the known issue can't be quietly forgotten.
+ * Three exceptions, all the design team's theme work and all decided by the
+ * owner to merge as known issues rather than block the harness on:
+ *
+ * 1. The primary button's white text on #0091f5 measures 3.29:1.
+ * 2. Syntax-highlighted comments in the `night-owl` code theme (home page):
+ *    `#637777` italic comment tokens on `#07142e` measure 3.86:1.
+ * 3. The version tag in the footer (`/` and the 404 page): `#62708a` on
+ *    `#e8f0f8` measures 4.34:1.
+ *
+ * WCAG AA needs 4.5:1 for all three. `filterKnownIssues` strips only the
+ * color-contrast nodes matching these three; every other serious or critical
+ * violation, including any other color-contrast node, still fails. Each has
+ * its own "known issue tracker" test below that fails on purpose until the
+ * design team's fix lands, so none of the three can be quietly forgotten.
  */
 import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
@@ -32,14 +38,45 @@ function isButtonPrimaryNode(node: NodeResult): boolean {
 }
 
 /**
- * Drops color-contrast nodes that are the known `.button-primary` issue
- * (3.29:1, white on #0091f5, owned by the design team's theme work). A
+ * True if this node is a `night-owl` comment token: a `<span>` with an inline
+ * `color:#637777` (its italic comment color) inside a `pre.astro-code` block
+ * on the home page (3.86:1 on the panel's `#07142e`). Matched on the rendered
+ * inline style rather than an ancestor selector, because axe's
+ * shortest-unique-selector for one of these spans doesn't always keep
+ * `astro-code` in the chain (it can bottom out at `.line:nth-child(n) >
+ * span:nth-child(m)`), so a selector-based match would miss some of them.
+ */
+function isNightOwlCommentNode(node: NodeResult): boolean {
+  return /^<span\b[^>]*\bstyle="[^"]*color:#637777[^"]*"[^>]*>/i.test(node.html);
+}
+
+/**
+ * True if this node is the footer's release-version tag in `Base.astro`: a
+ * bare `<code>` element whose only content is the release version (4.34:1,
+ * `#62708a` on `#e8f0f8`). Astro also stamps this element with a per-build
+ * `data-astro-cid-*` scope attribute (currently `data-astro-cid-hkbrpulz`);
+ * that hash changes whenever `Base.astro`'s `<style>` block changes, so this
+ * matches the element's structure (a bare `code` tag holding a version
+ * string) instead of keying on the hash.
+ */
+function isFooterVersionCodeNode(node: NodeResult): boolean {
+  const match = /^<code(?:\s+data-astro-cid-[a-z0-9]+="")?>([^<]*)<\/code>$/i.exec(node.html.trim());
+  const text = match?.[1];
+  return text !== undefined && /^\d+\.\d+\.\d+(?:-[\w.]+)?$/.test(text);
+}
+
+/**
+ * Drops color-contrast nodes that are one of the three known issues above. A
  * violation with other nodes keeps those nodes; a violation that is entirely
- * `.button-primary` nodes is dropped.
+ * known-issue nodes is dropped.
  */
 function filterKnownIssues(violations: readonly Result[]): Result[] {
   return violations
-    .map(violation => (violation.id === "color-contrast" ? { ...violation, nodes: violation.nodes.filter(node => !isButtonPrimaryNode(node)) } : violation))
+    .map(violation =>
+      violation.id === "color-contrast"
+        ? { ...violation, nodes: violation.nodes.filter(node => !isButtonPrimaryNode(node) && !isNightOwlCommentNode(node) && !isFooterVersionCodeNode(node)) }
+        : violation
+    )
     .filter(violation => violation.nodes.length > 0);
 }
 
@@ -72,5 +109,31 @@ test("primary button meets AA color contrast (known issue, owned by design)", as
   test.fail();
   await page.goto("/");
   const results = await new AxeBuilder({ page }).include(".button-primary").withRules(["color-contrast"]).analyze();
+  expect(results.violations, describeViolations(results.violations)).toEqual([]);
+});
+
+// Known issue tracker: night-owl's italic comment color, #637777 on #07142e,
+// is 3.86:1, short of the 4.5:1 WCAG AA needs. That's the design team's theme
+// work, not this harness's. test.fail() marks this as expected to fail; when
+// the design team's contrast fix lands, this assertion starts passing,
+// test.fail() flags that as an unexpected pass, and CI goes red — the signal
+// to remove this test and the isNightOwlCommentNode filter above.
+test("syntax-highlighted comments meet AA color contrast (known issue, owned by design)", async ({ page }) => {
+  test.fail();
+  await page.goto("/");
+  const results = await new AxeBuilder({ page }).include("span[style*='color:#637777']").withRules(["color-contrast"]).analyze();
+  expect(results.violations, describeViolations(results.violations)).toEqual([]);
+});
+
+// Known issue tracker: the footer's version tag, #62708a on #e8f0f8, is
+// 4.34:1, short of the 4.5:1 WCAG AA needs. That's the design team's theme
+// work, not this harness's. test.fail() marks this as expected to fail; when
+// the design team's contrast fix lands, this assertion starts passing,
+// test.fail() flags that as an unexpected pass, and CI goes red — the signal
+// to remove this test and the isFooterVersionCodeNode filter above.
+test("footer version tag meets AA color contrast (known issue, owned by design)", async ({ page }) => {
+  test.fail();
+  await page.goto("/");
+  const results = await new AxeBuilder({ page }).include("footer code").withRules(["color-contrast"]).analyze();
   expect(results.violations, describeViolations(results.violations)).toEqual([]);
 });

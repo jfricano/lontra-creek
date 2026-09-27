@@ -1,0 +1,11 @@
+---
+import PagePlaceholder from "../components/PagePlaceholder.astro";
+import Base from "../layouts/Base.astro";
+import { PAGES } from "../site.ts";
+
+const page = PAGES.find(candidate => candidate.href === "/field-station/")!;
+---
+
+<Base title={`${page.label} · StreamOtter`} description={page.summary} noindex={!page.ready}>
+  <PagePlaceholder page={page} />
+</Base>

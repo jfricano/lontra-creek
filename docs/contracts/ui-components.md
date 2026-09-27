@@ -16,6 +16,7 @@ Every page that shows StreamOtter at work repeats a few pieces: the state chip, 
 | Recording label | Nothing yet | `components/RecordingLabel.astro`, required by every recording player | `fe-content` | E4.6 recorded fallback (Sprint 2) |
 | Notices | `.lc-unavailable` in `LiveCreek.astro`; `.soon` in `[section].astro` (`PagePlaceholder.astro` in #10) and `index.astro` | `components/Notice.astro` and `components/LocalRun.astro` | `fe-content`; `fe-walk` adopts them in `LiveCreek.astro` | E3.1 busy and unavailable states (Sprint 2); the walkthrough (Sprint 1) |
 | Live card | `.lc-card` markup in `LiveCreek.astro`; its behavior in `live-creek.ts` (`field-cards.ts` in #13) | `components/LiveCard.astro` and `field-cards.ts` | `fe-walk` | E1.2 chapters (Sprint 1); E3.1 `/lab` (Sprint 2) |
+| Theme, brand, and chrome | Design tokens and type in `styles/global.css`; the brand files in `assets/brand/` and `public/`; `layouts/Base.astro`, `pages/404.astro`, `components/PagePlaceholder.astro` | Unchanged (section 7) | design | Every page |
 
 The SDK log (`.lc-log` in `LiveCreek.astro`, `field-log.ts` in #13) is the sixth shared piece; `fe-walk` owns it, and the Lab's trace feed follows its line format (section 6).
 
@@ -71,7 +72,7 @@ The SDK log (`.lc-log` in `LiveCreek.astro`, `field-log.ts` in #13) is the sixth
 
 ## 4. Notices, including the unavailable state
 
-**Today.** The live panel's unavailable state, `.lc-unavailable` in `LiveCreek.astro`, shown by `data-status="unavailable"` on the panel when `/api/config` fails or the gateway hasn't connected within 15 seconds (the SDK keeps trying). It says the demo isn't answering and that the rest of the site works, hides the connection controls, shows how to run the demo locally, and clears when the SDK connects. Placeholder pages show a `.soon` notice, and the home page's explore cards an "In progress" badge.
+**Today.** The live panel's unavailable state, `.lc-unavailable` in `LiveCreek.astro`, shown by `data-status="unavailable"` on the panel when `/api/config` fails or the gateway hasn't connected within 15 seconds (the SDK keeps trying). It says the demo isn't answering and that the rest of the site works, hides the connection controls, shows how to run the demo locally, and clears when the SDK connects. Placeholder pages and the home page's explore cards show an "In progress" badge (`.badge-soon` in `global.css` on placeholders; the explore cards' own `.soon` until the home page's design story).
 
 **Becomes.** `components/Notice.astro` with `kind` `"unavailable" | "busy" | "in-progress" | "info"`, a heading, and a slot, and `components/LocalRun.astro`, the local-run instructions from `snippets/commands.ts`, which both the unavailable and busy notices include.
 
@@ -82,7 +83,8 @@ The SDK log (`.lc-log` in `LiveCreek.astro`, `field-log.ts` in #13) is the sixth
 - A notice appears on evidence only: a failed request, or a stated timeout such as the 15 seconds above. It clears on evidence too: the SDK connecting, or the Lab answering.
 - Unavailable: say plainly what isn't answering, say the rest of the site works, hide controls that can't work, and show the local-run instructions.
 - Busy (the Lab, every bench leased): the visitor's place in line, a way to leave it, and the local-run instructions ([lab-api.md](lab-api.md#4-leases-and-the-queue)). The Lab is unavailable when `GET /api/lab/status` fails, says `enabled: false`, or lists no working bench.
-- One polite announcement per notice; the stale colors (`--stale`, `--stale-bg`); a `data-status` hook for tests.
+- One polite announcement per notice; a `data-status` hook for tests.
+- Unavailable and busy notices use the stale colors (`--stale`, `--stale-bg`), because the demo they describe is out of reach. "In progress" never does: it uses the neutral `.badge-soon`, so an unfinished page can't be mistaken for a stale view.
 
 ## 5. Live cards
 
@@ -106,3 +108,15 @@ The SDK log (`.lc-log` in `LiveCreek.astro`, `field-log.ts` in #13) is the sixth
 These `data-*` attributes are the contract between the pages and the browser tests (F.5 and later); changing one needs `qa`'s agreement. On the live panel: `data-live-creek`, `data-status`, `data-connection`, `data-network`, `data-overview`, `data-card`, `data-state`, `data-v`, `data-rev`, `data-age`, `data-log`, `data-announce`, `data-note`, `data-drop`, `data-restore`, `data-clock`, and `data-source`; on the home page, `data-copy`. New shared components add their own `data-*` hooks rather than relying on classes, and every hook a test uses is listed here by the pull request that adds it.
 
 The SDK log's lines (`field-log.ts`) are a time since the page started, a highlighted subject (a view's label, `connection`, `network`), and what the SDK reported. The Lab's trace feed uses the same line shape, with the trace's stage and outcome as the subject.
+
+## 7. Theme, brand, and chrome
+
+**Owner.** Design (the brand-foundation story, `feat/site-brand-foundation`): the design tokens and type in `styles/global.css` except the chip block, which stays with `fe-walk`; the brand files, which `scripts/brand-assets.mjs` generates from `assets/streamotter-brand.svg` and `assets/streamotter-logo-transparent.png` (never edit the outputs by hand); `layouts/Base.astro`, `pages/404.astro`, and `components/PagePlaceholder.astro`. The look of the chips, the code theme, notices, stale cards, and the recording label is design's to set in tokens; their markup, props, behavior rules, and `data-*` hooks stay with the lanes above.
+
+**Rules.**
+
+- Colors come from tokens. The bright brand blues (`--azure`, `--splash`, `--signal`) are fills and display accents, never text or white-label buttons on light grounds: text uses `--azure-ink` or `--accent`, and primary buttons use `--button-bg` and `--button-ink`.
+- Status colors mean status. Cyan (`--signal`, `--live`) means live, amber (`--stale`) means stale; neither decorates.
+- The brandmark is inlined from `assets/brand/` (`lockup-horizontal.svg` in the header, `lockup-stacked.svg` in the footer, `mark.svg` on the 404 and placeholder pages) with `class="brand"` and `aria-hidden="true"`; the link or heading around it carries the name. Its S and "Stream" follow `--brand-ink` and its whiskers `--brand-whisker`, so one file serves both schemes. Set its height in CSS with `aspect-ratio` from the viewBox, so nothing shifts as it loads.
+- The detailed swimming-otter logo appears once on the site, as the home page's hero illustration. Everywhere small or repeated uses the flat brandmark.
+- `SITE.launched` in `site.ts` is false until launch. Navigation, the footer, and the 404 page list `LISTED_PAGES`: every page before launch, only ready pages after.

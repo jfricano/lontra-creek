@@ -8,10 +8,17 @@ declare function render(reading: AppChannels["station"]["data"]): void;
 declare function showState(state: string): void;
 
 // snippet:start
-const client = createClient<AppChannels>({ getToken: ({ signal }) => session.token(signal) });
+const client = createClient<AppChannels>({
+  getToken: ({ signal }) => session.token(signal)
+});
 
-const gauge = client.subscribe("station", { channelVersion: 1, params: { stationId: "LC-02" } });
-gauge.on("data", event => render(event.data));      // a snapshot, then newer states in order
-gauge.on("state", ({ state }) => showState(state)); // live, stale, resync-required…
+const gauge = client.subscribe("station", {
+  channelVersion: 1,
+  params: { stationId: "LC-02" }
+});
+// A snapshot, then newer states in order.
+gauge.on("data", event => render(event.data));
+// Live, stale, resync-required…
+gauge.on("state", ({ state }) => showState(state));
 await gauge.ready();
 // snippet:end

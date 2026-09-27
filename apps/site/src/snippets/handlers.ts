@@ -10,10 +10,12 @@ declare function holtStates(value: Json): { tenantId: string; params: Holt["para
 // snippet:start
 export const holt: HoltHandlers = {
   // Den sites are protected: only researchers may subscribe.
-  authorize: ({ principal }) => principal.claims["role"] === "researcher",
+  authorize: ({ principal }) =>
+    principal.claims["role"] === "researcher",
   // Pick this channel's state out of each Kafka record.
   map: ({ record }) => holtStates(record.value),
-  // The current state, read before any buffered update is released.
-  snapshot: ({ params, signal }) => fieldStation.holt(params.holtId, signal)
+  // Read current state before releasing buffered updates.
+  snapshot: ({ params, signal }) =>
+    fieldStation.holt(params.holtId, signal)
 };
 // snippet:end

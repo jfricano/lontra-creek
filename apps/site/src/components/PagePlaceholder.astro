@@ -1,5 +1,6 @@
 ---
 /** The shared placeholder body for a page whose real content isn't built yet. */
+import Mark from "../assets/brand/mark.svg";
 import type { Page } from "../site.ts";
 
 interface Props {
@@ -10,11 +11,12 @@ const { page } = Astro.props;
 ---
 
 <section class="wrap upcoming">
+  <Mark class="brand upcoming-mark" aria-hidden="true" focusable="false" />
   <p class="eyebrow">{page.question}</p>
   <h1>{page.label}</h1>
   <p class="lede">{page.summary}</p>
-  <p class="soon">This page is being built. The live panel on the home page already runs on the real field station.</p>
-  <p><a class="button button-primary" href="/">Back to the creek</a></p>
+  <p class="status"><span class="badge-soon">In progress</span> This page is being built.</p>
+  <p><a class="button button-primary" href="/">Back to home</a></p>
 </section>
 
 <style>
@@ -22,15 +24,23 @@ const { page } = Astro.props;
     padding-block: clamp(56px, 10vw, 120px);
     display: grid;
     gap: 18px;
-    max-width: 820px;
-    margin-inline: auto;
+    justify-items: start;
   }
-  .soon {
-    justify-self: start;
-    padding: 10px 14px;
-    border-radius: 10px;
-    color: var(--stale);
-    background: var(--stale-bg);
-    font-size: 0.95rem;
+  .upcoming > :not(.upcoming-mark) {
+    max-width: 760px;
+  }
+  /* The mark's viewBox is 434.9 × 317.9. */
+  .upcoming-mark {
+    display: block;
+    height: 72px;
+    width: auto;
+    aspect-ratio: 434.9 / 317.9;
+  }
+  .status {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    color: var(--ink-2);
   }
 </style>

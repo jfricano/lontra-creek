@@ -1,0 +1,14 @@
+{
+  "name": "StreamOtter",
+  "short_name": "StreamOtter",
+  "description": "Live state from Kafka to the browser. Never silently wrong.",
+  "start_url": "/",
+  "display": "browser",
+  "theme_color": "#04183f",
+  "background_color": "#030b1f",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

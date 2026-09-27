@@ -15,7 +15,6 @@
 	header_up -CF-Connecting-IP
 	header_up -Forwarded
 	header_up -X-Real-IP
-	header_up -X-Client-IP
 	header_up X-Forwarded-For {client_ip}
 	header_up X-Forwarded-Proto https
 }
@@ -44,6 +43,7 @@
 		handle /streamotter/* {
 			reverse_proxy {$GATEWAY_UPSTREAM:gateway:7400} {
 				import verified_headers
+				header_up -X-Client-IP
 			}
 		}
 		handle /lab/1/socket.io/* {
@@ -51,6 +51,7 @@
 			respond @foreignOrigin1 403
 			reverse_proxy {$LAB_1_UPSTREAM:lab-1:7400} {
 				import verified_headers
+				header_up -X-Client-IP
 			}
 		}
 		handle /lab/2/socket.io/* {
@@ -58,6 +59,7 @@
 			respond @foreignOrigin2 403
 			reverse_proxy {$LAB_2_UPSTREAM:lab-2:7400} {
 				import verified_headers
+				header_up -X-Client-IP
 			}
 		}
 		handle /lab/3/socket.io/* {
@@ -65,6 +67,7 @@
 			respond @foreignOrigin3 403
 			reverse_proxy {$LAB_3_UPSTREAM:lab-3:7400} {
 				import verified_headers
+				header_up -X-Client-IP
 			}
 		}
 		handle /api/* {

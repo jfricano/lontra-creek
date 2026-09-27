@@ -10,12 +10,53 @@ on:
     branches: [main]
   pull_request:
 
+# A new push to the same pull request supersedes the last stack run for it. A
+# push to main gets its own group (keyed by the run id) so a quick follow-up
+# push can't cancel a run already in flight.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || ((github.ref == 'refs/heads/main' && github.run_id) || github.ref) }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 permissions:
   contents: read
 
 jobs:
+  # Runs before the container jobs so they can skip cleanly (and still report a
+  # status other checks can require) when a change touches nothing they exercise.
+  # A job-level `if:`, not a workflow `paths:` filter, because a `paths:`-skipped
+  # workflow reports no status at all, which a required check would wait on forever.
+  changes:
+    name: Detect stack-relevant changes
+    runs-on: ubuntu-24.04
+    outputs:
+      relevant: ${{ steps.diff.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the diff for stack-relevant paths
+        id: diff
+        run: |
+          # Only a pull request has a base to diff against; every push (to main,
+          # per the trigger above) always runs the stack.
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          git fetch --no-tags --depth=1 origin "$base" "$head"
+          changed="$(git diff --name-only "$base" "$head")"
+          echo "$changed"
+          if echo "$changed" | grep -qE '^(apps/field-station/|packages/|deploy/|\.github/workflows/stack\.yml$|package\.json$|package-lock\.json$|tsconfig\.base\.json$)'; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          fi
+
   stack:
     name: Stack (${{ matrix.arch }})
+    needs: [changes]
+    if: needs.changes.outputs.relevant == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -86,3 +127,22 @@ jobs:
       - name: Stop the stack
         if: always()
         run: docker compose -f deploy/compose.yaml --env-file "$STACK_ENV" down --volumes
+
+  # The matrix above reports as one check literally named "Stack (${{
+  # matrix.arch }})" when it's skipped, since GitHub never expands a matrix
+  # for a job it didn't run. Branch protection needs a check that always
+  # reports under a fixed name, so this job is what it requires instead.
+  stack-required:
+    name: Stack
+    needs: [changes, stack]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require the stack jobs to have passed or been skipped
+        run: |
+          result="${{ needs.stack.result }}"
+          echo "stack result: $result"
+          if [ "$result" = "success" ] || [ "$result" = "skipped" ]; then
+            exit 0
+          fi
+          exit 1

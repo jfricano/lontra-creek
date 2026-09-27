@@ -1,0 +1,9 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    // Playwright's own types (locators, etc.) and axe-core's reference the DOM lib
+    // the base config leaves out for server-side sources.
+    "lib": ["ES2024", "DOM"]
+  },
+  "include": [".", "../playwright.config.ts"]
+}

@@ -1,11 +1,11 @@
-# Shared TLS edge -> private router. Only infrastructure peer 10.203.43.2
+# Shared TLS edge -> private router. Only the validated infrastructure peer (default 10.203.43.2)
 # may send requests; it replaces X-Forwarded-For with a verified visitor IP.
 # No TLS, host port, Cloudflare trust ranges, or admin exposure on this hop.
 {
 	auto_https off
 	admin 127.0.0.1:2019
 	servers {
-		trusted_proxies static 10.203.43.2
+		trusted_proxies static {$LONTRA_TRUSTED_EDGE_IP:10.203.43.2}
 		trusted_proxies_strict
 		client_ip_headers X-Forwarded-For
 	}
@@ -31,7 +31,7 @@
 
 	# route preserves ordering: peer/Host rejection must precede every proxy.
 	route {
-		@untrusted not remote_ip 10.203.43.2
+		@untrusted not remote_ip {$LONTRA_TRUSTED_EDGE_IP:10.203.43.2}
 		respond @untrusted 403
 		@wrongHost not host {$DEMO_HOST:demo.streamotter.app}
 		respond @wrongHost 404

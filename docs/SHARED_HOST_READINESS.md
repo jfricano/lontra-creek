@@ -53,12 +53,15 @@ The shared TLS edge owns certificates, public443 and the approved hostname. The
 private router does not mount origin certificates or persist TLS/account state.
 Its admin API is explicitly container-loopback2019 for its inherited healthcheck.
 
-The router accepts only the immediate peer **10.203.43.2**; every other peer
-receives403 even if it forges forwarding headers. This exact address is pinned
-in two Caddy directives, deliberately not a freely broadenable environment
-value. A reviewed ingress IP change must update both directives and the shared
-edge assignment together, then rerun spoofing tests. The router requires the
-configured `DEMO_HOST` Host header; other hosts receive404.
+The router accepts only the immediate peer named by `LONTRA_TRUSTED_EDGE_IP`
+(default **10.203.43.2**); every other peer receives403 even if it forges forwarding
+headers. The mounted `start-caddy-shared.sh` entrypoint validates exactly one
+canonical IPv4 address before Caddy starts: no CIDR, list, whitespace, alternate
+numeric format or empty value. Both trust and peer rejection use that same
+validated value. Do not bypass the wrapper. A reviewed ingress IP change must
+update the shared edge assignment and this variable together, then rerun
+spoofing tests; it never permits subnet trust. The router requires the configured
+`DEMO_HOST` Host header; other hosts receive404.
 
 The shared edge removes caller `CF-Connecting-IP`, `Forwarded`, `X-Real-IP` and
 `X-Client-IP`, replaces `X-Forwarded-For` with its verified visitor address and
@@ -140,7 +143,7 @@ gateway, bench, and edge configuration; never broaden to wildcard Origin.
 The shared deployment owner must install root-owned configuration snapshots and
 write `/srv/apps/lontra/current.env` only after accepting the active release.
 Snapshot the required Compose files, referenced `kafka/start.sh` and shared
-Caddyfile, plus hook dependencies; preserve relative paths. Keep the
+Caddyfile, `start-caddy-shared.sh`, plus hook dependencies; preserve relative paths. Keep the
 `/srv/apps/lontra` ancestor0700, release directories0755 and configuration
 files0644, root-owned and not writable by others, so container UIDs can read
 bind-mounted scripts. Active/base env files stay0600. Include the resolved

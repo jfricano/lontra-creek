@@ -57,7 +57,7 @@ About three minutes, validated by a timed walkthrough before launch. Visitors st
 
 ## The Failure Lab (`/lab`)
 
-The Lab ships with the launch. It uses a fixed pool of three benches, not one per visitor. Each bench has its own gateway process, topic, and consumer group, is leased to one visitor for five minutes, and is reset between leases. When every bench is busy, the page shows the visitor's place in line and the local-run instructions.
+The Lab ships with the launch. It uses a fixed pool of three benches, not one per visitor. Each bench has its own gateway process and project, its own copy of the creek's topics, and its own consumer group, is leased to one visitor for five minutes, and is reset between leases. When every bench is busy, the page shows the visitor's place in line and the local-run instructions.
 
 | Scenario | What the visitor does | What they see |
 | --- | --- | --- |
@@ -66,7 +66,9 @@ The Lab ships with the launch. It uses a fixed pool of three benches, not one pe
 | Laptop on a satellite link | A simulated client on the bench stops acknowledging frames. | That client is disconnected after the receipt timeout; the visitor's view keeps flowing and the source never waits. |
 | Relay restart | Restart the bench gateway. | Reconnecting, fresh snapshot, live. |
 
-Benches run `streamotter dev` so their traces can be read. Their management API listens only on the bench's loopback interface; the field station app reads traces server-side and exposes a redacted feed. The field station itself runs `streamotter start` in production mode. The relay cut needs a per-bench network proxy in front of Kafka; it is the one Lab mechanism not yet prototyped.
+Benches run StreamOtter's gateway in development mode so their traces can be read, each with a project of its own, since V1 supports one gateway per project. They start it from the Lab's own entry point with `createGateway({ mode: "development" })` rather than `streamotter dev`. The CLI prints a new management token to the logs on every start, serves the workbench, and needs a configuration file per bench and a compiled handler module. The entry point instead builds each bench's project from its number, starts the management API on the bench's loopback interface with a token it keeps in memory and no workbench, registers no development principals, and can host the bench's own API in the same process. The field station app reads traces through that API and exposes a redacted feed. The demo host's gateway runs `streamotter start` in production mode.
+
+Each bench reaches Kafka only through a proxy of its own, which the flash flood cuts. Its feed, a copy of the creek that the field station publishes to the bench's topics, never crosses that path. The mechanism is proven in CI on amd64 and arm64 ([DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md), workstream 6).
 
 ## Architecture and hosting
 

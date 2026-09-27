@@ -10,6 +10,7 @@
  */
 import type { Server } from "node:http";
 import { TENANT_ID } from "@lontra-creek/sim";
+import { benches } from "../lab/benches.ts";
 import { NOTEBOOK_TOPIC } from "../records.ts";
 import { readConfig } from "./config.ts";
 import { internalApi, publicApi } from "./http.ts";
@@ -23,7 +24,7 @@ const RETRY_MS = 5_000;
 
 const log = (message: string): void => console.log(`${new Date().toISOString()} ${message}`);
 const config = readConfig();
-const kafka = await connectKafka(config.kafka, log);
+const kafka = await connectKafka(config.kafka, log, { benchPrefixes: benches(config.labBenches).map(bench => bench.topicPrefix) });
 const queue = new PublishQueue(kafka.publisher, log);
 const station = new FieldStation({ queue, dataDir: config.dataDir, epoch: config.epoch, tickMs: config.tickMs, generation: config.generation, log });
 const notebooks = new Notebooks({ queue, tenantId: TENANT_ID, log });

@@ -14,11 +14,18 @@
  *
  * Reading. At startup the field station reads field.notebooks from the beginning,
  * with a throwaway consumer group, to rebuild notebooks.
+ *
+ * Failure Lab benches (lab/benches.ts). With benches configured, every creek record
+ * is also published, in the same batch, to each bench's copy of its topic (such as
+ * lab-1.field.gauges), with the same key and value. The copies travel over the field
+ * station's own connection, never a bench's proxy, so cutting a bench off leaves its
+ * feed running. They keep an hour, since benches start from the latest records and
+ * take snapshots from the field station.
  */
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Kafka, logLevel, Partitioners, type Admin, type ITopicConfig, type Producer, type SASLOptions } from "kafkajs";
-import { TOPICS } from "@lontra-creek/sim";
+import { CREEK_TOPICS } from "../lab/benches.ts";
 import { NOTEBOOK_TOPIC } from "../records.ts";
 import type { KafkaSettings } from "./config.ts";
 import { NOTEBOOK_RETENTION_MS } from "./notebooks.ts";
@@ -26,15 +33,15 @@ import type { OutgoingRecord, Publisher } from "./queue.ts";
 
 const PARTITIONS = 3;
 const WORLD_RETENTION_MS = 6 * 60 * 60 * 1_000;
+const BENCH_RETENTION_MS = 60 * 60 * 1_000;
 const READ_TIMEOUT_MS = 60_000;
 
+function creekTopic(topic: string, retentionMs: number): ITopicConfig {
+  return { topic, numPartitions: PARTITIONS, replicationFactor: 1, configEntries: [{ name: "retention.ms", value: String(retentionMs) }] };
+}
+
 export const TOPIC_CONFIGS: readonly ITopicConfig[] = [
-  ...[...new Set(Object.values(TOPICS))].map(topic => ({
-    topic,
-    numPartitions: PARTITIONS,
-    replicationFactor: 1,
-    configEntries: [{ name: "retention.ms", value: String(WORLD_RETENTION_MS) }]
-  })),
+  ...CREEK_TOPICS.map(topic => creekTopic(topic, WORLD_RETENTION_MS)),
   {
     topic: NOTEBOOK_TOPIC,
     numPartitions: PARTITIONS,
@@ -48,13 +55,34 @@ export const TOPIC_CONFIGS: readonly ITopicConfig[] = [
   }
 ];
 
+/** The benches' copies of the creek topics, one set per topic prefix. */
+export function benchTopicConfigs(prefixes: readonly string[]): ITopicConfig[] {
+  return prefixes.flatMap(prefix => CREEK_TOPICS.map(topic => creekTopic(`${prefix}${topic}`, BENCH_RETENTION_MS)));
+}
+
+const CREEK_TOPIC_SET: ReadonlySet<string> = new Set(CREEK_TOPICS);
+
+/** The records, followed by each creek record's copy for every bench. Notebooks stay off the benches. */
+export function withBenchCopies(records: readonly OutgoingRecord[], prefixes: readonly string[]): OutgoingRecord[] {
+  const copies = prefixes.flatMap(prefix => records
+    .filter(record => CREEK_TOPIC_SET.has(record.topic))
+    .map(record => ({ ...record, topic: `${prefix}${record.topic}` })));
+  return [...records, ...copies];
+}
+
 export interface KafkaIO {
   publisher: Publisher;
   /** Every record value on a topic, from the beginning up to its end when called. */
   readAll(topic: string): Promise<(string | null)[]>;
 }
 
-export async function connectKafka(settings: KafkaSettings, log: (message: string) => void): Promise<KafkaIO> {
+export async function connectKafka(
+  settings: KafkaSettings,
+  log: (message: string) => void,
+  options: { benchPrefixes?: readonly string[] } = {}
+): Promise<KafkaIO> {
+  const benchPrefixes = options.benchPrefixes ?? [];
+  const topicConfigs = [...TOPIC_CONFIGS, ...benchTopicConfigs(benchPrefixes)];
   const ssl = settings.caFile === null ? false : { ca: [await readFile(settings.caFile, "utf8")] };
   const sasl: SASLOptions | undefined = settings.sasl === null
     ? undefined
@@ -71,7 +99,7 @@ export async function connectKafka(settings: KafkaSettings, log: (message: strin
 
   async function ensureTopics(admin: Admin): Promise<void> {
     const existing = new Set(await admin.listTopics());
-    const missing = TOPIC_CONFIGS.filter(config => !existing.has(config.topic));
+    const missing = topicConfigs.filter(config => !existing.has(config.topic));
     if (missing.length === 0) return;
     // False when another call created them first.
     if (await admin.createTopics({ waitForLeaders: true, topics: [...missing] })) {
@@ -113,7 +141,7 @@ export async function connectKafka(settings: KafkaSettings, log: (message: strin
         producer = await connecting;
       }
       const byTopic = new Map<string, { key: string; value: string }[]>();
-      for (const record of records) {
+      for (const record of withBenchCopies(records, benchPrefixes)) {
         const messages = byTopic.get(record.topic) ?? [];
         messages.push({ key: record.key, value: record.value });
         byTopic.set(record.topic, messages);

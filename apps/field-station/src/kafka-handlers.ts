@@ -27,6 +27,8 @@ export interface KafkaHandlerOptions {
   serviceToken: string;
   /** The internal API's origin, such as http://field-station:7410. */
   internalOrigin: string;
+  /** Prepended to each channel's topic: a Failure Lab bench's copy of the creek (lab/benches.ts). */
+  topicPrefix?: string;
   fetch?: typeof fetch;
 }
 
@@ -40,6 +42,7 @@ export function kafkaHandlerOptions(env: NodeJS.ProcessEnv = process.env): Kafka
 
 export function createKafkaHandlers(options: KafkaHandlerOptions): HandlerRegistry<AppChannels> {
   const request = options.fetch ?? fetch;
+  const prefix = options.topicPrefix ?? "";
 
   function channel<K extends keyof AppChannels>(name: K): ChannelHandlers<AppChannels[K]> {
     type Contract = AppChannels[K];
@@ -51,8 +54,8 @@ export function createKafkaHandlers(options: KafkaHandlerOptions): HandlerRegist
         // Never skip what can't be read: throwing pauses the source at this record.
         if (field === null) throw new Error(`Record ${record.id} is not a field station record.`);
         // One channel instance, one topic and key, so its changes stay in order on one partition.
-        if (record.position.kind === "kafka" && record.position.topic !== topicFor(field.channel)) {
-          throw new Error(`Record ${record.id} is a ${field.channel} view on ${record.position.topic}; expected ${topicFor(field.channel)}.`);
+        if (record.position.kind === "kafka" && record.position.topic !== `${prefix}${topicFor(field.channel)}`) {
+          throw new Error(`Record ${record.id} is a ${field.channel} view on ${record.position.topic}; expected ${prefix}${topicFor(field.channel)}.`);
         }
         if (field.channel !== name) return [];
         return [{ tenantId: field.tenantId, params: field.params as Contract["params"], revision: field.revision, data: field.data as Contract["data"] }];

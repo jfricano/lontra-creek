@@ -24,6 +24,7 @@ This project uses StreamOtter the way any application does: the published [`stre
 | `docs/PLAN.md` | Scope, story, architecture, operating rules, phases, and launch criteria |
 | `docs/DEPLOYMENT_PLAN.md` | The engineering work from here to launch, in order |
 | `docs/HOSTING.md` | The owner's account and server checklist |
+| `docs/TEAM_PLAN.md` | How the team of agents builds what remains: roles, process, branches, backlog, and sprints |
 
 ## Develop
 

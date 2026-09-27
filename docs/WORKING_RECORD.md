@@ -137,3 +137,30 @@ Lab contrast scans failed on an unthemed secondary native button. Applied the
 existing explicit theme-aware button-quiet style; no axe exclusions added.
 Setup rehearsal reached a real ARM64 first deployment before a later failure;
 the deployment reviewer owns diagnosis. Final current-head results pending.
+
+## Verified integration results
+
+At candidate `3c9a3e1`, all93 browser checks passed (Chromium, Firefox, WebKit,
+including dark/light and narrow-screen accessibility). Standard CI passed119
+application tests, typecheck, production build and static link/asset validation.
+Both amd64 and arm64 main-stack checks passed.
+
+ARM64 setup rehearsal [36357431368](https://github.com/jfricano/lontra-creek/actions/runs/36357431368)
+passed idempotent setup with preserved secrets/CA, first deployment, external
+behavior, checkpoint backup/validation/restore, deliberate failed-image rollback,
+and SSH-command restrictions. Checkpoint comparison now compares equal timestamp
+instants, accommodating the server's normalized ISO milliseconds. This verifies
+an ephemeral Ubuntu CI host, not an Oracle account or a shared-host deployment.
+
+Shared hosting proposals are reconciled in SHARED_HOST_READINESS.md. A private
+proxy is proposed because attaching field-station directly to the ingress network
+would also expose its internal listener there; an ingress network is not a
+port-level firewall. Direct aliases also omit the three Lab routes. Coordination
+agreement, enforced capacity budgets, disposable backup-restore hooks, and Lab
+public-risk disposition remain required before shared-host deployment.
+
+The complete `3c9a3e1` CI batch is green, including both architecture Lab jobs
+[36357431298](https://github.com/jfricano/lontra-creek/actions/runs/36357431298).
+Those jobs passed real three-bench scenarios and private-container environment,
+management-loopback, and per-bench API credential checks. Final added HTTP
+queue/FIFO/snapshot-scope checks await the next head's container run.

@@ -60,7 +60,7 @@ try {
  if(!ready)throw new Error('Field station did not become ready.');
  const gateway=run('gateway',process.execPath,['scripts/kafka-gateway.mjs'],join(root,'apps/field-station'),true);
  await new Promise((resolve,reject)=>{
-  const timer=setTimeout(()=>reject(new Error('Gateway did not become ready within120 seconds.')),120000);
+  const timer=setTimeout(()=>reject(new Error('Gateway did not become ready within 120 seconds.')),120000);
   gateway.on('message',message=>{if(message?.type==='ready'){clearTimeout(timer);resolve();}});
   gateway.once('exit',()=>{clearTimeout(timer);reject(new Error('Gateway exited before readiness.'));});
  });

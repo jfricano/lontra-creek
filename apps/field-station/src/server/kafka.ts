@@ -18,7 +18,7 @@
  * Failure Lab benches (lab/benches.ts). With benches configured, every creek record
  * is also published, in the same batch, to each bench's copy of its topic (such as
  * lab-1.field.gauges), with the same key and value. The copies travel over the field
- * station's own connection, never a bench's relay, so cutting a bench off leaves its
+ * station's own connection, never a bench's proxy, so cutting a bench off leaves its
  * feed running. They keep an hour, since benches start from the latest records and
  * take snapshots from the field station.
  */

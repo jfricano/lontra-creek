@@ -1,13 +1,13 @@
 /**
- * A Failure Lab bench's relay to Kafka: the flash flood's target. A plain TCP relay
- * from the address the broker advertises to one bench (its relay's name, such as
+ * A Failure Lab bench's proxy to Kafka: the flash flood's target. A plain TCP proxy
+ * from the address the broker advertises to one bench (its proxy's name, such as
  * lab-1-kafka:9101) to that bench's own listener on the broker. TLS and SCRAM pass
- * through end to end; the relay never sees them.
+ * through end to end; the proxy never sees them.
  *
  * Cutting it stops listening, so new connections are refused, and resets every
  * connection it carries, so the bench's Kafka client loses the broker at once
  * rather than after a timeout. Restoring it listens again; the client reconnects on
- * its own. Nothing else uses the relay, so the demo host's gateway and the field
+ * its own. Nothing else uses the proxy, so the demo host's gateway and the field
  * station, which reach the broker directly, never notice.
  *
  * The control API is for the field station's bench API, on the compose network:
@@ -23,7 +23,7 @@ export interface Endpoint {
   port: number;
 }
 
-export interface RelayOptions {
+export interface ProxyOptions {
   /** Where the bench connects. */
   listen: Endpoint;
   /** The broker's listener for this bench. */
@@ -31,10 +31,10 @@ export interface RelayOptions {
   log?: (message: string) => void;
 }
 
-export type RelayState = "open" | "cut";
+export type ProxyState = "open" | "cut";
 
-export interface Relay {
-  readonly state: RelayState;
+export interface Proxy {
+  readonly state: ProxyState;
   /** Connections carried now. */
   readonly connections: number;
   /** The listening port while open (useful when listening on port 0). */
@@ -44,14 +44,14 @@ export interface Relay {
   close(): Promise<void>;
 }
 
-export async function startRelay(options: RelayOptions): Promise<Relay> {
+export async function startProxy(options: ProxyOptions): Promise<Proxy> {
   const log = options.log ?? (() => undefined);
   const pairs = new Set<{ client: Socket; upstream: Socket }>();
-  let state: RelayState = "open";
+  let state: ProxyState = "open";
   let server: Server | null = null;
   let port: number | null = null;
 
-  function relay(client: Socket): void {
+  function forward(client: Socket): void {
     const upstream = connect(options.target);
     const pair = { client, upstream };
     pairs.add(pair);
@@ -71,7 +71,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   }
 
   function listen(): Promise<void> {
-    const created = createServer(relay);
+    const created = createServer(forward);
     return new Promise((resolve, reject) => {
       created.once("error", reject);
       // A cut and restore reuses the port it had, even when first asked for port 0.
@@ -101,7 +101,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   }
 
   await listen();
-  log(`Relaying ${options.listen.host}:${port} to ${options.target.host}:${options.target.port}.`);
+  log(`Proxying ${options.listen.host}:${port} to ${options.target.host}:${options.target.port}.`);
 
   return {
     get state() { return state; },
@@ -137,14 +137,14 @@ function tokensEqual(expected: string, provided: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-/** The relay's control API. Every request needs the bearer token. */
-export function relayControl(relay: Relay, token: string): HttpServer {
-  if (token.length < 32) throw new Error("The relay's control token must have at least 32 characters.");
+/** The proxy's control API. Every request needs the bearer token. */
+export function proxyControl(proxy: Proxy, token: string): HttpServer {
+  if (token.length < 32) throw new Error("The proxy's control token must have at least 32 characters.");
   const send = (response: ServerResponse, status: number, body: unknown): void => {
     response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
     response.end(JSON.stringify(body));
   };
-  const answer = (response: ServerResponse): void => send(response, 200, { state: relay.state, connections: relay.connections });
+  const answer = (response: ServerResponse): void => send(response, 200, { state: proxy.state, connections: proxy.connections });
 
   return createHttpServer((request: IncomingMessage, response: ServerResponse) => {
     const provided = /^Bearer (.+)$/.exec(request.headers.authorization ?? "")?.[1] ?? "";
@@ -155,10 +155,10 @@ export function relayControl(relay: Relay, token: string): HttpServer {
       case "GET /state":
         return answer(response);
       case "POST /cut":
-        relay.cut().then(() => answer(response), () => send(response, 500, { error: "cut failed" }));
+        proxy.cut().then(() => answer(response), () => send(response, 500, { error: "cut failed" }));
         return;
       case "POST /restore":
-        relay.restore().then(() => answer(response), () => send(response, 500, { error: "restore failed" }));
+        proxy.restore().then(() => answer(response), () => send(response, 500, { error: "restore failed" }));
         return;
       default:
         return send(response, 404, { error: "not found" });

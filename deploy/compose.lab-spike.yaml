@@ -1,4 +1,4 @@
-# The relay-cut spike (E2.0): one Failure Lab bench and its relay beside the demo
+# The relay-cut spike (E2.0): one Failure Lab bench and its proxy beside the demo
 # host's stack, for .github/workflows/lab-spike.yml. Not the Lab's deployment.
 #
 #   docker compose -f deploy/compose.yaml -f deploy/compose.lab-spike.yaml --env-file <env> up -d --wait
@@ -8,12 +8,12 @@
 #
 #   field-station ──kafka:9094──▶ kafka      publishes the creek, and bench 1's copy (lab-1.*)
 #   gateway ───────kafka:9094──▶ kafka      the demo host's gateway, untouched by the cut
-#   lab-1 ──lab-1-kafka:9101──▶ lab-1-kafka (the relay) ──kafka:9101──▶ kafka's BENCH1 listener,
+#   lab-1 ──lab-1-kafka:9101──▶ lab-1-kafka (the proxy) ──kafka:9101──▶ kafka's BENCH1 listener,
 #                                            advertised as lab-1-kafka:9101
 #
-# For the test only, the bench's gateway and the relay's control API are published
+# For the test only, the bench's gateway and the proxy's control API are published
 # on the runner's loopback. In the Lab, visitors reach benches through Caddy and
-# the field station calls the relay on the compose network.
+# the field station calls the proxy on the compose network.
 
 services:
   kafka:
@@ -30,7 +30,7 @@ services:
     image: ${LONTRA_IMAGE:?set LONTRA_IMAGE to the image built from deploy/Dockerfile}
     init: true
     restart: unless-stopped
-    command: ["node", "src/lab/relay-main.ts"]
+    command: ["node", "src/lab/proxy-main.ts"]
     environment:
       NODE_ENV: production
       LAB_BENCH: "1"

@@ -1,8 +1,8 @@
 name: Lab spike
 
 # The relay-cut spike (E2.0): the demo host's stack in containers plus one Failure
-# Lab bench and its relay (deploy/compose.lab-spike.yaml). The test cuts the bench's
-# relay to Kafka and restores it, measuring how long the bench's subscription takes
+# Lab bench and its proxy (deploy/compose.lab-spike.yaml). The test cuts the bench's
+# proxy to Kafka and restores it, measuring how long the bench's subscription takes
 # to go stale and to be live again, while the demo host's gateway keeps serving.
 # The timings land in the job summary. It runs on amd64 and on arm64, the Oracle
 # Ampere host's architecture.
@@ -65,7 +65,7 @@ jobs:
         run: |
           stack="$RUNNER_TEMP/lontra"
           deploy/make-secrets.sh "$stack/.env"
-          # The broker's certificate also names the bench's relay, which the broker advertises to the bench.
+          # The broker's certificate also names the bench's proxy, which the broker advertises to the bench.
           deploy/make-certs.sh kafka "$stack/secrets/kafka" lab-1-kafka
           deploy/make-certs.sh test-origin "$stack/secrets/origin" demo.streamotter.app
           {
@@ -82,14 +82,14 @@ jobs:
       - name: Start the stack and the bench
         run: $COMPOSE up --detach --wait --wait-timeout 300
 
-      - name: Cut the bench's relay and restore it
+      - name: Cut the bench's proxy and restore it
         run: |
           set -a; . "$STACK_ENV"; set +a
-          LAB_RELAY_TOKEN="$FIELD_STATION_SERVICE_TOKEN" \
+          LAB_PROXY_TOKEN="$FIELD_STATION_SERVICE_TOKEN" \
           NODE_EXTRA_CA_CERTS="$LONTRA_SECRETS/origin/ca.pem" \
           STACK_ORIGIN=https://demo.streamotter.app \
-          LAB_STOP_RELAY="$COMPOSE stop lab-1-kafka" \
-          LAB_START_RELAY="$COMPOSE start lab-1-kafka" \
+          LAB_STOP_PROXY="$COMPOSE stop lab-1-kafka" \
+          LAB_START_PROXY="$COMPOSE start lab-1-kafka" \
           LAB_SPIKE_LABEL="GitHub Actions ${{ matrix.runner }} (${{ matrix.arch }}), containers" \
           LAB_SPIKE_RESULTS="$RUNNER_TEMP/lab-spike.jsonl" \
             node --test --test-force-exit deploy/test/lab-spike.test.ts
@@ -99,7 +99,7 @@ jobs:
         run: |
           [ -f "$RUNNER_TEMP/lab-spike.jsonl" ] || exit 0
           {
-            echo "### Relay cut on ${{ matrix.arch }}"
+            echo "### Proxy cut on ${{ matrix.arch }}"
             echo
             echo "| Cycle | Cut length | Stale after the cut | Live after the restore | Demo host readings during the cut |"
             echo "| --- | --- | --- | --- | --- |"

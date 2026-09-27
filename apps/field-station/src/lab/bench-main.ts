@@ -7,7 +7,7 @@
  * Environment: LAB_BENCH (the bench's number), KAFKA_LAB_USERNAME and
  * KAFKA_LAB_PASSWORD, FIELD_STATION_SECRET, FIELD_STATION_SERVICE_TOKEN,
  * FIELD_STATION_INTERNAL_URL, and optionally BENCH_HOST and BENCH_PORT (default
- * 0.0.0.0:7400), BENCH_KAFKA_BROKERS (default: the bench's relay), KAFKA_CA_FILE
+ * 0.0.0.0:7400), BENCH_KAFKA_BROKERS (default: the bench's proxy), KAFKA_CA_FILE
  * (default /etc/lontra/kafka/ca.pem), and BENCH_MANAGEMENT_PORT (default 7401).
  *
  * The management API's token is made here and never printed. The bench API that

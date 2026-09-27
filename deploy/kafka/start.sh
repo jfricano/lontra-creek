@@ -9,10 +9,10 @@
 #   BENCH1…   one SASL_SSL listener per Failure Lab bench, only when
 #             KAFKA_BENCH_LISTENERS is set (none by default)
 #
-# A bench reaches the broker only through its relay (apps/field-station/src/lab/relay.ts),
-# so cutting the relay cuts that bench off. Kafka clients reconnect to the address
+# A bench reaches the broker only through its proxy (apps/field-station/src/lab/proxy.ts),
+# so cutting the proxy cuts that bench off. Kafka clients reconnect to the address
 # the broker advertises, not the one they were given, so each bench has a listener
-# of its own, advertised as its relay's name. KAFKA_BENCH_LISTENERS lists them,
+# of its own, advertised as its proxy's name. KAFKA_BENCH_LISTENERS lists them,
 # separated by spaces or commas, as <advertised host>:<port>, bound on the same
 # port, or <advertised host>:<port>@<bind port>. For example, in compose:
 # "lab-1-kafka:9101 lab-2-kafka:9102 lab-3-kafka:9103". The broker's certificate
@@ -74,7 +74,7 @@ if ! mkdir -p "$DATA" || [ ! -w "$DATA" ]; then
   exit 2
 fi
 
-# One SASL_SSL listener per bench, advertised as that bench's relay.
+# One SASL_SSL listener per bench, advertised as that bench's proxy.
 listeners="INTERNAL://127.0.0.1:${INTERNAL_PORT},CONTROLLER://127.0.0.1:${CONTROLLER_PORT},CLIENTS://${LISTEN_HOST}:${CLIENT_PORT}"
 advertised="INTERNAL://127.0.0.1:${INTERNAL_PORT},CLIENTS://${ADVERTISED_HOST}:${CLIENT_PORT}"
 protocols="INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT,CLIENTS:SASL_SSL"

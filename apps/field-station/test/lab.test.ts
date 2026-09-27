@@ -7,7 +7,7 @@ import { validateProjectConfig, type Json, type SourceRecord } from "streamotter
 import { createGateway } from "streamotter/gateway";
 import { benchConfig, benchHandlers } from "../src/lab/bench.ts";
 import { bench, benches, CREEK_TOPICS } from "../src/lab/benches.ts";
-import { relayControl, startRelay, type Relay } from "../src/lab/relay.ts";
+import { proxyControl, startProxy, type Proxy } from "../src/lab/proxy.ts";
 import { projectConfig } from "../src/project.ts";
 import { toRecord } from "../src/records.ts";
 import { readConfig } from "../src/server/config.ts";
@@ -17,15 +17,15 @@ const context = { requestId: "test", signal: new AbortController().signal };
 const handlerOptions = { secret: "s".repeat(32), serviceToken: "t".repeat(32), internalOrigin: "http://field-station:7410" };
 
 describe("bench names", () => {
-  test("each bench has its own project, topics, group, relay, and path", () => {
+  test("each bench has its own project, topics, group, proxy, and path", () => {
     assert.deepEqual(bench(2), {
       number: 2,
       projectId: "lontra-creek-lab-2",
       topicPrefix: "lab-2.",
       topics: CREEK_TOPICS.map(topic => `lab-2.${topic}`),
       consumerGroup: "lontra-creek-lab-2-field",
-      relayHost: "lab-2-kafka",
-      relayPort: 9102,
+      proxyHost: "lab-2-kafka",
+      proxyPort: 9102,
       gatewayPath: "/lab/2/socket.io"
     });
     assert.deepEqual(benches(3).map(each => each.number), [1, 2, 3]);
@@ -66,7 +66,7 @@ describe("the benches' feed", () => {
 });
 
 describe("a bench's project", () => {
-  test("is valid, separate from the demo host's, and reads its own topics through its relay", () => {
+  test("is valid, separate from the demo host's, and reads its own topics through its proxy", () => {
     const config = benchConfig(1);
     assert.deepEqual(validateProjectConfig(config).issues, []);
     assert.equal(config.projectId, "lontra-creek-lab-1");
@@ -101,9 +101,9 @@ describe("a bench's project", () => {
   });
 });
 
-describe("a bench's relay", () => {
+describe("a bench's proxy", () => {
   let upstream: Server;
-  let relay: Relay;
+  let proxy: Proxy;
   let control: HttpServer;
   let controlOrigin: string;
   const controlToken = "c".repeat(32);
@@ -112,14 +112,14 @@ describe("a bench's relay", () => {
     // An echo server stands in for the broker's bench listener.
     upstream = createServer(socket => socket.pipe(socket));
     await new Promise<void>(resolve => upstream.listen(0, "127.0.0.1", resolve));
-    relay = await startRelay({ listen: { host: "127.0.0.1", port: 0 }, target: { host: "127.0.0.1", port: (upstream.address() as AddressInfo).port } });
-    control = relayControl(relay, controlToken);
+    proxy = await startProxy({ listen: { host: "127.0.0.1", port: 0 }, target: { host: "127.0.0.1", port: (upstream.address() as AddressInfo).port } });
+    control = proxyControl(proxy, controlToken);
     await new Promise<void>(resolve => control.listen(0, "127.0.0.1", resolve));
     controlOrigin = `http://127.0.0.1:${(control.address() as AddressInfo).port}`;
   });
 
   after(async () => {
-    await relay.close();
+    await proxy.close();
     control.closeAllConnections();
     await new Promise<void>(resolve => control.close(() => resolve()));
     await new Promise<void>(resolve => upstream.close(() => resolve()));
@@ -142,14 +142,14 @@ describe("a bench's relay", () => {
   const call = (method: string, path: string, token = controlToken) =>
     fetch(`${controlOrigin}${path}`, { method, headers: { authorization: `Bearer ${token}` } });
 
-  test("relays both ways", async () => {
-    const socket = await open(relay.port!);
+  test("forwards both ways", async () => {
+    const socket = await open(proxy.port!);
     assert.equal(await echo(socket, "hello"), "hello");
     socket.destroy();
   });
 
   test("a cut resets what it carries and refuses new connections; a restore accepts them again on the same port", async () => {
-    const port = relay.port!;
+    const port = proxy.port!;
     const socket = await open(port);
     assert.equal(await echo(socket, "before"), "before");
     const closed = new Promise<string>(resolve => {
@@ -175,7 +175,7 @@ describe("a bench's relay", () => {
     assert.equal((await call("POST", "/cut", "x".repeat(32))).status, 401);
     assert.equal((await fetch(`${controlOrigin}/state`)).status, 401);
     assert.equal((await call("DELETE", "/state")).status, 404);
-    assert.equal(relay.state, "open");
-    assert.throws(() => relayControl(relay, "short"), /at least 32/);
+    assert.equal(proxy.state, "open");
+    assert.throws(() => proxyControl(proxy, "short"), /at least 32/);
   });
 });

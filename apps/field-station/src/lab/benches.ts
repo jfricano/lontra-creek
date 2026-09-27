@@ -3,11 +3,11 @@
  * gateway of its own (V1 supports one gateway per project, so each has its own
  * project), fed with a copy of the creek on its own topics, which the field station
  * publishes over its own connection to the broker. A bench reaches the broker only
- * through its relay (relay.ts), on a listener the broker advertises as the relay's
- * name, so cutting the relay cuts that bench off and nothing else.
+ * through its proxy (proxy.ts), on a listener the broker advertises as the proxy's
+ * name, so cutting the proxy cuts that bench off and nothing else.
  *
  * These names are shared by the field station, the broker's listeners
- * (deploy/kafka/start.sh), its certificate (deploy/make-certs.sh), the relays, and
+ * (deploy/kafka/start.sh), its certificate (deploy/make-certs.sh), the proxies, and
  * the benches.
  */
 import { TOPICS } from "@lontra-creek/sim";
@@ -24,10 +24,10 @@ export interface Bench {
   /** The bench's copy of the creek topics. */
   readonly topics: readonly string[];
   readonly consumerGroup: string;
-  /** The relay's host name: the address the broker advertises to this bench. */
-  readonly relayHost: string;
-  /** The relay's port, and the broker listener's behind it. */
-  readonly relayPort: number;
+  /** The proxy's host name: the address the broker advertises to this bench. */
+  readonly proxyHost: string;
+  /** The proxy's port, and the broker listener's behind it. */
+  readonly proxyPort: number;
   /** Where visitors' WebSockets reach this bench's gateway. */
   readonly gatewayPath: string;
 }
@@ -45,8 +45,8 @@ export function bench(number: number): Bench {
     topicPrefix,
     topics: CREEK_TOPICS.map(topic => `${topicPrefix}${topic}`),
     consumerGroup: `lontra-creek-lab-${number}-field`,
-    relayHost: `lab-${number}-kafka`,
-    relayPort: 9100 + number,
+    proxyHost: `lab-${number}-kafka`,
+    proxyPort: 9100 + number,
     gatewayPath: `/lab/${number}/socket.io`
   };
 }

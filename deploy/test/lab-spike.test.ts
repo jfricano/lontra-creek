@@ -3,22 +3,22 @@
  * restored while the demo host's gateway keeps serving. CI runs it against
  * deploy/compose.yaml with deploy/compose.lab-spike.yaml (.github/workflows/lab-spike.yml):
  *
- *   LAB_RELAY_TOKEN=<service token> STACK_ORIGIN=https://demo.streamotter.app \
+ *   LAB_PROXY_TOKEN=<service token> STACK_ORIGIN=https://demo.streamotter.app \
  *   NODE_EXTRA_CA_CERTS=<test origin CA> node --test deploy/test/lab-spike.test.ts
  *
- * Each cycle cuts the bench's relay, measures how long the bench's subscription
- * takes to go stale, restores the relay, and measures how long it takes to be live
+ * Each cycle cuts the bench's proxy, measures how long the bench's subscription
+ * takes to go stale, restores the proxy, and measures how long it takes to be live
  * again from a fresh snapshot. The acceptance bounds are 20 and 30 seconds;
  * StreamOtter 0.1.0-rc.3 marks a Kafka source degraded after 12 seconds without
  * broker activity.
  *
- * Environment: LAB_RELAY_TOKEN (required), LAB_RELAY_CONTROL (default
+ * Environment: LAB_PROXY_TOKEN (required), LAB_PROXY_CONTROL (default
  * http://127.0.0.1:9180), LAB_BENCH_ORIGIN (default http://127.0.0.1:7500),
  * LAB_BENCH_PATH (default /lab/1/socket.io), LAB_BADGE_ORIGIN (where /api/badge
  * answers; default STACK_ORIGIN), SITE_ORIGIN (default https://streamotter.app),
  * STACK_ORIGIN (the demo host through Caddy; without it the demo host's gateway
- * isn't watched), LAB_STOP_RELAY and LAB_START_RELAY (shell commands that stop and
- * start the relay's container; without them that cycle skips), LAB_SPIKE_LONG_CUT_MS
+ * isn't watched), LAB_STOP_PROXY and LAB_START_PROXY (shell commands that stop and
+ * start the proxy's container; without them that cycle skips), LAB_SPIKE_LONG_CUT_MS
  * (default 45000), LAB_SPIKE_LABEL (where it ran), and LAB_SPIKE_RESULTS (a file
  * to append each cycle's timings to, as JSON lines).
  */
@@ -31,15 +31,15 @@ import { promisify } from "node:util";
 import { createClient, type Client, type StreamEvent, type Subscription, type SubscriptionState } from "streamotter/client";
 import type { AppChannels } from "../../apps/field-station/src/generated/streamotter.generated.ts";
 
-const RELAY_TOKEN = process.env["LAB_RELAY_TOKEN"];
-const RELAY_CONTROL = process.env["LAB_RELAY_CONTROL"] ?? "http://127.0.0.1:9180";
+const PROXY_TOKEN = process.env["LAB_PROXY_TOKEN"];
+const PROXY_CONTROL = process.env["LAB_PROXY_CONTROL"] ?? "http://127.0.0.1:9180";
 const BENCH_ORIGIN = process.env["LAB_BENCH_ORIGIN"] ?? "http://127.0.0.1:7500";
 const BENCH_PATH = process.env["LAB_BENCH_PATH"] ?? "/lab/1/socket.io";
 const STACK = process.env["STACK_ORIGIN"];
 const BADGES = process.env["LAB_BADGE_ORIGIN"] ?? STACK ?? "https://demo.streamotter.app";
 const SITE = process.env["SITE_ORIGIN"] ?? "https://streamotter.app";
-const STOP_RELAY = process.env["LAB_STOP_RELAY"];
-const START_RELAY = process.env["LAB_START_RELAY"];
+const STOP_PROXY = process.env["LAB_STOP_PROXY"];
+const START_PROXY = process.env["LAB_START_PROXY"];
 const LONG_CUT_MS = Number(process.env["LAB_SPIKE_LONG_CUT_MS"] ?? 45_000);
 const LABEL = process.env["LAB_SPIKE_LABEL"] ?? "local";
 const RESULTS = process.env["LAB_SPIKE_RESULTS"];
@@ -69,12 +69,12 @@ async function badge(): Promise<string> {
   return (await response.json() as { token: string }).token;
 }
 
-async function relay(action: "cut" | "restore" | "state"): Promise<{ state: string; connections: number }> {
-  const response = await fetch(`${RELAY_CONTROL}/${action}`, {
+async function proxy(action: "cut" | "restore" | "state"): Promise<{ state: string; connections: number }> {
+  const response = await fetch(`${PROXY_CONTROL}/${action}`, {
     method: action === "state" ? "GET" : "POST",
-    headers: { authorization: `Bearer ${RELAY_TOKEN}` }
+    headers: { authorization: `Bearer ${PROXY_TOKEN}` }
   });
-  assert.equal(response.status, 200, `relay ${action}`);
+  assert.equal(response.status, 200, `proxy ${action}`);
   return await response.json() as { state: string; connections: number };
 }
 
@@ -111,7 +111,7 @@ class Watch {
 
 const clients: Client<AppChannels>[] = [];
 after(async () => {
-  if (RELAY_TOKEN !== undefined) await relay("restore").catch(() => undefined);
+  if (PROXY_TOKEN !== undefined) await proxy("restore").catch(() => undefined);
   await Promise.all(clients.map(client => client.close()));
 });
 
@@ -123,7 +123,7 @@ interface Cycle {
   restore: () => Promise<void>;
 }
 
-describe("a Failure Lab bench whose relay to Kafka is cut", { skip: RELAY_TOKEN === undefined && "LAB_RELAY_TOKEN is not set" }, () => {
+describe("a Failure Lab bench whose proxy to Kafka is cut", { skip: PROXY_TOKEN === undefined && "LAB_PROXY_TOKEN is not set" }, () => {
   let bench: Watch;
   let demo: Watch | null = null;
 
@@ -144,7 +144,7 @@ describe("a Failure Lab bench whose relay to Kafka is cut", { skip: RELAY_TOKEN 
   });
 
   async function measure(cycle: Cycle): Promise<void> {
-    const before = await relay("state");
+    const before = await proxy("state");
     const demoStates = demo?.states.length ?? 0;
     const cutAt = Date.now();
     await cycle.cut();
@@ -196,26 +196,26 @@ describe("a Failure Lab bench whose relay to Kafka is cut", { skip: RELAY_TOKEN 
     assert.equal(bench.subscription.state, "live");
   }
 
-  const relayCut = { cut: async () => { assert.equal((await relay("cut")).state, "cut"); }, restore: async () => { assert.equal((await relay("restore")).state, "open"); } };
+  const proxyCut = { cut: async () => { assert.equal((await proxy("cut")).state, "cut"); }, restore: async () => { assert.equal((await proxy("restore")).state, "open"); } };
 
   test("cut, then restored as soon as the bench is stale", async () => {
-    await measure({ name: "relay cut, restored at stale", holdMs: 0, ...relayCut });
+    await measure({ name: "proxy cut, restored at stale", holdMs: 0, ...proxyCut });
   });
 
   test(`cut for ${LONG_CUT_MS / 1_000} seconds, longer than the consumer's session`, async () => {
-    await measure({ name: `relay cut for ${LONG_CUT_MS / 1_000} s`, holdMs: LONG_CUT_MS, ...relayCut });
+    await measure({ name: `proxy cut for ${LONG_CUT_MS / 1_000} s`, holdMs: LONG_CUT_MS, ...proxyCut });
   });
 
   test("cut again, restored at stale: repeatable", async () => {
-    await measure({ name: "relay cut again, restored at stale", holdMs: 0, ...relayCut });
+    await measure({ name: "proxy cut again, restored at stale", holdMs: 0, ...proxyCut });
   });
 
-  test("the relay's container stopped, then started", { skip: (STOP_RELAY === undefined || START_RELAY === undefined) && "LAB_STOP_RELAY and LAB_START_RELAY are not set" }, async () => {
+  test("the proxy's container stopped, then started", { skip: (STOP_PROXY === undefined || START_PROXY === undefined) && "LAB_STOP_PROXY and LAB_START_PROXY are not set" }, async () => {
     await measure({
-      name: "relay container stopped, started at stale",
+      name: "proxy container stopped, started at stale",
       holdMs: 0,
-      cut: async () => { await run(STOP_RELAY!, { timeout: 60_000 }); },
-      restore: async () => { await run(START_RELAY!, { timeout: 60_000 }); }
+      cut: async () => { await run(STOP_PROXY!, { timeout: 60_000 }); },
+      restore: async () => { await run(START_PROXY!, { timeout: 60_000 }); }
     });
   });
 });

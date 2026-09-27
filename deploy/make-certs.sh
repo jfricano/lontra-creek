@@ -5,7 +5,7 @@
 #       A private CA for the broker (ca.pem, ca-key.pem) and the broker's key and
 #       certificate (broker-keystore.pem, PEM with a PKCS#8 key) for the host names
 #       "kafka" and "localhost", 127.0.0.1, and each <host> given: the Failure Lab's
-#       relay names, such as lab-1-kafka, which the broker advertises to each bench.
+#       proxy names, such as lab-1-kafka, which the broker advertises to each bench.
 #       Clients trust ca.pem. Existing files are kept; if the broker's certificate
 #       lacks a <host>, only it is reissued, from the same CA, so clients keep
 #       trusting ca.pem (restart the broker to use it).

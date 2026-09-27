@@ -84,7 +84,7 @@ export const ERROR_FACTS: Readonly<Record<ErrorCode, ErrorFact>> = {
     ],
     visibility: {
       browserSdk: "A connection 'state' change to auth-required, or a subscription 'state' change to failed with reason UNAUTHENTICATED (account switch); no so:error frame for the handshake-time cases, since the connection never opens.",
-      gatewayTrace: "Handshake rejections are not recorded as trace entries (they happen before any channel is involved); a mid-session revocation or expiry is visible only as the session closing, not a Trace row.",
+      gatewayTrace: "Handshake rejections are recorded: authenticateHandshake()'s reject() helper calls traces.record with stage authorize, outcome rejected, and this code as the errorCode — the same stage a successful handshake logs with outcome ok. That covers every handshake-time situation above (missing/oversized token, authenticate() returning null or an expired principal, and revocation caught before the connection opens). Only a revocation or expiry that closes an already-open session (Gateway.revoke, or the principal's own expiresAt) is untraced, visible solely as the session closing.",
       operatorLog: "None beyond the connection closing; the gateway does not log routine sign-out or expiry."
     },
     sources: [
@@ -103,11 +103,12 @@ export const ERROR_FACTS: Readonly<Record<ErrorCode, ErrorFact>> = {
       "The application's authorize() handler returns anything other than true, at subscribe time, at any resynchronization attempt, or immediately before a snapshot is delivered.",
       "The subscribed channel name does not exist in the deployed project (internally CHANNEL_NOT_FOUND; reported to the browser as FORBIDDEN).",
       "The subscribed channelVersion does not match the one deployed channel version (internally CHANNEL_VERSION_UNSUPPORTED; reported to the browser as FORBIDDEN).",
-      "The application revokes access to this exact channel/params for this subject between authorize checks."
+      "The application revokes access to this exact channel/params for this subject between authorize checks.",
+      "No Origin header at all in production mode, or an Origin not on the allowed list: the handshake is rejected before the auth payload is even read."
     ],
     visibility: {
-      browserSdk: "A so:error frame with code FORBIDDEN and a subscription 'state' change to failed; no data is ever sent for that subscription.",
-      gatewayTrace: "Stage authorize, outcome rejected. The trace's errorCode is the real cause (FORBIDDEN, CHANNEL_NOT_FOUND, or CHANNEL_VERSION_UNSUPPORTED) even though the browser only ever receives FORBIDDEN.",
+      browserSdk: "A so:error frame with code FORBIDDEN and a subscription 'state' change to failed; no data is ever sent for that subscription. For the Origin case, the connection never opens at all.",
+      gatewayTrace: "Stage authorize, outcome rejected — the same path as every other handshake or channel-authorize rejection. The trace's errorCode is the real cause (FORBIDDEN for a bad Origin or a denied channel, CHANNEL_NOT_FOUND, or CHANNEL_VERSION_UNSUPPORTED) even though the browser only ever receives FORBIDDEN.",
       operatorLog: "No warning is logged for an ordinary denial; it is expected traffic, not a fault."
     },
     sources: [
@@ -210,11 +211,13 @@ export const ERROR_FACTS: Readonly<Record<ErrorCode, ErrorFact>> = {
       "A connection tries to open more than maxSubscriptionsPerConnection subscriptions.",
       "A connection sends control requests (subscribe/unsubscribe/resync) faster than controlRequestsPerSecond, burst 40.",
       "A subscription's pending byte budget (maxPendingBytesPerSubscription, or the connection/gateway-wide budgets above it) is exhausted before the client acknowledges outstanding frames.",
-      "A client does not send a receipt within receiptTimeoutMs (5 s): its whole connection is closed with OVERLOADED."
+      "A client does not send a receipt within receiptTimeoutMs (5 s): its whole connection is closed with OVERLOADED.",
+      "The gateway is not in its running state when a handshake arrives (still starting, or already stopping): the handshake is rejected before authentication runs.",
+      "The number of open sessions plus in-flight handshakes has already reached maxConnections: the handshake is rejected."
     ],
     visibility: {
-      browserSdk: "A rejected subscribe/control acknowledgement, a subscription 'state' change to stale (buffer overflow, retried with backoff) or resync-required (attempts exhausted), or the whole connection closing (receipt timeout).",
-      gatewayTrace: "Stage queue, outcome rejected, errorCode OVERLOADED for a buffer overflow.",
+      browserSdk: "A rejected subscribe/control acknowledgement, a subscription 'state' change to stale (buffer overflow, retried with backoff) or resync-required (attempts exhausted), or the whole connection closing (receipt timeout or a rejected handshake).",
+      gatewayTrace: "Stage queue, outcome rejected, errorCode OVERLOADED for a buffer overflow. The handshake-time cases above (the gateway not running, or its maxConnections limit reached) are also recorded, via the same stage-authorize/outcome-rejected handshake path as every other handshake rejection.",
       operatorLog: "None beyond the connection or subscription outcome; this is treated as expected back-pressure, not a fault."
     },
     sources: [
@@ -252,7 +255,7 @@ export const ERROR_FACTS: Readonly<Record<ErrorCode, ErrorFact>> = {
     ],
     visibility: {
       browserSdk: "A rejected control acknowledgement or a handshake connect_error; this would only happen with a mismatched SDK/gateway version, not from normal application use.",
-      gatewayTrace: "Not recorded as a Trace row; it is a protocol-layer rejection.",
+      gatewayTrace: "Not recorded for the unknown-event and unknown-field cases, which resolve inside an already-open session before any trace stage runs. The handshake's protocolVersion mismatch is the exception: it is recorded like every other handshake rejection — stage authorize, outcome rejected, errorCode UNSUPPORTED_CAPABILITY.",
       operatorLog: "None."
     },
     sources: [
@@ -269,11 +272,12 @@ export const ERROR_FACTS: Readonly<Record<ErrorCode, ErrorFact>> = {
       "A requestId already used on this connection is reused with a different payload.",
       "A so:receipt frame is missing a field or has an out-of-range sequence.",
       "A management API trace cursor is malformed (not from a valid page).",
-      "Client-side: a data frame arrives with a sequence gap, or a receipt is acknowledged for a frame never sent — the affected subscription fails and needs fresh synchronization."
+      "Client-side: a data frame arrives with a sequence gap, or a receipt is acknowledged for a frame never sent — the affected subscription fails and needs fresh synchronization.",
+      "The handshake's auth payload carries a field other than token or protocolVersion: the handshake is rejected."
     ],
     visibility: {
-      browserSdk: "A rejected control acknowledgement, an unsolicited so:error, or (for the SDK-detected case) that subscription's failure and a required resynchronization.",
-      gatewayTrace: "Not recorded for ordinary malformed requests; the management API's malformed-cursor case is also not itself a Trace row.",
+      browserSdk: "A rejected control acknowledgement, an unsolicited so:error, or (for the SDK-detected case) that subscription's failure and a required resynchronization. For the handshake case, the connection never opens.",
+      gatewayTrace: "Not recorded for the protocol-frame situations above — they resolve inside an already-open session, before any trace stage runs — and the management API's malformed-cursor case is also not itself a Trace row. The one exception is the handshake's malformed auth payload, recorded like every other handshake rejection: stage authorize, outcome rejected, errorCode INVALID_REQUEST.",
       operatorLog: "None."
     },
     sources: [

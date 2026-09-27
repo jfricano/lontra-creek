@@ -25,6 +25,8 @@ services:
     memswap_limit: 384m
     pids_limit: 128
   caddy:
+    entrypoint: ["/bin/sh", "/opt/lontra/start-caddy-shared.sh"]
+    command: ["run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
     ports: !reset []
     cgroup_parent: ${LONTRA_CGROUP_PARENT:?set LONTRA_CGROUP_PARENT to the installed lontra.slice}
     cpus: 0.05
@@ -34,8 +36,10 @@ services:
     environment:
       SITE_ORIGIN: ${SITE_ORIGIN:-https://streamotter.app}
       LONTRA_LAB_ENABLED: "0"
+      LONTRA_TRUSTED_EDGE_IP: ${LONTRA_TRUSTED_EDGE_IP-10.203.43.2}
     volumes: !override
       - ./Caddyfile.shared:/etc/caddy/Caddyfile:ro
+      - ./start-caddy-shared.sh:/opt/lontra/start-caddy-shared.sh:ro
     networks:
       default: {}
       edge-lontra:

@@ -3,13 +3,15 @@
  *
  *   LAB_BENCH=1 node src/lab/proxy-main.ts
  *
- * Environment: LAB_BENCH (the bench's number), FIELD_STATION_SERVICE_TOKEN (the
- * control API's bearer token), and optionally PROXY_LISTEN (default
- * 0.0.0.0:<the bench's proxy port>), PROXY_TARGET (default kafka:<the same port>,
- * the broker's listener for this bench), and PROXY_CONTROL (default 0.0.0.0:9180).
+ * Environment: LAB_BENCH (the bench's number), LAB_RELAY_TOKEN (the control API's
+ * own bearer token — not FIELD_STATION_SERVICE_TOKEN, which can also read every
+ * notebook through the field station's internal API), and optionally PROXY_LISTEN
+ * (default 0.0.0.0:<the bench's proxy port>), PROXY_TARGET (default
+ * kafka:<the same port>, the broker's listener for this bench), and PROXY_CONTROL
+ * (default 0.0.0.0:9180).
  */
 import type { AddressInfo } from "node:net";
-import { serviceToken } from "../identity.ts";
+import { relayToken } from "../identity.ts";
 import { bench } from "./benches.ts";
 import { proxyControl, startProxy, type Endpoint } from "./proxy.ts";
 
@@ -28,7 +30,7 @@ const proxy = await startProxy({
   target: endpoint("PROXY_TARGET", `kafka:${proxyPort}`),
   log
 });
-const control = proxyControl(proxy, serviceToken());
+const control = proxyControl(proxy, relayToken());
 const controlAt = endpoint("PROXY_CONTROL", "0.0.0.0:9180");
 await new Promise<void>((resolve, reject) => {
   control.once("error", reject);

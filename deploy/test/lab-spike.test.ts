@@ -3,7 +3,7 @@
  * restored while the demo host's gateway keeps serving. CI runs it against
  * deploy/compose.yaml with deploy/compose.lab-spike.yaml (.github/workflows/lab-spike.yml):
  *
- *   LAB_PROXY_TOKEN=<service token> STACK_ORIGIN=https://demo.streamotter.app \
+ *   LAB_PROXY_TOKEN=<relay token> STACK_ORIGIN=https://demo.streamotter.app \
  *   NODE_EXTRA_CA_CERTS=<test origin CA> node --test deploy/test/lab-spike.test.ts
  *
  * Each cycle cuts the bench's proxy, measures how long the bench's subscription

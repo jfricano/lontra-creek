@@ -85,7 +85,7 @@ jobs:
       - name: Cut the bench's proxy and restore it
         run: |
           set -a; . "$STACK_ENV"; set +a
-          LAB_PROXY_TOKEN="$FIELD_STATION_SERVICE_TOKEN" \
+          LAB_PROXY_TOKEN="$LAB_RELAY_TOKEN" \
           NODE_EXTRA_CA_CERTS="$LONTRA_SECRETS/origin/ca.pem" \
           STACK_ORIGIN=https://demo.streamotter.app \
           LAB_STOP_PROXY="$COMPOSE stop lab-1-kafka" \

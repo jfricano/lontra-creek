@@ -3,8 +3,11 @@
 #
 #   docker compose -f deploy/compose.yaml -f deploy/compose.lab-spike.yaml --env-file <env> up -d --wait
 #
-# The env file also needs KAFKA_LAB_PASSWORD (the benches' SCRAM user), and the
-# broker's certificate the name lab-1-kafka (deploy/make-certs.sh kafka <dir> lab-1-kafka).
+# The env file also needs KAFKA_LAB_PASSWORD (the benches' SCRAM user) and
+# LAB_RELAY_TOKEN (the proxy's own control token — separate from
+# FIELD_STATION_SERVICE_TOKEN so the relay control can't also read every notebook
+# through the field station's internal API), and the broker's certificate for the
+# name lab-1-kafka (deploy/make-certs.sh kafka <dir> lab-1-kafka).
 #
 #   field-station ──kafka:9094──▶ kafka      publishes the creek, and bench 1's copy (lab-1.*)
 #   gateway ───────kafka:9094──▶ kafka      the demo host's gateway, untouched by the cut
@@ -34,7 +37,7 @@ services:
     environment:
       NODE_ENV: production
       LAB_BENCH: "1"
-      FIELD_STATION_SERVICE_TOKEN: ${FIELD_STATION_SERVICE_TOKEN:?}
+      LAB_RELAY_TOKEN: ${LAB_RELAY_TOKEN:?}
     ports:
       - "127.0.0.1:9180:9180"
     depends_on:

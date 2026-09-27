@@ -24,7 +24,8 @@ Verification to date:
   frames, failed LC-03 record then same-offset resume, cut/restore, satellite
   receipt timeout while the visitor kept receiving data, restart, redaction,
   early-return revocation and old-token denial. Latest completed scenario run
-  passed; relay became stale in 14.1 seconds and live 3.1 seconds after restore.
+  passed (six cases, one deployment-only case explicitly skipped); relay became
+  stale in 13.1 seconds and live 5.1 seconds after restore.
   These are local measurements, not deployment capacity promises.
 - Native verification used one bench and bypassed Caddy. Three-bench token
   isolation and Caddy origin/management-route checks are reserved for container
@@ -38,6 +39,11 @@ Remaining gates: integrated container CI, independent final review, hosted
 staging verification, actual host capacity/load/limits, and owner release
 acceptance. Kafka SCRAM identities are separate but topic ACLs remain the
 contract's explicit R2 residual risk; credentials do not imply topic isolation.
+
+A source-build local browser recipe is in [LOCAL_LAB.md](LOCAL_LAB.md). Its
+loopback-only Compose overlay has not run locally; the installed Caddy binary
+successfully adapted its config. CI additionally checks the live container
+environments, private API credentials, and management network boundary.
 
 No npm publication, push, merge, public deployment, or cloud resources were
 performed by this implementation lane.

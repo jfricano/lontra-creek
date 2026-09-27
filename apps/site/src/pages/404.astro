@@ -1,19 +1,24 @@
 ---
+import Mark from "../assets/brand/mark.svg";
 import Base from "../layouts/Base.astro";
-import { LINKS, PAGES } from "../site.ts";
+import { LINKS, LISTED_PAGES } from "../site.ts";
 ---
 
 <Base title="Not found · StreamOtter" description="This page doesn't exist on streamotter.app." noindex>
   <section class="wrap missing">
+    <Mark class="brand missing-mark" aria-hidden="true" focusable="false" />
     <p class="eyebrow">404 · Not found</p>
     <h1>This reach of the creek isn't on the map.</h1>
     <p class="lede">
       The page you asked for doesn't exist here. If a link on this site brought you here,
       please <a href={`${LINKS.demoRepo}/issues`}>open an issue</a>.
     </p>
-    <nav class="missing-links" aria-label="Where to go instead">
-      <a class="button button-primary" href="/">Home</a>
-      {PAGES.map(page => <a class="button button-quiet" href={page.href}>{page.label}</a>)}
+    <p><a class="button button-primary" href="/">Home</a></p>
+    <nav class="missing-links" aria-labelledby="missing-elsewhere">
+      <p class="eyebrow" id="missing-elsewhere">Or try</p>
+      <ul>
+        {LISTED_PAGES.map(page => <li><a href={page.href}>{page.label}</a></li>)}
+      </ul>
     </nav>
   </section>
 </Base>
@@ -23,13 +28,35 @@ import { LINKS, PAGES } from "../site.ts";
     padding-block: clamp(56px, 10vw, 120px);
     display: grid;
     gap: 18px;
-    max-width: 820px;
-    margin-inline: auto;
+    justify-items: start;
+  }
+  .missing > :not(.missing-mark) {
+    max-width: 760px;
+  }
+  /* The mark's viewBox is 434.9 × 317.9. */
+  .missing-mark {
+    display: block;
+    height: 120px;
+    width: auto;
+    aspect-ratio: 434.9 / 317.9;
+    margin-bottom: 8px;
   }
   .missing-links {
-    display: flex;
-    flex-wrap: wrap;
+    margin-top: 12px;
+    display: grid;
     gap: 10px;
-    margin-top: 8px;
+  }
+  .missing-links ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 14rem));
+    gap: 8px 32px;
+  }
+  @media (max-width: 480px) {
+    .missing-links ul {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 </style>

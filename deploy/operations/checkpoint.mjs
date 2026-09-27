@@ -8,7 +8,10 @@ const path = join(process.env.FIELD_DATA_DIR ?? '/var/lib/lontra', 'world.json')
 const text = readFileSync(action === 'backup' ? path : 0, 'utf8');
 if (text.length > 10 * 1024 * 1024) throw new Error('Checkpoint exceeds 10 MiB.');
 const checkpoint = JSON.parse(text);
-if (checkpoint.format !== 1 || checkpoint.epoch !== process.env.FIELD_EPOCH ||
+// Server config normalizes epochs to ISO milliseconds; env may use plain Z.
+const checkpointEpoch = Date.parse(checkpoint.epoch);
+const configuredEpoch = Date.parse(process.env.FIELD_EPOCH ?? '');
+if (checkpoint.format !== 1 || !Number.isFinite(checkpointEpoch) || checkpointEpoch !== configuredEpoch ||
     checkpoint.tickMs !== Number(process.env.FIELD_TICK_MS ?? 2000)) {
   throw new Error('Checkpoint format, epoch, or tick length does not match this deployment.');
 }

@@ -18,10 +18,23 @@ import { dirname, join } from "node:path";
 
 process.env["FIELD_FIXTURE_DAYS"] ??= "7";
 const TICK_MS = Number(process.env["FIELD_TICK_MS"] ?? "2000");
-const GATEWAY_PORT = Number(process.env["LONTRA_GATEWAY_PORT"] ?? "7400");
-const MANAGEMENT_PORT = Number(process.env["LONTRA_WORKBENCH_PORT"] ?? "7401");
-const API_PORT = Number(process.env["LONTRA_API_PORT"] ?? "7402");
-const SITE_PORT = Number(process.env["LONTRA_SITE_PORT"] ?? "4321");
+
+// Number("") is 0, not the default, so an empty or unset LONTRA_* variable
+// must be told apart from a bad one instead of silently binding to port 0.
+function parsePort(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer port number; got ${JSON.stringify(raw)}.`);
+  }
+  return value;
+}
+
+const GATEWAY_PORT = parsePort("LONTRA_GATEWAY_PORT", 7400);
+const MANAGEMENT_PORT = parsePort("LONTRA_WORKBENCH_PORT", 7401);
+const API_PORT = parsePort("LONTRA_API_PORT", 7402);
+const SITE_PORT = parsePort("LONTRA_SITE_PORT", 4321);
 
 const { studyTime } = await import("@lontra-creek/sim");
 const { createGateway } = await import("streamotter/gateway");

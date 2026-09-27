@@ -18,7 +18,13 @@ test("idle deadline respects hidden time and active interactions", () => {
   const idle = new IdleDeadline(0, 100);
   idle.activity(80); assert.equal(idle.expired(100), false);
   idle.visibility(true, 90); idle.activity(150);
-  assert.equal(idle.expired(189), false); assert.equal(idle.expired(190), true);
+  assert.equal(idle.expired(179), false); assert.equal(idle.expired(180), true);
   const active = new IdleDeadline(0, 100);
   active.activity(80); assert.equal(active.expired(180), true);
+});
+
+test("hiding after nine minutes idle does not renew the idle deadline", () => {
+  const idle = new IdleDeadline(0);
+  idle.visibility(true, 540_000);
+  assert.equal(idle.expired(600_000), true);
 });

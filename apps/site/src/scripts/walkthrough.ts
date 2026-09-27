@@ -118,7 +118,7 @@ async function mount(root: HTMLElement): Promise<void> {
         status.textContent = `Connection: ${state}`;
         if (state === "connected") {
           el("[data-walk-unavailable]").hidden = true;
-          for (const selector of ["[data-walk-drop]", "[data-holt-request]", "[data-role-switch]"]) button(selector).disabled = false;
+          for (const selector of ["[data-walk-drop]", "[data-holt-request]", "[data-role-switch]"]) button(selector).disabled = selector === "[data-role-switch]" && field?.role === "researcher";
           if (field?.config.mode === "kafka") { button("[data-sighting-submit]").disabled = false; if (!book) watchNotebook(); }
         }
       });
@@ -141,7 +141,7 @@ async function mount(root: HTMLElement): Promise<void> {
   });
   button("[data-holt-request]").addEventListener("click", () => { void requestHolt(); });
   button("[data-role-switch]").addEventListener("click", () => {
-    if (!field || switching) return;
+    if (!field || switching || field.role === "researcher") return;
     switching = true; button("[data-role-switch]").disabled = true;
     void field.switchRole("researcher").then(async () => {
       switching = false;
@@ -162,3 +162,6 @@ async function mount(root: HTMLElement): Promise<void> {
   window.addEventListener("pagehide", () => { stopIdle(); generation++; void field?.close(); });
   await start();
 }
+
+// pagehide closes clients; a bfcache restore must obtain fresh subscriptions.
+window.addEventListener("pageshow", event => { if (event.persisted) location.reload(); });

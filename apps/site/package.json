@@ -12,7 +12,6 @@
     "check": "astro check"
   },
   "dependencies": {
-    "@fontsource-variable/bricolage-grotesque": "5.3.0",
     "@fontsource-variable/figtree": "5.3.0",
     "@fontsource-variable/jetbrains-mono": "5.3.0",
     "@lontra-creek/sim": "0.0.0",

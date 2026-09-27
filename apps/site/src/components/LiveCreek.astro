@@ -75,9 +75,20 @@ import { LINKS } from "../site.ts";
 cd lontra-creek
 npm install
 npm run dev</code></pre>
+    <button class="lc-button lc-motion" type="button" data-open-recording>Watch a labeled local recording</button>
     <p>Then open <code>http://127.0.0.1:4321</code>. <a href={LINKS.demoRepo}>The demo's source is on GitHub.</a></p>
   </div>
   </div>
+  <dialog data-recording aria-label="Recording of local fixture SDK events" class="recording-dialog">
+    <button class="lc-button lc-motion" data-recording-close type="button">Close recording</button>
+    <h2>Recording · local fixture</h2><p data-recording-label>Loading the recording's date and source…</p>
+    {["Kestrel Bend gauge", "Pebble", "Slate Canyon gauge"].map((name,i) => <article class="lc-card" data-recorded-card>
+      <h3>{name}</h3><p data-recorded-state>Recorded state: idle</p>
+      {i === 1 ? <dl><div><dt>Where</dt><dd data-v="reach">—</dd></div><div><dt>Doing</dt><dd data-v="activity">—</dd></div></dl> : <dl><div><dt>Flow (cfs)</dt><dd data-v="flow">—</dd></div><div><dt>Water (°C)</dt><dd data-v="temp">—</dd></div></dl>}
+      <p data-recorded-rev>Waiting for recorded snapshot</p>
+    </article>)}
+    <p data-recording-finished role="status"></p>
+  </dialog>
   <div class="sr-only" aria-live="polite" data-announce></div>
 </section>
 
@@ -379,6 +390,10 @@ npm run dev</code></pre>
   .lc-log .s {
     color: var(--sync);
   }
+  .recording-dialog { width:min(700px,calc(100vw - 32px)); max-height:85vh; overflow:auto; color:var(--p-ink); background:#07142e; border:2px solid #a3b6d6; border-radius:16px; padding:24px; }
+  .recording-dialog::backdrop { background:rgba(0,0,0,.6); }
+  .recording-dialog .lc-card { margin-block:16px; }
+  .recording-dialog * { animation:none !important; }
   .lc-bottom { display: grid; }
   .lc-normal, .lc-unavailable { grid-area: 1 / 1; min-width: 0; }
   .live-creek[data-status="unavailable"] .lc-normal { visibility: hidden; }

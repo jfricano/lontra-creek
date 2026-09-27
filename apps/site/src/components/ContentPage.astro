@@ -29,3 +29,8 @@ const { title, description, eyebrow = "StreamOtter" } = Astro.props;
 .content-page .status-note { padding:14px; border-left:3px solid var(--accent); background:var(--surface); }
 @media(max-width:760px) { .content-page .panel-grid { grid-template-columns:1fr; } .content-page { padding-top:32px; } }
 </style>
+<style is:global>
+.content-page .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:11px 16px; border:1px solid var(--line-strong); border-radius:10px; background:var(--surface); color:var(--ink); cursor:pointer; font:700 .95rem/1.25 var(--body); }
+.content-page .btn.primary { background:var(--button-bg); color:var(--button-ink); border-color:transparent; }
+.content-page button:disabled { opacity:.55; cursor:not-allowed; }
+</style>

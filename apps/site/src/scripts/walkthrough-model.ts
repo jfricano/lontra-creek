@@ -24,11 +24,12 @@ export function chapterFromHash(hash: string): number {
 export class IdleDeadline {
   private lastActivity: number;
   private hiddenAt: number | null = null;
-  constructor(now: number, readonly timeoutMs = 600_000) { this.lastActivity = now; }
+  readonly timeoutMs: number;
+  constructor(now: number, timeoutMs = 600_000) { this.lastActivity = now; this.timeoutMs = timeoutMs; }
   activity(now: number): void { if (this.hiddenAt === null) this.lastActivity = now; }
   visibility(hidden: boolean, now: number): void {
     if (hidden && this.hiddenAt === null) this.hiddenAt = now;
     if (!hidden) this.hiddenAt = null;
   }
-  expired(now: number): boolean { return now - (this.hiddenAt ?? this.lastActivity) >= this.timeoutMs; }
+  expired(now: number): boolean { return now - Math.min(this.hiddenAt ?? this.lastActivity, this.lastActivity) >= this.timeoutMs; }
 }

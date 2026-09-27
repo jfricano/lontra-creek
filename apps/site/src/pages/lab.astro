@@ -1,11 +1,28 @@
 ---
-import PagePlaceholder from "../components/PagePlaceholder.astro";
-import Base from "../layouts/Base.astro";
-import { PAGES } from "../site.ts";
-
-const page = PAGES.find(candidate => candidate.href === "/lab/")!;
+import ContentPage from "../components/ContentPage.astro";
 ---
-
-<Base title={`${page.label} · StreamOtter`} description={page.summary} noindex={!page.ready}>
-  <PagePlaceholder page={page} />
-</Base>
+<ContentPage title="What happens when it breaks?" eyebrow="Failure Lab" description="Borrow an isolated bench for five minutes. Break its sensor or connection, then watch the real gateway report what happened.">
+  <p class="status-note">Lontra Creek is fictional. A working Lab uses real Kafka, a real gateway, and your browser SDK. Failure actions affect only your leased bench.</p>
+  <section data-lab>
+    <p role="status" data-lab-message>Checking the Lab…</p>
+    <p data-lab-pool></p>
+    <div class="lab-controls"><button class="button button-primary" data-lab-join disabled>Borrow a bench</button><button class="button" data-lab-return disabled>Leave queue / return bench</button><button class="button" data-lab-retry>Check again</button></div>
+    <p data-lab-clock></p>
+    <aside data-lab-unavailable hidden class="status-note"><h2>The Lab is unavailable</h2><p>The static site still works. No scenario shown here is simulated as a substitute for a live bench.</p><p>To run the field station's fixture demo locally:</p><pre><code>git clone https://github.com/jfricano/lontra-creek.git
+cd lontra-creek
+npm install
+npm run dev</code></pre><p>The fixture demo does not include failure benches. The repository's <a href="https://github.com/jfricano/lontra-creek/tree/main/deploy">deployment instructions</a> describe the Kafka and isolated Lab stack.</p></aside>
+    <div class="panel-grid">
+      <section class="content-card"><h2>Your bench</h2><p data-lab-state>Not leased.</p><p>LC-03 subscription: <strong data-lab-view-state>idle</strong></p><dl><dt>Stage</dt><dd data-lab-stage>—</dd><dt>Flow</dt><dd data-lab-flow>—</dd><dt>Revision</dt><dd data-lab-revision>—</dd></dl><p data-lab-snapshot-note></p></section>
+      <section class="content-card"><h2>Four controlled failures</h2><fieldset data-lab-actions disabled><legend>Actions on your leased bench</legend>
+        <h3>Fouled sensor</h3><p>Remove LC-03's calibration. The map handler fails and pauses at the record; restoring the table and resuming retries that same record.</p><button class="button" data-lab-action="sensor.foul">Foul sensor</button> <button class="button" data-lab-action="sensor.restore">Restore calibration</button> <button class="button" data-lab-action="source.resume">Resume source</button>
+        <h3>Flash flood takes the relay</h3><p>Cut only this bench's Kafka path. Views become stale, then recover after restoration. Watch the feed for this run's actual timing.</p><button class="button" data-lab-action="relay.cut">Cut relay</button> <button class="button" data-lab-action="relay.restore">Restore relay</button>
+        <h3>Laptop on a satellite link</h3><p>A separate client stops acknowledging frames. Its receipt timeout disconnects it; your own view keeps flowing.</p><button class="button" data-lab-action="satellite.start">Start slow client</button>
+        <h3>Relay restart</h3><p>Restart your gateway. The SDK reconnects and takes a fresh snapshot.</p><button class="button" data-lab-action="gateway.restart">Restart gateway</button>
+      </fieldset></section>
+    </div>
+    <section class="content-card"><h2>Redacted gateway feed</h2><p>Actual actions, source states, and traces from your current lease. No payloads, credentials, or other visitors' data.</p><ol data-lab-feed aria-label="Gateway trace feed"></ol></section>
+  </section>
+</ContentPage>
+<script>import "../scripts/lab.ts";</script>
+<style>.lab-controls { display:flex; gap:12px; flex-wrap:wrap; margin-block:20px; } fieldset { border:0; padding:0; min-width:0; } fieldset button { margin-block:4px; } [data-lab-feed] { max-height:420px; overflow:auto; font: .8rem/1.6 var(--mono); } dd { margin:4px 0 16px; overflow-wrap:anywhere; }</style>

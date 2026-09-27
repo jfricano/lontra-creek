@@ -53,3 +53,33 @@ verification. File ownership changes are coordinated by root.
 
 No new implementation checks yet. Prior Claude-reported results are background
 only, not new verification by this team. Results will be recorded per increment.
+
+## Increment 1 evidence (2026-09-27)
+
+Integrated QA harness `1fd370c`, approved brand/home `3f71be5`, deployment
+preparation `46f5e5d`, and normative Lab contract `6d6cd0b` (cherry-picked).
+QA fix pushed to existing PR #14 to obtain Firefox/WebKit CI evidence.
+
+- Integrated typecheck and static build passed.
+- Unit/integration suite: 110 passed before the additional idle-boundary regression.
+- Chromium: 16 passed, including real fixture SDK walkthrough, stale/reconnect,
+  volunteer denial, researcher identity switch, keyboard chapters, idle resume,
+  labeled recording, light/dark axe on home/walkthrough/404.
+- Three old accessibility exceptions and expected-failure trackers removed;
+  integrated scans require zero serious/critical findings without filtering.
+- Deployment orchestration/checkpoint/alarm tests: 6 passed with explicit test
+  doubles for Docker. Actual container rehearsal remains unrun locally.
+- Fallback recording: 29 actual SDK events captured with npm gateway/client over
+  16.3 seconds, dated and labeled local fixture/no Kafka. No invented live data.
+- Bricolage dependency removed after Figtree integration.
+
+Independent review by `/root/deployment` of root UI found four material defects:
+Lab token retry state, bfcache restoration, hidden/idle deadline extension, and
+repeated same-role subscriptions. Accepted and repaired; affected regressions
+added. New full integration run pending. Reviewer inspected recording provenance.
+Root review of deployment found configuration not versioned alongside rollback
+image; deployment worker is repairing it with a regression.
+
+Public Lab risk R2 remains explicitly unresolved: unique SCRAM users do not
+restrict Kafka topics without ACLs. No public exposure is authorized by this
+candidate. Owner risk disposition or ACL hardening required before deployment.

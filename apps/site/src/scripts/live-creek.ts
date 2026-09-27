@@ -41,6 +41,9 @@ export async function mountLiveCreek(root: HTMLElement): Promise<void> {
   preference.addEventListener("change", event => { paused = event.matches; renderMotion(); });
   renderMotion();
   canvas.setLive(false);
+  $(root, "[data-open-recording]").addEventListener("click", () => {
+    void import("./recorded-creek.ts").then(module => module.openRecording(root));
+  });
 
   function unavailable(why: string): void {
     if (root.dataset["status"] === "unavailable") return;
@@ -160,3 +163,6 @@ if (root !== null) {
     root.dataset["status"] = "unavailable";
   });
 }
+
+// pagehide closes clients; a bfcache restore must obtain fresh subscriptions.
+window.addEventListener("pageshow", event => { if (event.persisted) location.reload(); });

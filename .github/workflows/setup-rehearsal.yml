@@ -1,0 +1,68 @@
+name: Server setup rehearsal
+on:
+  pull_request:
+    paths: ['deploy/**', '.github/workflows/setup-rehearsal.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  rehearsal:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          load: true
+          tags: ghcr.io/jfricano/lontra-creek:${{ github.sha }}
+          cache-from: type=gha,scope=setup-arm64
+          cache-to: type=gha,mode=max,scope=setup-arm64
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Check deployment orchestration
+        run: |
+          bash -n deploy/setup.sh deploy/operations/deploy.sh deploy/operations/ssh-command.sh
+          node --test deploy/test/operations.test.ts
+      - name: Rehearse setup twice and preserve secrets
+        run: |
+          deploy/make-certs.sh test-origin "$RUNNER_TEMP/origin" demo.streamotter.app
+          ssh-keygen -t ed25519 -N '' -f "$RUNNER_TEMP/deploy"
+          epoch=$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)
+          sudo deploy/setup.sh "$RUNNER_TEMP/origin/cert.pem" "$RUNNER_TEMP/origin/key.pem" "$RUNNER_TEMP/deploy.pub" "$epoch"
+          sudo sha256sum /srv/lontra/stack.env /srv/lontra/secrets/kafka/ca.pem > "$RUNNER_TEMP/before"
+          sudo deploy/setup.sh "$RUNNER_TEMP/origin/cert.pem" "$RUNNER_TEMP/origin/key.pem" "$RUNNER_TEMP/deploy.pub" "$epoch"
+          sudo sha256sum --check "$RUNNER_TEMP/before"
+          test "$(sudo stat -c '%a' /srv/lontra/stack.env)" = 600
+          if sudo -u lontra-deploy cat /srv/lontra/stack.env; then exit 1; fi
+          echo '127.0.0.1 demo.streamotter.app' | sudo tee -a /etc/hosts
+      - name: First deploy
+        run: sudo env LONTRA_REHEARSAL=1 /usr/local/sbin/lontra-deploy "$GITHUB_SHA"
+      - name: Verify external behavior
+        env:
+          NODE_EXTRA_CA_CERTS: ${{ runner.temp }}/origin/ca.pem
+          STACK_ORIGIN: https://demo.streamotter.app
+          STACK_RESTART_GATEWAY: sudo docker compose -f /srv/lontra/config/compose.yaml --env-file /srv/lontra/current.env restart gateway
+          STACK_RESTART_FIELD_STATION: sudo docker compose -f /srv/lontra/config/compose.yaml --env-file /srv/lontra/current.env restart field-station
+        run: node --test --test-force-exit deploy/test/stack.test.ts
+      - name: Failed candidate rolls back
+        run: |
+          bad=0000000000000000000000000000000000000000
+          printf 'FROM ghcr.io/jfricano/lontra-creek:%s\nENTRYPOINT ["/bin/false"]\n' "$GITHUB_SHA" > "$RUNNER_TEMP/Dockerfile.bad"
+          docker build -f "$RUNNER_TEMP/Dockerfile.bad" -t "ghcr.io/jfricano/lontra-creek:$bad" "$RUNNER_TEMP"
+          if sudo env LONTRA_REHEARSAL=1 /usr/local/sbin/lontra-deploy "$bad"; then exit 1; fi
+          test "$(sudo cat /srv/lontra/current.sha)" = "$GITHUB_SHA"
+          curl --fail --cacert "$RUNNER_TEMP/origin/ca.pem" https://demo.streamotter.app/api/status
+      - name: Reject arbitrary SSH commands
+        run: |
+          for command in 'bash' 'deploy latest' 'deploy 0000000000000000000000000000000000000000; id'; do
+            if sudo -u lontra-deploy env SSH_ORIGINAL_COMMAND="$command" /usr/local/sbin/lontra-ssh-command; then exit 1; fi
+          done
+      - name: Cleanup
+        if: always()
+        run: sudo docker compose -f /srv/lontra/config/compose.yaml --env-file /srv/lontra/current.env down --volumes

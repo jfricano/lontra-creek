@@ -5,7 +5,12 @@
  *
  *   node scripts/dev.ts        (or `npm run dev` at the repository root, with the site)
  *
- * Environment: FIELD_FIXTURE_DAYS (default 7), FIELD_TICK_MS (default 2000).
+ * Environment: FIELD_FIXTURE_DAYS (default 7), FIELD_TICK_MS (default 2000),
+ * LONTRA_GATEWAY_PORT (default 7400), LONTRA_WORKBENCH_PORT (default 7401),
+ * LONTRA_API_PORT (default 7402), and LONTRA_SITE_PORT (default 4321, used here
+ * only to build the gateway's allowed origins — the site itself reads it in
+ * apps/site/astro.config.mjs). Setting all four moves a whole dev stack to a
+ * different port block, so more than one can run at once (docs/TEAM_PLAN.md, F.1).
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
@@ -13,8 +18,23 @@ import { dirname, join } from "node:path";
 
 process.env["FIELD_FIXTURE_DAYS"] ??= "7";
 const TICK_MS = Number(process.env["FIELD_TICK_MS"] ?? "2000");
-const API_PORT = 7402;
-const MANAGEMENT_PORT = 7401;
+
+// Number("") is 0, not the default, so an empty or unset LONTRA_* variable
+// must be told apart from a bad one instead of silently binding to port 0.
+function parsePort(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer port number; got ${JSON.stringify(raw)}.`);
+  }
+  return value;
+}
+
+const GATEWAY_PORT = parsePort("LONTRA_GATEWAY_PORT", 7400);
+const MANAGEMENT_PORT = parsePort("LONTRA_WORKBENCH_PORT", 7401);
+const API_PORT = parsePort("LONTRA_API_PORT", 7402);
+const SITE_PORT = parsePort("LONTRA_SITE_PORT", 4321);
 
 const { studyTime } = await import("@lontra-creek/sim");
 const { createGateway } = await import("streamotter/gateway");
@@ -24,7 +44,17 @@ const { fieldStationSecret } = await import("../src/identity.ts");
 const { projectConfig } = await import("../src/project.ts");
 const { badgeFor } = await import("../src/sessions.ts");
 
-const config = projectConfig("fixture");
+const fixtureConfig = projectConfig("fixture");
+// Override the fixture's port and allowed origins here rather than in project.ts,
+// so two dev stacks can run at once without touching the generated types (F.1).
+const config = {
+  ...fixtureConfig,
+  gateway: {
+    ...fixtureConfig.gateway,
+    port: GATEWAY_PORT,
+    allowedOrigins: [`http://127.0.0.1:${SITE_PORT}`, `http://localhost:${SITE_PORT}`]
+  }
+};
 const gatewayOrigin = `http://${config.gateway.host}:${config.gateway.port}`;
 const secret = fieldStationSecret();
 

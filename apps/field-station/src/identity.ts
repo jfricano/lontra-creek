@@ -45,6 +45,16 @@ export function serviceToken(env: NodeJS.ProcessEnv = process.env): string {
   return secret(env, "FIELD_STATION_SERVICE_TOKEN", "lontra-creek-development-service-token-never-in-production");
 }
 
+/**
+ * A Failure Lab bench's own relay control token: LAB_RELAY_TOKEN (32+ characters),
+ * required in production. Separate from the service token, which can also read
+ * every notebook through the field station's internal API, so a bench's relay
+ * control can't reach that.
+ */
+export function relayToken(env: NodeJS.ProcessEnv = process.env): string {
+  return secret(env, "LAB_RELAY_TOKEN", "lontra-creek-development-relay-token-never-in-production");
+}
+
 function sign(payload: string, secret: string): string {
   return createHmac("sha256", secret).update(payload).digest("base64url");
 }

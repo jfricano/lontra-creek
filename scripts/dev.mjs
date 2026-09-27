@@ -2,6 +2,13 @@
  * Local development: the field station (gateway on the simulation replay, workbench,
  * site API) and the site, together. Ctrl+C stops both.
  *   npm run dev
+ *
+ * Environment (all optional; defaults match today's ports): LONTRA_SITE_PORT
+ * (4321), LONTRA_GATEWAY_PORT (7400), LONTRA_WORKBENCH_PORT (7401), LONTRA_API_PORT
+ * (7402). Both children below inherit them from this process's environment, so
+ * setting them before `npm run dev` moves the whole stack to a different port
+ * block and a second stack can run alongside this one (docs/TEAM_PLAN.md, F.1;
+ * README.md, Develop).
  */
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";

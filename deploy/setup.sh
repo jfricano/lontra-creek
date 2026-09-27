@@ -11,7 +11,9 @@ cert=$(realpath "$1"); key=$(realpath "$2"); pub=$(realpath "$3"); epoch=$4
 openssl x509 -in "$cert" -noout -checkend 86400 >/dev/null
 openssl x509 -in "$cert" -noout -checkhost demo.streamotter.app >/dev/null
 cmp <(openssl x509 -in "$cert" -pubkey -noout) <(openssl pkey -in "$key" -pubout) || { echo 'Certificate/key mismatch.' >&2; exit 2; }
-[[ $(wc -l < "$pub") -eq 1 ]] && [[ $(cat "$pub") =~ ^ssh-ed25519\ [A-Za-z0-9+/=]+([[:space:]].*)?$ ]] || { echo 'One plain ed25519 public key required.' >&2; exit 2; }
+public_key=$(cat "$pub")
+[[ "$public_key" != *$'\n'* && "$public_key" != *$'\r'* ]] || { echo 'Public key must be one line.' >&2; exit 2; }
+[[ $(wc -l < "$pub") -eq 1 ]] && [[ "$public_key" =~ ^ssh-ed25519\ [A-Za-z0-9+/=]+([[:space:]].*)?$ ]] || { echo 'One plain ed25519 public key required.' >&2; exit 2; }
 ssh-keygen -lf "$pub" >/dev/null
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
@@ -48,7 +50,7 @@ id lontra-deploy >/dev/null 2>&1 || useradd --create-home --shell /bin/bash lont
 chown root:root /home/lontra-deploy
 chmod 755 /home/lontra-deploy
 install -d -o root -g root -m 755 /home/lontra-deploy/.ssh
-printf 'restrict,command="/usr/local/sbin/lontra-ssh-command" %s\n' "$(cat "$pub")" > /home/lontra-deploy/.ssh/authorized_keys
+printf 'restrict,command="/usr/local/sbin/lontra-ssh-command" %s\n' "$public_key" > /home/lontra-deploy/.ssh/authorized_keys
 chmod 644 /home/lontra-deploy/.ssh/authorized_keys
 printf 'lontra-deploy ALL=(root) NOPASSWD: /usr/local/sbin/lontra-deploy\n' > /etc/sudoers.d/lontra-deploy
 chmod 440 /etc/sudoers.d/lontra-deploy

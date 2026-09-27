@@ -135,6 +135,7 @@ Local checks on Node 26.9.0 (macOS), September 27, 2026:
   failed-candidate recovery, failed rollback, first-deploy cleanup preserving
   volumes, and injection refusal with fake Docker/flock. The fixture replaces
   only the fixed root path and root guard; it is not a real container test.
+- `npm run typecheck`: passed, including the new deployment tests.
 - All four new workflow YAML files parsed with PyYAML; this is syntax parsing,
   not GitHub Actions semantic validation.
 - `git diff --check`: passed.

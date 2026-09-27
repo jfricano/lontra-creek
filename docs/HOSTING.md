@@ -28,7 +28,9 @@ How streamotter.app and the Lontra Creek demo get onto the internet, on free tie
 - [ ] Cloudflare DNS: `demo.streamotter.app`, an `A` record to the instance IP, **proxied** (orange cloud), so visitors never see the server's address.
 - [ ] Cloudflare SSL/TLS mode: **Full (strict)**.
 - [ ] Cloudflare Origin Server certificate for `streamotter.app` and `*.streamotter.app`; install it on the server as the setup script describes.
-- [ ] A Cloudflare API token limited to deploying the static site, stored as a GitHub Actions secret.
+- [ ] A Cloudflare API token limited to deploying the static site, stored as a GitHub Actions secret, and the Cloudflare account ID, stored as a GitHub Actions variable.
+- [ ] A deploy SSH key for GitHub Actions, separate from your own (`ssh-keygen -t ed25519 -f ~/.ssh/lontra-creek-deploy -C lontra-creek-deploy`): the public key goes on the server (the setup script restricts it to deploying), and the private key is stored as a secret of a GitHub `production` environment that requires your approval.
+- [ ] Decide whether `images.yml` publishes the stack's image to GitHub's registry (`ghcr.io/jfricano/lontra-creek`) on merges to `main`: public, with a retention policy for old images. See [TEAM_PLAN.md](TEAM_PLAN.md#8-the-owner).
 
 ## 4. What Claude builds (Claude, in this repository)
 

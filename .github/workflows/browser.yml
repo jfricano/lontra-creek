@@ -1,0 +1,45 @@
+name: Browser
+
+# End-to-end and accessibility checks (e2e/) against `npm run dev`: the field
+# station in fixture mode (no Kafka) plus the site, on the three engines
+# Playwright ships (playwright.config.ts). See F.5 in docs/TEAM_PLAN.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium firefox webkit
+
+      - run: npx playwright test
+        env:
+          ASTRO_TELEMETRY_DISABLED: "1"
+
+      - name: Upload the HTML report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14

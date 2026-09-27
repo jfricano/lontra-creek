@@ -101,7 +101,7 @@ test('checkpoint backup, verify and restore preserve the world and refuse mismat
   const dir = mkdtempSync(join(tmpdir(), 'lontra-checkpoint-'));
   const helper = readFileSync(join(operations, 'checkpoint.mjs'), 'utf8');
   const epoch = '2026-09-27T00:00:00Z';
-  const checkpoint = JSON.stringify({ format: 1, epoch, tickMs: 2000, world: createWorld({ seed: 'lontra-creek' }) });
+  const checkpoint = JSON.stringify({ format: 1, epoch: new Date(epoch).toISOString(), tickMs: 2000, world: createWorld({ seed: 'lontra-creek' }) });
   const run = (action: string, text = checkpoint, extra = {}) => spawnSync(process.execPath, ['--input-type=module', '-e', helper, action], {
     encoding: 'utf8', input: text,
     cwd: fileURLToPath(new URL('../../apps/field-station/', import.meta.url)),

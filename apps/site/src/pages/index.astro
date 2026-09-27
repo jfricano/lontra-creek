@@ -168,6 +168,14 @@ const states = [
     </div>
   </section>}
 
+  <section class="section" id="workbench-preview">
+    <div class="wrap">
+      <div class="section-head"><p class="eyebrow">Included with the CLI</p><h2>See the contract and the state</h2><p class="lede">Preview a channel with the real SDK, inspect its delivery state, and trace records through your local gateway.</p><a href="/workbench/">Tour the workbench →</a></div>
+      <a href="/workbench/"><img class="workbench-shot" src="/recordings/workbench/preview.png" alt="Recorded local workbench Preview: jobProgress receives snapshot revision 1 and enters live." loading="lazy" width="1280" height="963" /></a>
+      <p class="code-caption">Recording · September 27, 2026 · streamotter@{RELEASE} · local fixture project, not the hosted demo.</p>
+    </div>
+  </section>
+
   <section class="section start" id="start">
     <div class="wrap start-grid">
       <div class="section-head">
@@ -429,6 +437,7 @@ const states = [
     border-radius: 0 var(--radius) var(--radius) 0; pointer-events: none;
     background: linear-gradient(90deg, transparent, var(--code-bg));
   }
+  .workbench-shot { width:100%;height:auto;display:block;border:1px solid var(--line);border-radius:var(--radius); }
   .version { text-transform: none; }
   .release-status, .code-caption { color: var(--ink-3); font-size: 0.88rem; }
   .code-caption { margin-top: 18px; }

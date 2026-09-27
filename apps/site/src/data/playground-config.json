@@ -1,0 +1,79 @@
+{
+  "configVersion": 1,
+  "projectId": "my-first-stream",
+  "gateway": {
+    "host": "127.0.0.1",
+    "port": 7400,
+    "path": "/streamotter/socket.io",
+    "allowedOrigins": [
+      "http://localhost:5173"
+    ]
+  },
+  "connections": {},
+  "sources": {
+    "jobs": {
+      "kind": "fixture",
+      "generation": "jobs-fixture-1",
+      "fixtureRef": "jobs"
+    }
+  },
+  "schemas": {
+    "JobParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jobId"
+      ],
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "JobProgress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jobId",
+        "state",
+        "percent"
+      ],
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "running",
+            "succeeded",
+            "failed"
+          ]
+        },
+        "percent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    }
+  },
+  "channels": {
+    "jobProgress": {
+      "version": 1,
+      "source": "jobs",
+      "paramsSchema": "JobParams",
+      "payloadSchema": "JobProgress",
+      "handlersRef": "jobProgress",
+      "delivery": {
+        "kind": "state",
+        "overflow": "resync"
+      }
+    }
+  }
+}

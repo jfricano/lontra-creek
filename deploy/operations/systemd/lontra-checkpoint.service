@@ -1,0 +1,10 @@
+[Unit]
+Description=Save a validated Lontra Creek world checkpoint
+Requires=docker.service
+After=docker.service
+ConditionPathExists=/srv/lontra/current.env
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/lontra-checkpoint backup
+UMask=0077

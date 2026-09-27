@@ -19,6 +19,10 @@ import type { ServerConfig } from "./config.ts";
 import { NotebookError, parseSighting, type Notebooks } from "./notebooks.ts";
 import type { FieldStation } from "./station.ts";
 
+import { LeasePool } from '../lab/leases.ts';
+import { LabError, ACTIONS } from '../lab/errors.ts';
+import type { LabAction } from '../lab/contract.ts';
+
 type Headers = Record<string, string>;
 
 function send(response: ServerResponse, status: number, body: unknown, headers: Headers = {}): void {
@@ -35,7 +39,7 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
   let text = "";
   for await (const chunk of request) {
     text += chunk;
-    if (text.length > 4_096) throw new Error("Body too large");
+    if (Buffer.byteLength(text) > 4_096) throw new Error("Body too large");
   }
   const value: unknown = text === "" ? {} : JSON.parse(text);
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -84,9 +88,10 @@ export function clientAddress(request: IncomingMessage): string {
   return (typeof header === "string" && header !== "" ? header : request.socket.remoteAddress) ?? "unknown";
 }
 
-export function publicApi(options: { config: ServerConfig; station: FieldStation; notebooks: Notebooks; limiter?: RateLimiter; log?: (message: string) => void }): Server {
+export function publicApi(options: { config: ServerConfig; station: FieldStation; notebooks: Notebooks; lab?: LeasePool; limiter?: RateLimiter; log?: (message: string) => void }): Server {
   const { config, station, notebooks } = options;
   const limiter = options.limiter ?? new RateLimiter({ burst: 30, perSecond: 1 });
+  const labLimiter = new RateLimiter({ burst: 20, perSecond: 3 });
   const log = options.log ?? (message => console.error(message));
 
   return createServer(async (request, response) => {
@@ -116,8 +121,49 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
         return response.end();
       }
 
-      const wait = limiter.take(clientAddress(request));
-      if (wait > 0) return send(response, 429, { error: "Too many requests." }, { ...cors, "retry-after": String(wait) });
+      const isLab = url.pathname.startsWith('/api/lab/');
+      const wait = (isLab ? labLimiter : limiter).take(clientAddress(request));
+      if (wait > 0) return send(response, 429, { error: "Too many requests.", ...(isLab ? { code: "too-many-requests" } : {}) }, { ...cors, "retry-after": String(wait) });
+
+      if (isLab) {
+        try {
+          if (request.method === 'POST' && origin !== undefined && !config.siteOrigins.includes(origin)) throw new LabError('origin-not-allowed', 403);
+          const lab = options.lab;
+          const route = `${request.method} ${url.pathname}`;
+          if (!['GET /api/lab/status', 'POST /api/lab/lease', 'GET /api/lab/lease', 'POST /api/lab/lease/return', 'POST /api/lab/lease/token', 'POST /api/lab/actions', 'GET /api/lab/trace'].includes(route)) return send(response, 404, { error: 'Not found.' }, cors);
+          let session = readSession(request.headers.cookie, config.secret);
+          if (!session && route === 'POST /api/lab/lease') {
+            const badge = badgeFor({ cookieHeader: undefined, role: 'volunteer', secret: config.secret, secure: config.production });
+            cors['set-cookie'] = badge.setCookie!; session = readSession(badge.setCookie!, config.secret);
+          }
+          if (route !== 'GET /api/lab/status' && !session) throw new LabError('no-session', 401);
+          const body = request.method === 'POST' ? await readJson(request) : {};
+          const keys = Object.keys(body);
+          if (keys.some(key => route !== 'POST /api/lab/actions' || key !== 'action') || [...url.searchParams.keys()].some(key => route !== 'GET /api/lab/trace' || key !== 'after')) throw new LabError('invalid-request', 400);
+          if (!lab) {
+            if (route === 'GET /api/lab/status') return send(response, 200, { enabled: false, now: new Date().toISOString(), benches: [], queueLength: 0, nextFreeAt: null }, cors);
+            throw new LabError('lab-unavailable', 503);
+          }
+          // Record an on-time heartbeat at arrival, even if another RPC is queued.
+          if (session) lab.heartbeat(session);
+          const result = await lab.run(async () => {
+            await lab.sweep();
+            if (session) lab.heartbeat(session);
+            if (route === 'GET /api/lab/status') return lab.status();
+            if (route === 'POST /api/lab/lease') return lab.join(session!, clientAddress(request));
+            if (route === 'GET /api/lab/lease') return lab.view(session!);
+            if (route === 'POST /api/lab/lease/return') return lab.leave(session!);
+            if (route === 'POST /api/lab/lease/token') return lab.token(session!);
+            if (route === 'GET /api/lab/trace') return lab.feed(session!, url.searchParams.get('after') ?? undefined);
+            if (!ACTIONS.includes(body['action'] as LabAction)) throw new LabError('invalid-request', 400);
+            return lab.action(session!, body['action'] as LabAction);
+          });
+          return send(response, 200, result, cors);
+        } catch (error) {
+          const problem = error instanceof LabError ? error : new LabError('invalid-request', 400);
+          return send(response, problem.status, { error: problem.message, code: problem.code }, { ...cors, ...(problem.status === 429 ? { 'retry-after': '1' } : {}) });
+        }
+      }
 
       if (request.method === "GET" && url.pathname === "/api/config") {
         return send(response, 200, { gatewayOrigin: config.gatewayOrigin, gatewayPath: config.gatewayPath, mode: "kafka", tickMs: config.tickMs }, cors);
@@ -158,7 +204,7 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
   });
 }
 
-export function internalApi(options: { serviceToken: string; station: FieldStation; notebooks: Notebooks }): Server {
+export function internalApi(options: { serviceToken: string; station: FieldStation; notebooks: Notebooks; labTokens?: readonly string[] }): Server {
   const expected = Buffer.from(`Bearer ${options.serviceToken}`);
   const authorized = (request: IncomingMessage): boolean => {
     const provided = Buffer.from(request.headers.authorization ?? "");
@@ -166,8 +212,20 @@ export function internalApi(options: { serviceToken: string; station: FieldStati
   };
 
   return createServer((request, response) => {
-    if (!authorized(request)) return send(response, 401, { error: "Unauthorized." });
     const url = new URL(request.url ?? "/", "http://field-station.invalid");
+    const restricted = /^\/lab-internal\/([123])\/views\/(station|otter|reach|creekOverview)\/([^/]+)$/.exec(url.pathname);
+    if (restricted) {
+      const token = options.labTokens?.[Number(restricted[1]) - 1];
+      const expectedLab = Buffer.from(`Bearer ${token ?? ''}`);
+      const provided = Buffer.from(request.headers.authorization ?? '');
+      if (!token || provided.length !== expectedLab.length || !timingSafeEqual(provided, expectedLab)) return send(response, 401, { error: 'Unauthorized.' });
+      if (request.method !== 'GET') return send(response, 404, { error: 'Not found.' });
+      if (!options.station.ready) return send(response, 503, { error: 'Catching up.' });
+      let id: string; try { id = decodeURIComponent(restricted[3]!); } catch { return send(response, 400, { error: 'Invalid request.' }); }
+      const view = options.station.view(`${restricted[2]}:${id}`);
+      return view ? send(response, 200, { revision: view.revision, data: view.data }) : send(response, 404, { error: 'Not found.' });
+    }
+    if (!authorized(request)) return send(response, 401, { error: "Unauthorized." });
     const match = /^\/internal\/views\/([A-Za-z]+)\/([^/]+)$/.exec(url.pathname);
     if (request.method !== "GET" || match === null) return send(response, 404, { error: "Not found." });
     let id: string;

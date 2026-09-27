@@ -82,7 +82,7 @@ Done ([#5](https://github.com/jfricano/lontra-creek/pull/5)), except the recordi
 - `src/scripts/field-api.ts` calls `${PUBLIC_FIELD_STATION_ORIGIN}/api/…` with `credentials: "include"`. The variable is set at build time (`https://demo.streamotter.app` for production) and empty in development, where Vite proxies `/api`.
 - The unavailable state: when `/api/config` fails, or the gateway can't be reached within 15 seconds (the SDK keeps trying, and the notice clears on connecting), the live panel says the demo isn't answering, hides its connection controls, and shows how to run the demo locally. Still to do: a labeled recording of the live panel, once there's a hosted run to record.
 - `src/pages/404.astro`, `public/robots.txt`, and `src/pages/sitemap.xml.ts`, which lists the home page and every page marked `ready`; placeholder pages and the 404 are `noindex`.
-- `public/social-preview.png` (1200 × 630), made by `scripts/brand-assets.mjs` from the logo, and the Open Graph and Twitter card tags that use it.
+- `public/social-preview.png` (1200 × 630), made with the favicons and the header and footer lockups by `scripts/brand-assets.mjs` from the brandmark, and the Open Graph and Twitter card tags that use it.
 
 ### 4. Containers and a full-stack test in CI
 

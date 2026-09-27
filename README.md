@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="apps/site/src/assets/brand/logo-dark.png">
-    <img src="apps/site/src/assets/brand/logo-light.png" alt="StreamOtter" width="360">
+    <source media="(prefers-color-scheme: dark)" srcset="apps/site/public/brand/streamotter-lockup-dark.svg">
+    <img src="apps/site/public/brand/streamotter-lockup.svg" alt="StreamOtter" width="240">
   </picture>
 </p>
 
@@ -11,7 +11,7 @@ StreamOtter's home site and live demo. Lontra Creek is a fictional river-otter s
 
 This project uses StreamOtter the way any application does: the published [`streamotter`](https://www.npmjs.com/package/streamotter) package from npm, at an exact version. It has no other connection to the [StreamOtter repository](https://github.com/jfricano/StreamOtter).
 
-> **Status: the production stack is proven in CI; not yet hosted.** The simulation, the field station, and the home page with a live panel run locally (`npm run dev`). The production stack (Kafka over TLS with SCRAM, the gateway, the field station, and Caddy, in containers) passes a full-stack test on every pull request. The hosted demo, the other pages, and the Failure Lab are in progress. See [docs/PLAN.md](docs/PLAN.md), [docs/DEPLOYMENT_PLAN.md](docs/DEPLOYMENT_PLAN.md), and [docs/HOSTING.md](docs/HOSTING.md).
+> **Status: the production stack is proven in CI; not yet hosted.** The simulation, the field station, and the home page with a live panel run locally (`npm run dev`). The production stack (Kafka over TLS with SCRAM, the gateway, the field station, and Caddy, in containers) passes a full-stack test on every pull request. The site now includes the guided field station, playground, workbench tour, reference pages, and a labeled recorded fallback. The Failure Lab and deployment candidate are undergoing integration checks; public hosting remains pending. See [docs/PLAN.md](docs/PLAN.md), [docs/DEPLOYMENT_PLAN.md](docs/DEPLOYMENT_PLAN.md), and [docs/HOSTING.md](docs/HOSTING.md).
 
 ## Layout
 
@@ -51,6 +51,14 @@ Four environment variables move the whole dev stack to a different port block, s
 ```bash
 LONTRA_SITE_PORT=4331 LONTRA_GATEWAY_PORT=7430 LONTRA_WORKBENCH_PORT=7431 LONTRA_API_PORT=7432 npm run dev
 ```
+
+To exercise chapter six with real Kafka and persistent private notebooks, install Kafka 4.1.2 and JDK 21 locally, then run:
+
+```bash
+KAFKA_HOME=/path/to/kafka JAVA_HOME=/path/to/jdk npm run dev:kafka
+```
+
+This command downloads nothing. It starts a loopback-only development broker, the field station, gateway, and site. It preserves Kafka logs and simulation checkpoints under `.local/kafka-dev` across normal stops/restarts. Set `LONTRA_KAFKA_DATA_DIR` to choose another directory. Besides the site/gateway/API ports above, it uses `LONTRA_INTERNAL_PORT` (7410), `LONTRA_KAFKA_PORT` (19092), and `LONTRA_KAFKA_CONTROLLER_PORT` (19093). This mode has no Failure Lab or workbench; it uses plaintext loopback Kafka and is not a production deployment. Stop with Ctrl-C; a stale `running.lock` may be removed only after confirming the prior stack has stopped.
 
 In production the field station runs the simulation on the wall clock and publishes to Kafka (`apps/field-station/src/server/main.ts`), and the gateway is `streamotter start` with compiled handlers (`npm run build -w @lontra-creek/field-station`). [`deploy/compose.yaml`](deploy/compose.yaml) runs them with Kafka 4.1.2 and Caddy; [`.github/workflows/stack.yml`](.github/workflows/stack.yml) shows how to bring the stack up with throwaway secrets and test it from outside.
 

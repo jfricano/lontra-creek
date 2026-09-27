@@ -1,0 +1,665 @@
+{
+  "recordedAt": "2026-09-27T22:38:28.383Z",
+  "where": "Local fixture run on macOS; published streamotter@0.1.0-rc.3, no Kafka; one simulation tick per two seconds",
+  "durationMs": 16305,
+  "events": [
+    {
+      "atMs": 10,
+      "card": 0,
+      "type": "state",
+      "change": {
+        "state": "authorizing"
+      }
+    },
+    {
+      "atMs": 11,
+      "card": 1,
+      "type": "state",
+      "change": {
+        "state": "authorizing"
+      }
+    },
+    {
+      "atMs": 11,
+      "card": 2,
+      "type": "state",
+      "change": {
+        "state": "authorizing"
+      }
+    },
+    {
+      "atMs": 13,
+      "card": 0,
+      "type": "state",
+      "change": {
+        "state": "synchronizing"
+      }
+    },
+    {
+      "atMs": 13,
+      "card": 1,
+      "type": "state",
+      "change": {
+        "state": "synchronizing"
+      }
+    },
+    {
+      "atMs": 13,
+      "card": 2,
+      "type": "state",
+      "change": {
+        "state": "synchronizing"
+      }
+    },
+    {
+      "atMs": 13,
+      "card": 0,
+      "type": "data",
+      "event": {
+        "id": "dce8de23-8575-4089-ba91-0a718497e0f9",
+        "channel": "station",
+        "channelVersion": 1,
+        "kind": "snapshot",
+        "data": {
+          "stationId": "LC-02",
+          "name": "Kestrel Bend",
+          "reachId": "kestrel-bend",
+          "observed": {
+            "day": 1,
+            "time": "05:00"
+          },
+          "stageFt": 2.4,
+          "flowCfs": 60.9,
+          "waterTempC": 9.5,
+          "dissolvedOxygenMgL": 10.5,
+          "turbidityNtu": 3.4,
+          "trend": "steady",
+          "weather": "clear"
+        },
+        "revision": "1000000000000",
+        "receivedAt": "2026-09-27T22:38:28.396Z"
+      }
+    },
+    {
+      "atMs": 14,
+      "card": 1,
+      "type": "data",
+      "event": {
+        "id": "3c02cc70-cd13-47ec-b504-42a1fe33458a",
+        "channel": "otter",
+        "channelVersion": 1,
+        "kind": "snapshot",
+        "data": {
+          "otterId": "LO-07",
+          "name": "Pebble",
+          "sex": "female",
+          "ageClass": "adult",
+          "status": "in-watershed",
+          "reachId": "beaver-flats",
+          "reachName": "Beaver Flats",
+          "activity": "resting",
+          "divesThisHour": 0,
+          "lastDetection": {
+            "at": {
+              "day": 0,
+              "time": "--:--"
+            },
+            "receiver": "none"
+          },
+          "note": "Resting in bank cover."
+        },
+        "revision": "1000000000000",
+        "receivedAt": "2026-09-27T22:38:28.396Z"
+      }
+    },
+    {
+      "atMs": 14,
+      "card": 2,
+      "type": "data",
+      "event": {
+        "id": "e0a4c2c8-d847-472f-ab7b-437e3a680bfd",
+        "channel": "station",
+        "channelVersion": 1,
+        "kind": "snapshot",
+        "data": {
+          "stationId": "LC-03",
+          "name": "Slate Canyon",
+          "reachId": "slate-canyon",
+          "observed": {
+            "day": 1,
+            "time": "05:00"
+          },
+          "stageFt": 3.11,
+          "flowCfs": 87.5,
+          "waterTempC": 10.3,
+          "dissolvedOxygenMgL": 10.6,
+          "turbidityNtu": 4,
+          "trend": "steady",
+          "weather": "clear"
+        },
+        "revision": "1000000000000",
+        "receivedAt": "2026-09-27T22:38:28.396Z"
+      }
+    },
+    {
+      "atMs": 14,
+      "card": 0,
+      "type": "state",
+      "change": {
+        "state": "live"
+      }
+    },
+    {
+      "atMs": 14,
+      "card": 1,
+      "type": "state",
+      "change": {
+        "state": "live"
+      }
+    },
+    {
+      "atMs": 14,
+      "card": 2,
+      "type": "state",
+      "change": {
+        "state": "live"
+      }
+    },
+    {
+      "atMs": 2022,
+      "card": 0,
+      "type": "data",
+      "event": {
+        "id": "91a06695854c7151c146ab8c0e9cfc502c6dfe221be31d284fef2d997a108a79",
+        "channel": "station",
+        "channelVersion": 1,
+        "kind": "update",
+        "data": {
+          "stationId": "LC-02",
+          "name": "Kestrel Bend",
+          "reachId": "kestrel-bend",
+          "observed": {
+            "day": 1,
+            "time": "05:05"
+          },
+          "stageFt": 2.41,
+          "flowCfs": 61.3,
+          "waterTempC": 9.5,
+          "dissolvedOxygenMgL": 10.5,
+          "turbidityNtu": 3.5,
+          "trend": "steady",
+          "weather": "clear"
+        },
+        "revision": "1000000000001",
+        "receivedAt": "2026-09-27T22:38:30.404Z"
+      }
+    },
+    {
+      "atMs": 2022,
+      "card": 2,
+      "type": "data",
+      "event": {
+        "id": "41db72f428d48a088122e7da488c4ab79ebc2fa859a4925ea4e4a6b3cb480a71",
+        "channel": "station",
+        "channelVersion": 1,
+        "kind": "update",
+        "data": {
+          "stationId": "LC-03",
+          "name": "Slate Canyon",
+          "reachId": "slate-canyon",
+          "observed": {
+            "day": 1,
+            "time": "05:05"
+          },
+          "stageFt": 3.1,
+          "flowCfs": 86.9,
+          "waterTempC": 10.3,
+          "dissolvedOxygenMgL": 10.5,
+          "turbidityNtu": 4,
+          "trend": "steady",
+          "weather": "clear"
+        },
+        "revision": "1000000000001",
+        "receivedAt": "2026-09-27T22:38:30.405Z"
+      }
+    },
+    {
+      "atMs": 2022,
+      "card": 1,
+      "type": "data",
+      "event": {
+        "id": "d5f905153a7ead5465ebc8562040209719d7b4e8a62e236884b5ecb38bda7f79",
+        "channel": "otter",
+        "channelVersion": 1,
+        "kind": "update",
+        "data": {
+          "otterId": "LO-07",
+          "name": "Pebble",
+          "sex": "female",
+          "ageClass": "adult",
+          "status": "in-watershed",
+          "reachId": "withheld",
+          "reachName": "Location withheld",
+          "activity": "denning",
+          "divesThisHour": 0,
+          "lastDetection": {
+            "at": {
+              "day": 1,
+              "time": "05:05"
+            },
+            "receiver": "withheld"
+          },
+          "note": "At a den site. Den locations are shared only with researchers."
+        },
+        "revision": "1000000000001",
+        "receivedAt": "2026-09-27T22:38:30.405Z"
+      }
+    },
+    {
+      "atMs": 4027,
+      "card": 0,
+      "type": "data",
+      "event": {
+        "id": "e28ebef380b0a6c3866ed8434958ed208fc978ff2fd297ad95ee56853e0e8e4d",
+        "channel": "station",
+        "channelVersion": 1,
+        "kind": "update",
+        "data": {
+          "stationId": "LC-02",
+          "name": "Kestrel Bend",
+          "reachId": "kestrel-bend",
+          "observed": {
+            "day": 1,
+            "time": "05:10"
+          },
+          "stageFt": 2.39,
+          "flowCfs": 60.6,
+          "waterTempC": 9.5,
+          "dissolvedOxygenMgL": 10.5,
+          "turbidityNtu": 3.4,
+          "trend": "steady",
+          "weather": "clear"
+        },
+        "revision": "1000000000002",
+        "receivedAt": "2026-09-27T22:38:32.410Z"
+      }
+    },
+    {
+      "atMs": 4027,
+      "card": 2,
+      "type": "data",
+      "event": {
+        "id": "45697ab10ae5493070270712ec1258aba8f8ce8c4bd0a3e05bc21e956b85ae6b",
+        "channel": "station",
+        "channelVersion": 1,
+        "kind": "update",
+        "data": {
+          "stationId": "LC-03",
+          "name": "Slate Canyon",
+          "reachId": "slate-canyon",
+          "observed": {
+            "day": 1,
+            "time": "05:10"
+          },
+          "stageFt": 3.09,
+          "flowCfs": 86.4,
+          "waterTempC": 10.3,
+          "dissolvedOxygenMgL": 10.5,
+          "turbidityNtu": 3.8,
+          "trend": "steady",
+          "weather": "clear"
+        },
+        "revision": "1000000000002",
+        "receivedAt": "2026-09-27T22:38:32.410Z"
+      }
+    },
+    {
+      "atMs": 6031,
+      "card": 0,
+      "type": "data",
+      "event": {
+        "id": "787498588f78d7ab707706cec93bbdf73dda52385d15865c7804f42cb13ff694",
+        "channel": "station",
+        "channelVersion": 1,
+        "kind": "update",
+        "data": {
+          "stationId": "LC-02",
+          "name": "Kestrel Bend",
+          "reachId": "kestrel-bend",
+          "observed": {
+            "day": 1,
+            "time": "05:15"
+          },
+          "stageFt": 2.41,
+          "flowCfs": 61.4,
+          "waterTempC": 9.5,
+          "dissolvedOxygenMgL": 10.5,
+          "turbidityNtu": 3.4,
+          "trend": "steady",
+          "weather": "clear"
+        },
+        "revision": "1000000000003",
+        "receivedAt": "2026-09-27T22:38:34.413Z"
+      }
+    },
+    {
+      "atMs": 6031,
+      "card": 2,
+      "type": "data",
+      "event": {
+        "id": "dd43d9dbe78b1ab076eb205fe1a244f31d427078716fc920528e023248ca596e",
+        "channel": "station",
+        "channelVersion": 1,
+        "kind": "update",
+        "data": {
+          "stationId": "LC-03",
+          "name": "Slate Canyon",
+          "reachId": "slate-canyon",
+          "observed": {
+            "day": 1,
+            "time": "05:15"
+          },
+          "stageFt": 3.11,
+          "flowCfs": 87.5,
+          "waterTempC": 10.3,
+          "dissolvedOxygenMgL": 10.5,
+          "turbidityNtu": 3.9,
+          "trend": "steady",
+          "weather": "clear"
+        },
+        "revision": "1000000000003",
+        "receivedAt": "2026-09-27T22:38:34.414Z"
+      }
+    },
+    {
+      "atMs": 8033,
+      "card": 0,
+      "type": "data",
+      "event": {
+        "id": "87f0841abce82c686c18375857a667ea4f1e974218473540d98aa52b32c492a7",
+        "channel": "station",
+        "channelVersion": 1,
+        "kind": "update",
+        "data": {
+          "stationId": "LC-02",
+          "name": "Kestrel Bend",
+          "reachId": "kestrel-bend",
+          "observed": {
+            "day": 1,
+            "time": "05:20"
+          },
+          "stageFt": 2.4,
+          "flowCfs": 60.9,
+          "waterTempC": 9.5,
+          "dissolvedOxygenMgL": 10.5,
+          "turbidityNtu": 3.4,
+          "trend": "steady",
+          "weather": "clear"
+        },
+        "revision": "1000000000004",
+        "receivedAt": "2026-09-27T22:38:36.416Z"
+      }
+    },
+    {
+      "atMs": 8033,
+      "card": 2,
+      "type": "data",
+      "event": {
+        "id": "b3a6822113b37fd013c0a7239069d0b52738a03cc95c9dbc5a0d49acc71a6e17",
+        "channel": "station",
+        "channelVersion": 1,
+        "kind": "update",
+        "data": {
+          "stationId": "LC-03",
+          "name": "Slate Canyon",
+          "reachId": "slate-canyon",
+          "observed": {
+            "day": 1,
+            "time": "05:20"
+          },
+          "stageFt": 3.11,
+          "flowCfs": 87.6,
+          "waterTempC": 10.4,
+          "dissolvedOxygenMgL": 10.6,
+          "turbidityNtu": 3.9,
+          "trend": "steady",
+          "weather": "clear"
+        },
+        "revision": "1000000000004",
+        "receivedAt": "2026-09-27T22:38:36.416Z"
+      }
+    },
+    {
+      "atMs": 10036,
+      "card": 0,
+      "type": "data",
+      "event": {
+        "id": "e6f2993e18ffea54dcbe8bd09598642fc264561dfbcf2ac3de0f225bad93ba2d",
+        "channel": "station",
+        "channelVersion": 1,
+        "kind": "update",
+        "data": {
+          "stationId": "LC-02",
+          "name": "Kestrel Bend",
+          "reachId": "kestrel-bend",
+          "observed": {
+            "day": 1,
+            "time": "05:25"
+          },
+          "stageFt": 2.4,
+          "flowCfs": 60.8,
+          "waterTempC": 9.5,
+          "dissolvedOxygenMgL": 10.6,
+          "turbidityNtu": 3.5,
+          "trend": "steady",
+          "weather": "clear"
+        },
+        "revision": "1000000000005",
+        "receivedAt": "2026-09-27T22:38:38.419Z"
+      }
+    },
+    {
+      "atMs": 10036,
+      "card": 2,
+      "type": "data",
+      "event": {
+        "id": "f691517a02df493f09d8367feb4739af10ecb11513e3d7bbac52ac2351978ea4",
+        "channel": "station",
+        "channelVersion": 1,
+        "kind": "update",
+        "data": {
+          "stationId": "LC-03",
+          "name": "Slate Canyon",
+          "reachId": "slate-canyon",
+          "observed": {
+            "day": 1,
+            "time": "05:25"
+          },
+          "stageFt": 3.1,
+          "flowCfs": 87.2,
+          "waterTempC": 10.3,
+          "dissolvedOxygenMgL": 10.5,
+          "turbidityNtu": 3.9,
+          "trend": "steady",
+          "weather": "clear"
+        },
+        "revision": "1000000000005",
+        "receivedAt": "2026-09-27T22:38:38.419Z"
+      }
+    },
+    {
+      "atMs": 12042,
+      "card": 0,
+      "type": "data",
+      "event": {
+        "id": "b1ce4510120b696510d6f6cfe1c9e0ea088513bf104d26d049471937bebcfd31",
+        "channel": "station",
+        "channelVersion": 1,
+        "kind": "update",
+        "data": {
+          "stationId": "LC-02",
+          "name": "Kestrel Bend",
+          "reachId": "kestrel-bend",
+          "observed": {
+            "day": 1,
+            "time": "05:30"
+          },
+          "stageFt": 2.4,
+          "flowCfs": 60.7,
+          "waterTempC": 9.5,
+          "dissolvedOxygenMgL": 10.5,
+          "turbidityNtu": 3.4,
+          "trend": "steady",
+          "weather": "clear"
+        },
+        "revision": "1000000000006",
+        "receivedAt": "2026-09-27T22:38:40.423Z"
+      }
+    },
+    {
+      "atMs": 12042,
+      "card": 2,
+      "type": "data",
+      "event": {
+        "id": "0848e4a86f76620d4f4e00059c002a2de113ae96bf3b863da759ca4f4673a3da",
+        "channel": "station",
+        "channelVersion": 1,
+        "kind": "update",
+        "data": {
+          "stationId": "LC-03",
+          "name": "Slate Canyon",
+          "reachId": "slate-canyon",
+          "observed": {
+            "day": 1,
+            "time": "05:30"
+          },
+          "stageFt": 3.1,
+          "flowCfs": 87.2,
+          "waterTempC": 10.4,
+          "dissolvedOxygenMgL": 10.5,
+          "turbidityNtu": 3.8,
+          "trend": "steady",
+          "weather": "clear"
+        },
+        "revision": "1000000000006",
+        "receivedAt": "2026-09-27T22:38:40.423Z"
+      }
+    },
+    {
+      "atMs": 14047,
+      "card": 0,
+      "type": "data",
+      "event": {
+        "id": "419f2951f000300f6e224e84c1f59a61026c9d967936f0687bfa49ba582c859e",
+        "channel": "station",
+        "channelVersion": 1,
+        "kind": "update",
+        "data": {
+          "stationId": "LC-02",
+          "name": "Kestrel Bend",
+          "reachId": "kestrel-bend",
+          "observed": {
+            "day": 1,
+            "time": "05:35"
+          },
+          "stageFt": 2.4,
+          "flowCfs": 60.8,
+          "waterTempC": 9.6,
+          "dissolvedOxygenMgL": 10.5,
+          "turbidityNtu": 3.3,
+          "trend": "steady",
+          "weather": "clear"
+        },
+        "revision": "1000000000007",
+        "receivedAt": "2026-09-27T22:38:42.429Z"
+      }
+    },
+    {
+      "atMs": 14048,
+      "card": 2,
+      "type": "data",
+      "event": {
+        "id": "49a37a194a963aaed91273210642df7116ca29f36cab49ec6ecd4b17ba0023e3",
+        "channel": "station",
+        "channelVersion": 1,
+        "kind": "update",
+        "data": {
+          "stationId": "LC-03",
+          "name": "Slate Canyon",
+          "reachId": "slate-canyon",
+          "observed": {
+            "day": 1,
+            "time": "05:35"
+          },
+          "stageFt": 3.1,
+          "flowCfs": 86.7,
+          "waterTempC": 10.4,
+          "dissolvedOxygenMgL": 10.5,
+          "turbidityNtu": 3.9,
+          "trend": "steady",
+          "weather": "clear"
+        },
+        "revision": "1000000000007",
+        "receivedAt": "2026-09-27T22:38:42.430Z"
+      }
+    },
+    {
+      "atMs": 16052,
+      "card": 0,
+      "type": "data",
+      "event": {
+        "id": "350adb3a729892e7f45b6124bc74fc721bd61404aee3c5d1b03844c0dcc1b6ac",
+        "channel": "station",
+        "channelVersion": 1,
+        "kind": "update",
+        "data": {
+          "stationId": "LC-02",
+          "name": "Kestrel Bend",
+          "reachId": "kestrel-bend",
+          "observed": {
+            "day": 1,
+            "time": "05:40"
+          },
+          "stageFt": 2.4,
+          "flowCfs": 61.2,
+          "waterTempC": 9.6,
+          "dissolvedOxygenMgL": 10.6,
+          "turbidityNtu": 3.4,
+          "trend": "steady",
+          "weather": "clear"
+        },
+        "revision": "1000000000008",
+        "receivedAt": "2026-09-27T22:38:44.434Z"
+      }
+    },
+    {
+      "atMs": 16052,
+      "card": 2,
+      "type": "data",
+      "event": {
+        "id": "04393e9a00073c4c3be77922d8e5c7ad058cc49026caa507643c166cf48e1706",
+        "channel": "station",
+        "channelVersion": 1,
+        "kind": "update",
+        "data": {
+          "stationId": "LC-03",
+          "name": "Slate Canyon",
+          "reachId": "slate-canyon",
+          "observed": {
+            "day": 1,
+            "time": "05:40"
+          },
+          "stageFt": 3.09,
+          "flowCfs": 86.7,
+          "waterTempC": 10.4,
+          "dissolvedOxygenMgL": 10.6,
+          "turbidityNtu": 3.8,
+          "trend": "steady",
+          "weather": "clear"
+        },
+        "revision": "1000000000008",
+        "receivedAt": "2026-09-27T22:38:44.435Z"
+      }
+    }
+  ]
+}

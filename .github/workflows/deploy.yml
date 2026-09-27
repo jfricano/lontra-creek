@@ -1,0 +1,44 @@
+name: Deploy demo
+on:
+  workflow_dispatch:
+    inputs:
+      image_sha:
+        description: Approved full commit SHA already published to GHCR
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: production-demo
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main' && vars.LONTRA_DEPLOY_ENABLED == 'true'
+    environment: production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      IMAGE_SHA: ${{ inputs.image_sha }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+    steps:
+      - name: Validate credentials and release
+        shell: bash
+        run: |
+          [[ "$IMAGE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]]
+          test -n "$DEPLOY_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+      - name: Deploy with pinned host key
+        shell: bash
+        run: |
+          umask 077
+          key="$RUNNER_TEMP/deploy-key"
+          hosts="$RUNNER_TEMP/deploy-hosts"
+          trap 'rm -f "$key" "$hosts"' EXIT
+          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$hosts"
+          ssh -i "$key" -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts" \
+            -o ConnectTimeout=15 "lontra-deploy@$DEPLOY_HOST" "deploy $IMAGE_SHA"

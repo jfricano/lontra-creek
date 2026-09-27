@@ -1,6 +1,5 @@
 /**
- * The creek behind the live panel. The water always moves: the source keeps
- * running whether or not this page is connected. Its speed follows LC-02's real
+ * The creek behind the live panel. The water moves only while live data is available and motion is enabled. Its speed follows LC-02's real
  * flow, rain falls when the field station reports rain, and night darkens it.
  * A bright capsule carries each real update over its last stretch into the
  * gateway; the card changes when it arrives.
@@ -43,7 +42,11 @@ export class CreekCanvas {
   private running = false;
   private frame = 0;
   private last = 0;
-  private readonly reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  private readonly preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+  private reduced = this.preference.matches;
+  private paused = false;
+  private live = false;
+  private visible = false;
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly lanes: readonly Lane[]) {
     const context = canvas.getContext("2d");
@@ -52,7 +55,27 @@ export class CreekCanvas {
     new ResizeObserver(() => this.resize()).observe(canvas);
     new IntersectionObserver(entries => this.setVisible(entries.some(entry => entry.isIntersecting))).observe(canvas);
     document.addEventListener("visibilitychange", () => this.setVisible(!document.hidden));
+    this.preference.addEventListener("change", event => {
+      this.reduced = event.matches;
+      this.setVisible(this.visible);
+      this.draw();
+    });
     this.resize();
+  }
+
+  setPaused(paused: boolean): void {
+    this.paused = paused;
+    this.setVisible(this.visible);
+    this.draw();
+  }
+
+  setLive(live: boolean): void {
+    this.live = live;
+    this.canvas.setAttribute("aria-label", live
+      ? "Illustration of Lontra Creek; speed follows the live flow at Kestrel Bend."
+      : "Not connected to live data. This static creek is illustrative.");
+    this.setVisible(this.visible);
+    this.draw();
   }
 
   setConditions(conditions: Conditions): void {
@@ -70,7 +93,8 @@ export class CreekCanvas {
   }
 
   private setVisible(visible: boolean): void {
-    const shouldRun = visible && !document.hidden && !this.reduced;
+    this.visible = visible;
+    const shouldRun = visible && !document.hidden && !this.reduced && !this.paused && this.live;
     if (shouldRun === this.running) return;
     this.running = shouldRun;
     if (shouldRun) {

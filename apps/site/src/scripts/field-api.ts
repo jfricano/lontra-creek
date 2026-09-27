@@ -47,3 +47,14 @@ export async function requestBadge(role: Role, signal?: AbortSignal): Promise<Ba
   if (!response.ok) throw new Error(`Signing in failed (${response.status}).`);
   return await response.json() as BadgeResponse;
 }
+
+/** Writes fixed-choice sightings; the UI waits for the subscription, not this response. */
+export async function postSighting(sighting: { otterId: string; reachId: string; activity: string }): Promise<void> {
+  const response = await fetch(`${API_ORIGIN}/api/notebook/sightings`, {
+    method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(sighting)
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? `Sighting was not saved (${response.status}).`);
+  }
+}

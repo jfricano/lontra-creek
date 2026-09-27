@@ -141,7 +141,7 @@ export function bindCard<K extends ChannelName>(view: View<K>, element: HTMLElem
     },
     renderAge(now = performance.now()) {
       const seconds = updatedAt === 0 ? null : Math.round((now - updatedAt) / 1000);
-      age.textContent = seconds === null ? "waiting" : state === "stale" ? `stale · last update ${seconds}s ago` : seconds < 2 ? "updated just now" : `updated ${seconds}s ago`;
+      age.textContent = seconds === null ? (element.closest('[data-status="unavailable"]') !== null ? "not connected" : "waiting") : state === "stale" ? `stale · last update ${seconds}s ago` : seconds < 2 ? "updated just now" : `updated ${seconds}s ago`;
     }
   };
 }

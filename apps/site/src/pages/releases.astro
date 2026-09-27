@@ -1,11 +1,11 @@
 ---
-import PagePlaceholder from "../components/PagePlaceholder.astro";
-import Base from "../layouts/Base.astro";
-import { PAGES } from "../site.ts";
-
-const page = PAGES.find(candidate => candidate.href === "/releases/")!;
+import ReferencePage from "../layouts/ReferencePage.astro";
+import {RELEASE_VERSION, NPM_RELEASE_PAGE, SUPPORT_MATRIX,KAFKA_MODES,DEFAULT_LIMIT_VALUES,LIMIT_FACTS} from "../release-facts.ts";
+import {LINKS} from "../site.ts";
 ---
-
-<Base title={`${page.label} · StreamOtter`} description={page.summary} noindex={!page.ready}>
-  <PagePlaceholder page={page} />
-</Base>
+<ReferencePage title={`Release ${RELEASE_VERSION}`} description="The exact published package this site installs, its verified environments, and its limits.">
+  <p class="notice"><strong>Release candidate.</strong> The API may change before 0.1.0. <a href={NPM_RELEASE_PAGE}>View this release on npm</a> · <a href={LINKS.changelog}>Changelog</a></p>
+  <section><h2>V1 boundaries</h2><ul><li>Run one gateway per project. V1 has no distributed coordination between gateways.</li><li>Channels deliver full state, not an event log. Reconnecting gets a fresh snapshot; missed intermediate revisions are not replayed.</li><li>Production mode exposes no management API, workbench, or production health endpoint.</li><li>Public readers of one channel instance share its public state. Use separate channels for separate audiences.</li></ul><p><a href={LINKS.status}>Read the library’s limitations and verification record ↗</a></p></section>
+  <section><h2>Verified support matrix</h2><p>These are the package’s verification results, not a claim about the capacity or browser coverage of this demo deployment.</p><div class="table-scroll" tabindex="0" aria-label="Support matrix"><table><thead><tr><th scope="col">Component</th><th scope="col">Environment</th><th scope="col">Verification</th></tr></thead><tbody>{[...SUPPORT_MATRIX,...KAFKA_MODES].map(f=><tr><th scope="row">{f.component}</th><td>{f.detail}<p>{f.note}</p></td><td><a href={f.sources[0]}>{f.status.replaceAll("-"," ")}</a></td></tr>)}</tbody></table></div></section>
+  <section><h2>Default package limits</h2><p>Imported from the installed package. These are defaults, not measured capacity. The demo’s operating limits are separate.</p><div class="table-scroll" tabindex="0" aria-label="Default limits"><table><thead><tr><th scope="col">Limit</th><th scope="col">Default</th><th scope="col">Meaning</th></tr></thead><tbody>{Object.entries(DEFAULT_LIMIT_VALUES).map(([key,value])=><tr><th scope="row"><code>{key}</code></th><td>{value}</td><td>{LIMIT_FACTS[key as keyof typeof LIMIT_FACTS].description}</td></tr>)}</tbody></table></div></section>
+</ReferencePage>

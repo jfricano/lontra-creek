@@ -2,6 +2,14 @@
 
 September 26, 2026 · Phase 0 done; Phase 2 in progress (the production stack is proven in CI, not yet hosted) · Domain: `streamotter.app` · Visual blueprint: [StreamOtter Site Blueprint](https://claude.ai/artifact/6Zfj7bgjuXaSShKDQ5LJuv)
 
+**September 27 implementation update:** the complete site and leased Failure Lab
+are under integration review in [PR #20](https://github.com/jfricano/lontra-creek/pull/20).
+Use [WORKING_RECORD.md](WORKING_RECORD.md) for current evidence and
+[SHARED_HOST_READINESS.md](SHARED_HOST_READINESS.md) for the shared-host constraints.
+The phase descriptions below preserve the agreed scope; they are not a claim of
+public deployment. Hosted timing/capacity, staging acceptance, cloud/account setup,
+Kafka topic confinement disposition, and launch approval remain outstanding.
+
 This repository holds StreamOtter's public home site and its live demo. The demo is a fictional river-otter study at Lontra Creek whose data moves through real Kafka, a real StreamOtter gateway, and the real browser SDK. The site's job is to take a developer from "what is this" to "I watched it survive a failure" to `npm install streamotter` in one visit.
 
 This document owns the site's scope, the demo's behavior and operating rules, and the launch criteria. StreamOtter's own behavior is defined by the library, not here. [DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md) holds the engineering steps to launch, and [HOSTING.md](HOSTING.md) the owner's account checklist.

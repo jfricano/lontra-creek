@@ -6,6 +6,7 @@ const { handlers } = await import("../dist/kafka-handlers.js");
 const config = JSON.parse(await readFile(process.env["LONTRA_NATIVE_CONFIG"], "utf8"));
 const gateway = createGateway({ config, handlers, mode: "development" });
 await gateway.start();
+process.send?.({ type: "ready" });
 console.log(`Native Kafka gateway listening on ${config.gateway.host}:${config.gateway.port}.`);
 let stopping = false;
 for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => {

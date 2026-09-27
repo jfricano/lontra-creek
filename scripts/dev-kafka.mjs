@@ -25,8 +25,20 @@ const env={...process.env,JAVA_HOME:java,NODE_ENV:'development',ASTRO_TELEMETRY_
 // This local-only mode must not inherit a production broker's credentials or Lab endpoints.
 for(const key of Object.keys(env))if(/^(KAFKA_(?:CA_FILE|FIELD_STATION_|GATEWAY_)|LAB_BENCH|FIELD_LAB_BENCHES)/.test(key))delete env[key];
 function command(binary,args){const r=spawnSync(binary,args,{cwd:root,env,stdio:'inherit'});if(r.status!==0)throw new Error(`${binary} failed (${r.status})`);}
-function run(name,binary,args,cwd=root){const child=spawn(binary,args,{cwd,env,detached:true,stdio:['ignore','pipe','pipe']});children.push(child);for(const stream of [child.stdout,child.stderr])stream.on('data',chunk=>process.stdout.write(`[${name}] ${chunk}`));child.on('error',error=>{console.error(`${name}: ${error.message}`);process.exitCode=1;void stop();});child.on('exit',code=>{if(!stopping){console.error(`${name} exited (${code}); stopping stack.`);process.exitCode=1;void stop();}});return child;}
-async function stop(){if(stopping)return;stopping=true;for(const child of children.reverse())try{process.kill(-child.pid,'SIGTERM');}catch{}await Promise.all(children.map(child=>new Promise(resolve=>{if(child.exitCode!==null||child.signalCode!==null)return resolve();const timer=setTimeout(()=>{try{process.kill(-child.pid,'SIGKILL');}catch{}resolve();},15000);child.once('exit',()=>{clearTimeout(timer);resolve();});})));await rm(lock,{recursive:true});finish();}
+function run(name,binary,args,cwd=root,ipc=false){const child=spawn(binary,args,{cwd,env,detached:true,stdio:ipc?['ignore','pipe','pipe','ipc']:['ignore','pipe','pipe']});children.push(child);for(const stream of [child.stdout,child.stderr])stream.on('data',chunk=>process.stdout.write(`[${name}] ${chunk}`));child.on('error',error=>{console.error(`${name}: ${error.message}`);process.exitCode=1;void stop();});child.on('exit',code=>{if(!stopping){console.error(`${name} exited (${code}); stopping stack.`);process.exitCode=1;void stop();}});return child;}
+async function stop(){
+ if(stopping)return;stopping=true;
+ // Let clients leave their Kafka groups before stopping the broker.
+ for(const child of [...children].reverse()){
+  if(child.exitCode!==null||child.signalCode!==null)continue;
+  await new Promise(resolve=>{
+   const timer=setTimeout(()=>{try{process.kill(-child.pid,'SIGKILL');}catch{}resolve();},30000);
+   child.once('exit',()=>{clearTimeout(timer);resolve();});
+   try{process.kill(-child.pid,'SIGTERM');}catch{clearTimeout(timer);resolve();}
+  });
+ }
+ await rm(lock,{recursive:true});finish();
+}
 for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{void stop();});
 try {
  command('npm',['run','build','-w','@lontra-creek/field-station']);
@@ -46,7 +58,13 @@ try {
  run('field',process.execPath,['--disable-warning=TimeoutNegativeWarning','src/server/main.ts'],join(root,'apps/field-station'));
  ready=false;for(let i=0;i<60&&!stopping;i++){try{const r=await fetch(`http://127.0.0.1:${ports.api}/healthz`,{signal:AbortSignal.timeout(1000)});if(r.ok){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,1000));}
  if(!ready)throw new Error('Field station did not become ready.');
- run('gateway',process.execPath,['scripts/kafka-gateway.mjs'],join(root,'apps/field-station'));
+ const gateway=run('gateway',process.execPath,['scripts/kafka-gateway.mjs'],join(root,'apps/field-station'),true);
+ await new Promise((resolve,reject)=>{
+  const timer=setTimeout(()=>reject(new Error('Gateway did not become ready within120 seconds.')),120000);
+  gateway.on('message',message=>{if(message?.type==='ready'){clearTimeout(timer);resolve();}});
+  gateway.once('exit',()=>{clearTimeout(timer);reject(new Error('Gateway exited before readiness.'));});
+ });
+ if(stopping)throw new Error('Stack stopped during startup.');
  const astro=createRequire(join(root,'apps/site/package.json')).resolve('astro/package.json').replace(/package\.json$/,'bin/astro.mjs');
  run('site',process.execPath,[astro,'dev','--ignore-lock'],join(root,'apps/site'));
  console.log(`Kafka demo: http://127.0.0.1:${ports.site}/field-station/ (notebooks enabled; Failure Lab not included).`);

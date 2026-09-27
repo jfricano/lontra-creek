@@ -109,3 +109,31 @@ existing Kafka/JDK binaries, local512MiB heap, persistent logs/checkpoints and
 loopback endpoints. Independent live verification in progress. Public Lab remains
 subject to R2 and release approval. Shared-host preparation is being reconciled
 with the newer candidate; no cloud resources or public deployment performed.
+
+## Candidate PR #20
+
+[Draft candidate](https://github.com/jfricano/lontra-creek/pull/20), branch
+`codex/site-completion`; main remains unchanged. Runtime `1c89a0b` integrated.
+Root verified119 application/unit tests, typechecks, and6 deployment regression
+tests. Independent backend review ran18 targeted tests and found no further
+material issues in inspected authorization/lease/reset/redaction code. It did not
+independently reproduce the native Kafka scenarios; see LAB_CHECKPOINT.md for
+author-run six-scenario native evidence and the explicitly skipped Caddy/three-
+bench case. Current full candidate CI is running those container boundaries.
+
+Setup workflow commands now use immutable deployed configuration directories,
+including restarts and cleanup; PR concurrency prevents overlapping rehearsals.
+The integration includes PRs #14 and #19; reconcile them at human merge time.
+No npm release, main merge, hosting mutation, or public launch has occurred.
+
+Native launcher review found readiness was announced before Kafka group rebalance
+completed. The launcher now waits for an IPC signal after gateway.start resolves,
+and shuts down clients before the broker. Independent restart verification is
+rerunning. Static local-link/asset checks are now part of the standard CI build.
+
+First full PR20 CI:119 tests/typecheck/build and main Stack on amd64/arm64
+passed. Browser91/93 passed: all Chromium and Firefox tests; two WebKit dark
+Lab contrast scans failed on an unthemed secondary native button. Applied the
+existing explicit theme-aware button-quiet style; no axe exclusions added.
+Setup rehearsal reached a real ARM64 first deployment before a later failure;
+the deployment reviewer owns diagnosis. Final current-head results pending.

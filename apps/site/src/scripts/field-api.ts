@@ -8,7 +8,9 @@
  * proxies to the field station.
  */
 
-const API_ORIGIN = (import.meta.env.PUBLIC_FIELD_STATION_ORIGIN ?? "").replace(/\/+$/, "");
+// `?.` on env: Vite always supplies it in the browser; Node's test runner, which loads
+// this module without Vite's transform, does not.
+const API_ORIGIN = (import.meta.env?.PUBLIC_FIELD_STATION_ORIGIN ?? "").replace(/\/+$/, "");
 
 export interface FieldConfig {
   gatewayOrigin: string;

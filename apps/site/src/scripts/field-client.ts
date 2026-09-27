@@ -17,7 +17,7 @@ import { installTabletNetwork, isOnline, onNetworkChange, setOnline } from "./ta
 // Must run before the SDK is imported; see tablet-network.ts.
 installTabletNetwork();
 
-/** How long to wait for a first connection before saying the gateway can't be reached; the SDK keeps trying. */
+/** How long to wait, from the first watch(), for a first connection before saying the gateway can't be reached; the SDK keeps trying. */
 export const UNREACHABLE_AFTER_MS = 15_000;
 /** How long restoring the connection waits for the gateway. */
 export const RECONNECT_TIMEOUT_MS = 15_000;
@@ -63,18 +63,20 @@ export interface FieldClient {
   on(event: "badge", listener: (badge: Badge) => void): Unlisten;
   /** The tablet network going down or up. */
   on(event: "network", listener: (online: boolean) => void): Unlisten;
-  /** No first connection within UNREACHABLE_AFTER_MS while the network was up; the SDK keeps trying. */
+  /** No first connection within UNREACHABLE_AFTER_MS of the first watch() while the network was up; the SDK keeps trying. */
   on(event: "unreachable", listener: () => void): Unlisten;
   /** Closes the client and every view. */
   close(): Promise<void>;
 }
 
-class PageFieldClient implements FieldClient {
+/** Exported for tests only; pages create clients through openFieldClient(). */
+export class PageFieldClient implements FieldClient {
   readonly config: FieldConfig;
   readonly client: Client<AppChannels>;
   readonly #badgeListeners = new Set<(badge: Badge) => void>();
   readonly #unreachableListeners = new Set<() => void>();
-  readonly #unreachableTimer: ReturnType<typeof setTimeout>;
+  #unreachableTimer: ReturnType<typeof setTimeout> | null = null;
+  #watchStarted = false;
   #role: Role;
   #badge: Badge | null = null;
   #everConnected = false;
@@ -101,14 +103,26 @@ class PageFieldClient implements FieldClient {
     this.client.on("state", ({ state }) => {
       if (state === "connected") {
         this.#everConnected = true;
-        clearTimeout(this.#unreachableTimer);
+        this.#clearUnreachableTimer();
       }
     });
+  }
+
+  /** Starts the unreachable countdown the first time a view is watched; later calls are no-ops. */
+  #startUnreachableTimer(): void {
+    if (this.#watchStarted) return;
+    this.#watchStarted = true;
     // The gateway may be down while the site API answers; say so rather than spin.
     this.#unreachableTimer = setTimeout(() => {
       if (this.#everConnected || !isOnline()) return;
       for (const listener of [...this.#unreachableListeners]) listener();
     }, UNREACHABLE_AFTER_MS);
+  }
+
+  #clearUnreachableTimer(): void {
+    if (this.#unreachableTimer === null) return;
+    clearTimeout(this.#unreachableTimer);
+    this.#unreachableTimer = null;
   }
 
   get sourceLabel(): string {
@@ -132,6 +146,7 @@ class PageFieldClient implements FieldClient {
   }
 
   watch<K extends ChannelName>(channel: K, params: ChannelParams<K>): View<K> {
+    this.#startUnreachableTimer();
     const channelVersion = channelVersions[channel] as AppChannels[K]["version"];
     return observe(channel, params, this.client.subscribe(channel, { channelVersion, params }));
   }
@@ -163,7 +178,7 @@ class PageFieldClient implements FieldClient {
   }
 
   close(): Promise<void> {
-    clearTimeout(this.#unreachableTimer);
+    this.#clearUnreachableTimer();
     return this.client.close();
   }
 }

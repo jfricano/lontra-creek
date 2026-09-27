@@ -1,0 +1,42 @@
+# Local source-build preview: same-origin HTTPS preserves Strict session cookies.
+{
+	auto_https off
+}
+https://localhost:443 {
+	tls /etc/caddy/origin/cert.pem /etc/caddy/origin/key.pem
+	@foreignOrigin not header Origin https://localhost:8443
+	handle /api/* {
+		reverse_proxy field-station:7402 {
+			header_up X-Client-IP {client_ip}
+		}
+	}
+	handle /streamotter/* {
+		reverse_proxy gateway:7400
+	}
+	handle /lab/1/socket.io/* {
+		respond @foreignOrigin 403
+		reverse_proxy lab-1:7400
+	}
+	handle /lab/2/socket.io/* {
+		respond @foreignOrigin 403
+		reverse_proxy lab-2:7400
+	}
+	handle /lab/3/socket.io/* {
+		respond @foreignOrigin 403
+		reverse_proxy lab-3:7400
+	}
+	# The site owns /lab/; every backend path beneath it remains closed.
+	handle /lab/1/* {
+		respond 404
+	}
+	handle /lab/2/* {
+		respond 404
+	}
+	handle /lab/3/* {
+		respond 404
+	}
+	handle {
+		root * /srv/site
+		file_server
+	}
+}

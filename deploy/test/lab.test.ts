@@ -51,7 +51,7 @@ describe('the real Kafka Failure Lab', { skip: !API && 'LAB_API_ORIGIN not set' 
     }
     // Native verification bypasses Caddy; these edge assertions run in containers.
     if (API?.startsWith('https://')) {
-      for (const path of ['/lab/', `/lab/${token.bench}/`, `/lab/${token.bench}/management/v1/health`, `/lab/${token.bench}/bench/v1/status`]) assert.equal((await fetch(`${API}${path}`)).status, 404);
+      for (const path of [...(process.env['LAB_SERVES_SITE'] === '1' ? [] : ['/lab/']), `/lab/${token.bench}/`, `/lab/${token.bench}/management/v1/health`, `/lab/${token.bench}/bench/v1/status`]) assert.equal((await fetch(`${API}${path}`)).status, 404);
       for (const headers of [{}, { origin: 'https://foreign.test' }]) assert.equal((await fetch(`${API}/lab/${token.bench}/socket.io/?EIO=4&transport=websocket`, { headers })).status, 403);
     }
   });

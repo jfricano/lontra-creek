@@ -2,7 +2,7 @@
 
 September 25, 2026 · Engineering plan for taking Lontra Creek from local development to `streamotter.app`
 
-[PLAN.md](PLAN.md) owns scope, the story, architecture, consistency rules, and launch criteria. [HOSTING.md](HOSTING.md) is the owner's account and server checklist. This document is the engineering work in between: what to build, in what order, and how each piece is proven before it goes near a server.
+[PLAN.md](PLAN.md) owns scope, the story, architecture, consistency rules, and launch criteria. [HOSTING.md](HOSTING.md) is the owner's account and server checklist. This document is the engineering work in between: what to build, in what order, and how each piece is proven before it goes near a server. [TEAM_PLAN.md](TEAM_PLAN.md) assigns the remaining workstreams to the team and orders them into sprints.
 
 ## Where things stand
 

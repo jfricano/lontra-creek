@@ -6,10 +6,12 @@ root=/srv/lontra
 [ "$#" -ge 1 ] || { echo 'Usage: lontra-checkpoint backup | verify <file.gz> | restore <file.gz>' >&2; exit 2; }
 exec 9>"$root/deploy.lock"
 flock -n 9 || { echo 'Another deploy or checkpoint operation is running.' >&2; exit 1; }
-args=(-f "$root/config/compose.yaml")
-[ ! -f "$root/lab.enabled" ] || args+=(-f "$root/config/compose.lab.yaml")
-compose() { docker compose --project-directory "$root/config" "${args[@]}" --env-file "$root/current.env" "$@"; }
-helper=$(cat "$root/config/checkpoint.mjs")
+config=$(sed -n 's/^LONTRA_CONFIG_DIR=//p' "$root/current.env")
+[[ "$config" == "$root/releases/"* && -d "$config" ]] || { echo 'Missing release config snapshot.' >&2; exit 2; }
+args=(-f "$config/compose.yaml")
+[ ! -f "$config/lab.enabled" ] || args+=(-f "$config/compose.lab.yaml")
+compose() { docker compose --project-directory "$config" "${args[@]}" --env-file "$root/current.env" "$@"; }
+helper=$(cat "$config/checkpoint.mjs")
 case "$1" in
   backup)
     [ "$#" -eq 1 ] || exit 2

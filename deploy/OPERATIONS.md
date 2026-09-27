@@ -114,10 +114,15 @@ sudo /usr/local/sbin/lontra-deploy <previous-full-sha>
 ```
 
 Current and previous env/SHA records live in `/srv/lontra`. Do not print env files
-into logs. Rollback covers the application image and its env, **not** schema,
-Kafka data, study history, certificates, or edits to the installed Compose and
-Caddy configuration. Reverting a config update requires restoring its audited
-checkout/config before deploying. History-changing simulation releases need a
+into logs. Each candidate snapshots the installed Compose, Caddy, Kafka startup,
+and checkpoint helper config under `/srv/lontra/releases/`; its root-only env
+records `LONTRA_CONFIG_DIR`. Health/checkpoint operations and rollback read that
+snapshot, including the release's Lab-enabled marker. A later setup can update
+the config template without mutating the running or previous release. Failed
+candidates roll back the prior image, env, and matching config, and remove
+orphan services introduced by the failed topology. Rollback does **not** revert
+schema, Kafka data, study history, or certificates. Keep both retained release
+config directories; no automatic deletion of config snapshots is performed. History-changing simulation releases need a
 higher generation and a compatibility/recovery plan before acceptance. Never
 use `down --volumes` on the real host as a rollback.
 
@@ -167,8 +172,10 @@ The Lab overlay is **off by default**, including after setup. After its backend
 and container checks pass and the owner accepts public development gateways,
 an operator can create `/srv/lontra/lab.enabled` before deploying. Remove that
 marker only during an explicit topology change; stop obsolete lab services
-with the overlay first (without deleting volumes). The deployment/checkpoint
-commands include the overlay while that marker exists. The base stack remains
+with the overlay first (without deleting volumes). The next deployment snapshots that marker, and checkpoint/health operations
+use the current release's saved topology. Existing-host missing Lab keys fail
+Compose validation before any running service is replaced; this is a hard
+preflight failure, not a partially enabled Lab. The base stack remains
 independently operable. Never use `compose.lab-spike.yaml` on a public host.
 
 New secrets are generated for new hosts. `make-secrets.sh` preserves existing

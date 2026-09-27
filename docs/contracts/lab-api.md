@@ -4,7 +4,7 @@ September 26, 2026 · The interfaces between the Failure Lab backend (`be-lab`),
 
 [PLAN.md](../PLAN.md#the-failure-lab-lab) owns what the Lab is for and what visitors see; [DEPLOYMENT_PLAN.md](../DEPLOYMENT_PLAN.md#6-the-failure-lab-ships-with-the-launch) workstream 6 owns the engineering order. This document fixes the interfaces those build against: routes, payloads, timings, and security rules. Where it states StreamOtter's behavior, the source is the pinned release, `streamotter@0.1.0-rc.3`, as published on npm (its `src/` is installed under `node_modules/@streamotter/*`). Changes to this contract go through `lead`; an implementation that needs a different interface says so in its pull request and updates this file in the same pull request.
 
-The relay-cut mechanism is deliberately abstract here: the E2.0 spike proves it. Section 9 says what the contract requires of it.
+Section 1 fixes the relay-cut mechanism's shape, as E2.0's spike (PR #17, `spike/lab-relay-cut`) built it. Section 9 says what the contract requires of it regardless of implementation.
 
 ## 1. The pieces
 
@@ -20,15 +20,20 @@ bench-N (one container per bench, N = 1, 2, 3)
   management API       127.0.0.1:7401   the bench's own loopback; never proxied, never on the Compose network
   bench API            :7420             lease, tokens, scenario actions, redacted feed, reset
   satellite client     in-process        the slow client for the satellite-laptop scenario
-  relay control        (E2.0)            cuts and restores this bench's path to Kafka
 
-bench-N ──relay (cuttable)──▶ Kafka, its own lab-N.* topics and consumer group, its own projectId
+lab-N-kafka (a separate container per bench: the relay control, as E2.0's spike built it)
+  TCP proxy            :910N             the address Kafka advertises to bench N; forwards to the broker's listener for it
+  control API          :9180             POST /cut, POST /restore, GET /state; Compose network only, never routed by Caddy
+
+bench-N's bench API ──relay token N──▶ lab-N-kafka:9180   the proxy's only caller
+bench-N ──through lab-N-kafka (cuttable)──▶ Kafka, its own lab-N.* topics and consumer group, its own projectId
 ```
 
 - **The field station is the only thing visitors talk to about leases.** It keeps the queue and the leases in memory, relays tokens, actions, and the feed, and never lets a request name a bench: the bench always comes from the session's own lease.
 - **Each bench is the only authority over its own gateway**: who may connect (its current lease), its scenario state, and its feed.
+- **The field station calls only bench N's API; bench N's API calls bench N's proxy control.** Neither the field station nor any other bench ever reaches a proxy's control API directly; the flash-flood scenario action (`relay.cut`/`relay.restore`, section 5) is the only path to it.
 - **The management API stays inside the bench.** StreamOtter's traces are readable only through it (section 10.2), so the bench API, which runs in the bench's network namespace, reads them over loopback and serves a redacted feed. That is why the field station never reads a bench's management API directly, as PLAN.md's first sketch had it.
-- **Recommended shape** (E2.0 settles it in PLAN.md): one Node process per bench that calls `createGateway({ mode: "development" })` and `startManagementServer({ gateway, host: "127.0.0.1", port, token, workbenchDir: null })` from `streamotter/gateway/management`, and runs the bench API, the satellite client, and the relay control. Compared with `streamotter dev`, it keeps the lease state in the same process as `authenticate`, survives a relay restart (stop the gateway, construct a new one), passes no `development` principals whatever a handler module exports, and never prints the management token. If E2.0 chooses `streamotter dev`, every requirement in sections 7–10 still applies.
+- **Recommended shape**, settled by E2.0's spike (PR #17, `spike/lab-relay-cut`): two Node processes per bench, run as separate Compose services. `bench-main.ts` calls `createGateway({ mode: "development" })` and `startManagementServer({ gateway, host: "127.0.0.1", port, token, workbenchDir: null })` from `streamotter/gateway/management`, and runs (or, for E2.1, will run) the bench API, the satellite client, and the lease and token logic. Compared with `streamotter dev`, it keeps the lease state in the same process as `authenticate`, survives a gateway restart (stop the gateway, construct a new one), passes no `development` principals whatever a handler module exports, and never prints the management token. `proxy-main.ts` runs the `lab-N-kafka` service: the TCP proxy and its control API, holding only that bench's own relay token (section 8). Every requirement in sections 7–10 applies to both processes.
 
 ## 2. Timings and limits
 
@@ -295,7 +300,7 @@ At most one a second per lease (field station, 429 `too-many-actions` with `Retr
 
 ## 7. Reaching the bench gateway
 
-- **Bench gateway configuration**: its own `projectId` (for example `lontra-creek-lab-1`; V1 supports one gateway per project), `gateway.host` `0.0.0.0` on the Compose network (only Caddy publishes a port), `gateway.port` 7400, `gateway.path` `/lab/N/socket.io`, and `allowedOrigins: [SITE_ORIGIN]` (`https://streamotter.app` in production; the dev origins from F.1 locally). Kafka over TLS with SCRAM, like production. Limits: `maxConnections` small (a few tabs plus the satellite; suggest 8) and `maxSubscriptionsPerConnection` 12.
+- **Bench gateway configuration**: its own `projectId` (for example `lontra-creek-lab-1`; V1 supports one gateway per project), `gateway.host` `0.0.0.0` on the Compose network (only Caddy publishes a port), `gateway.port` 7400, `gateway.path` `/lab/N/socket.io`, and `allowedOrigins: [SITE_ORIGIN]` (`https://streamotter.app` in production; the dev origins from F.1 locally). Kafka over TLS with SCRAM, like production. Limits: `maxConnections` 8 (a few tabs plus the satellite) and `maxSubscriptionsPerConnection` 12. The E2.0 spike's `BENCH_LIMITS` used 16; E2.1 changes it to 8 to match this contract.
 - **Caddy**, one route per bench: `/lab/N/socket.io/*` goes to `bench-N:7400`, only with `Origin` exactly the site's origin; a missing or different `Origin` gets 403 before the upgrade. Everything else under `/lab/` gets 404. The bench API (7420) and the management API have no route. Illustrative only; `devops` owns the Caddyfile:
 
   ```caddy
@@ -312,6 +317,7 @@ At most one a second per lease (field station, 429 `too-many-actions` with `Retr
   ```
 
 - **Bench tokens.** The bench mints them (`POST /bench/v1/tokens`) and is the only one that can verify them: opaque, at least 128 bits of randomness (for example `lab1_` and 32 random bytes in base64url), held in the bench's memory with the lease they belong to, and discarded at reset. The field station only relays them. A bench's `authenticate` returns a principal only when the token belongs to that bench's **current** lease and the lease hasn't ended; otherwise `null` (`UNAUTHENTICATED`). It never accepts badge tokens (it has no `FIELD_STATION_SECRET`), and the production gateway never accepts bench tokens.
+- **Relay tokens.** Each bench has its own, `LAB_BENCH_N_RELAY_TOKEN`, held only by that bench's API (which calls the control API) and that bench's own `lab-N-kafka` proxy (which verifies the call) — no other bench, the field station, or any other process holds it, consistent with M9's per-bench isolation (section 10.5). The E2.0 spike used one token, `LAB_RELAY_TOKEN`, shared by every proxy; E2.1 and E2.3 replace it with this per-bench form.
 - **The principal**: `subject` `lab-<leaseId>`, `sessionId` the lease ID, `tenantId` the study's tenant, `expiresAt` the lease's end, and `claims` `{ role: "volunteer", bench: N }`. StreamOtter closes a connection when its principal expires (`ClientSession`, `src/runtime/session.ts`), so a lease's connections end on time even if nothing else does. Each lease is a new subject, so nothing carries over between visitors.
 - **Ending a lease on the socket.** Reset clears the current lease (new handshakes fail), then calls `gateway.revoke({ kind: "subject", … })`, which closes the old lease's connections with a non-retryable `UNAUTHENTICATED`. The SDK then reports connection `auth-required` and its views `stale` with `UNAUTHENTICATED`; the page closes its client and shows why the lease ended. At natural expiry the gateway closes the connection first; the SDK asks for a token, the page's `getToken` fails with 409 `no-lease`, and the client ends in the same state.
 - **On the page**: a client for the bench, separate from any other on the page, whose `getToken` asks the field station for a bench token. The SDK asks again 30 seconds before `expiresAt` and after a relay restart; while the lease is current it gets a token for the same lease.
@@ -358,22 +364,25 @@ export interface BenchStatus {
 2. `gateway.revoke({ kind: "subject", tenantId, subject: "lab-<leaseId>" })`: its connections close with `UNAUTHENTICATED`.
 3. Stop the satellite client.
 4. Restore the calibration table and the relay.
-5. Resume the source if it's paused, and wait until it's `healthy` (after a relay cut this takes up to 30 seconds).
-6. Clear the feed buffer.
-7. If the source isn't healthy within 60 seconds, restart the gateway once; if it's still not healthy, report `failed`.
+5. Stop the bench's gateway, then construct a new one — identical except for a fresh consumer group named for the lease that just ended (for example `streamotter-lab-N-<leaseId>`, or a name unique to this reset when no lease ended, such as on startup) and `startFrom: "latest"` — using only StreamOtter's public API (`gateway.stop()`, `createGateway`). Wait until its source reports `healthy` (after a relay cut this can take up to 30 seconds).
+6. Delete the gateway's previous consumer group with a Kafka admin client the bench process keeps for this; StreamOtter has no such operation.
+7. Clear the feed buffer.
+8. If the new gateway's source isn't healthy within 60 seconds, report `failed`.
 
-**Bench environment.** Its own service token; `SITE_ORIGIN`; its Kafka credentials (preferably a SCRAM user of its own); its management token, generated at startup unless supplied, never logged. **Never** `FIELD_STATION_SECRET`, `FIELD_STATION_SERVICE_TOKEN`, another bench's token, or the production gateway's or field station's Kafka passwords. The bench's snapshots come from a bench-scoped source (E2.0 decides which), never the field station's internal API, which serves every notebook to anyone holding its service token.
+**Bench environment.** Its own service token; its relay token (`LAB_BENCH_N_RELAY_TOKEN`, section 7); `SITE_ORIGIN`; its Kafka credentials (preferably a SCRAM user of its own); its management token, generated at startup unless supplied, never logged. **Never** `FIELD_STATION_SECRET`, `FIELD_STATION_SERVICE_TOKEN`, another bench's token, or the production gateway's or field station's Kafka passwords (`KAFKA_GATEWAY_PASSWORD`, `KAFKA_FIELD_STATION_PASSWORD`). The bench's snapshots come from a restricted, per-bench source — for example, an endpoint serving only that bench's `lab-N` world views, never notebooks or holts, authenticated with bench N's own service token (not a broader one) — never the field station's internal API, which serves every notebook to anyone holding its service token. E2.1 (`be-lab`) builds it.
 
-**Field station environment** (names are suggestions for `be-lab` and `devops`): `LAB_BENCHES` (the three bench API origins; unset means `enabled: false`), `LAB_BENCH_1_SERVICE_TOKEN` to `LAB_BENCH_3_SERVICE_TOKEN` (32 characters or more, from `deploy/make-secrets.sh`), `LAB_LEASE_SECONDS`, `LAB_QUEUE_MAX`.
+**Status.** The E2.0 spike (PR #17, `spike/lab-relay-cut`) proves the relay cut but does not yet meet M4 or M11 (section 10.5): its bench accepts the walkthrough's badge check in `authenticate` instead of lease-bound tokens, and its environment and snapshots come from the field station's production secrets and internal API (`FIELD_STATION_SECRET`, `FIELD_STATION_SERVICE_TOKEN`, `FIELD_STATION_INTERNAL_URL`). E2.1 must close both gaps before any bench faces the public. S11 (section 10.6) checks it at the stack level.
+
+**Field station environment** (names are suggestions for `be-lab` and `devops`): `LAB_BENCH_API_URLS` (the three bench API origins; unset means `enabled: false`), `LAB_BENCH_1_SERVICE_TOKEN` to `LAB_BENCH_3_SERVICE_TOKEN` (32 characters or more, from `deploy/make-secrets.sh`), `LAB_LEASE_SECONDS`, `LAB_QUEUE_MAX`. Separate from the E2.0 spike's `FIELD_LAB_BENCHES` (`deploy/compose.lab-spike.yaml`): the number of benches whose `lab-N.*` topic copies the field station publishes over its own Kafka connection, unrelated to the Lab API's lease traffic.
 
 ## 9. What the relay cut must do
 
-E2.0 chooses and proves the mechanism. Whatever it is, the contract requires:
+E2.0's spike proves the mechanism in section 1: a `lab-N-kafka` proxy per bench. Whatever refinements follow, the contract requires:
 
 - `relay.cut` makes the bench's source `stale` for visitors within **20 seconds**, and `relay.restore` brings it back to `live` within **30 seconds**, measured in CI on amd64 and arm64 and recorded with where they were measured.
 - It cuts only that bench's path to Kafka: other benches, the production gateway, and the field station are unaffected.
 - The bench API, the bench's feed of creek data, and its snapshots never travel over the path that gets cut.
-- The bench API is its only control; visitors reach it only through `POST /api/lab/actions`.
+- The bench API is its only control, calling that bench's own proxy with that bench's own relay token (section 7); visitors reach it only through `POST /api/lab/actions`.
 - Reset always restores it, and a restored relay needs no gateway restart.
 
 ## 10. Threat model
@@ -417,7 +426,7 @@ Everything the gateway does differently in development mode, found by reading ev
 | **T4 A visitor reaches management routes** | M2, M3; the management token never leaves the bench | S4 |
 | **T5 Another site's page drives a leaseholder's bench** | The bench token is in the page's memory, not a cookie; M8 Caddy's `Origin` rule; `SameSite=Strict` session cookie and the `Origin` check on `POST /api/lab/*` | S5 |
 | **T6 The feed leaks others' data or secrets** | M10 redaction (section 6); benches serve no `holt` or `notebook` channels; StreamOtter traces hold no payloads or credentials | S6 |
-| **T7 A compromised bench reaches production** | M11 benches hold no production secrets and don't use the field station's internal API; own SCRAM user | U3, review |
+| **T7 A compromised bench reaches production** | M11 benches hold no production secrets and don't use the field station's internal API; own SCRAM user | U3, S11, review |
 | **T8 Denial of service** (queue flooding, action spam, handshake floods) | Places per address and queue cap; the Lab budget; one action a second per lease and per bench; small `maxConnections` per bench; Cloudflare in front | S7, S9 |
 | **T9 A leaseholder shares their bench token** | Harmless within the lease: it grants the same bench until the lease ends, capped by `maxConnections` | None needed |
 
@@ -433,7 +442,7 @@ Everything the gateway does differently in development mode, found by reading ev
 | M6 | A bench principal's `expiresAt` is the lease's end. | `be-lab` |
 | M7 | Every lease end runs the reset: clear the lease, then revoke its subject. | `be-lab` |
 | M8 | Caddy answers 403 to `/lab/N/socket.io/*` unless `Origin` is exactly the site's origin; the bench's `allowedOrigins` is the site's origin too. | `devops` |
-| M9 | One service token per bench API; the bench API is on the Compose network only. | `be-lab`, `devops` |
+| M9 | One service token per bench API and one relay token (`LAB_BENCH_N_RELAY_TOKEN`) per bench proxy, held only by that bench's own pair; the bench API and the proxy's control API are on the Compose network only. | `be-lab`, `devops` |
 | M10 | The feed's redaction rules (section 6), applied by the bench. | `be-lab` |
 | M11 | Bench environments hold no production secrets (section 8); bench snapshots don't come from the field station's internal API; each bench has its own Kafka user. | `be-lab`, `devops` |
 | M12 | Bench configs pass production validation: constructing the bench gateway with `mode: "production"` and no `development` option succeeds (no fixtures, no plaintext Kafka). | `be-lab` |
@@ -454,6 +463,7 @@ Stack tests (E2.4, containers in CI, through Caddy like `deploy/test/stack.test.
 | S8 | **Each scenario's observable outcome**, as in section 5, with the relay cut's timings measured. | Section 5 |
 | S9 | **Action rate.** Two actions within a second: the second gets 429 `too-many-actions`. | T8 |
 | S10 | **Cross-session.** Visitor B's return, token, action, and feed requests don't touch A's lease (409 `no-lease` or B's own view). | T1, M5 |
+| S11 | **No production secrets on a bench.** From `docker compose exec` on a running bench container, its environment contains none of `FIELD_STATION_SECRET`, `FIELD_STATION_SERVICE_TOKEN`, `KAFKA_GATEWAY_PASSWORD`, or `KAFKA_FIELD_STATION_PASSWORD`. | T7, M11 |
 
 Unit tests (`npm test`): **U1** the bench's gateway options register no principals and no fixture sources; **U2** the bench refuses to start when its management API lists a principal; **U3** the bench's configuration refuses production secrets in its environment; **U4** the bench config passes production validation (M12); plus the lease state machine with a fake clock (claim, idle, expiry, session cap, reset, field station restart).
 
@@ -470,7 +480,7 @@ Yes, development-mode benches can face the public with these mitigations. In `0.
 
 ## 11. Open points
 
-- **E2.0** settles `createGateway` or `streamotter dev` in PLAN.md (section 1 recommends `createGateway`), where the bench's feed and snapshots come from, and the relay mechanism.
-- **E2.1** adds the bench project (its channels, `LabChannels` types for the site) and the calibration table; generated files for the site follow the section 7 ownership of that sprint.
+- **E2.0** is settled by the relay-cut spike (PR #17, `spike/lab-relay-cut`): `createGateway` (section 1), the relay mechanism (a `lab-N-kafka` proxy and control API per bench, sections 1 and 9), and `FIELD_LAB_BENCHES` feeding each bench's topic copies (section 8). The spike's bench still used the field station's internal API for snapshots, a shared relay token, and the walkthrough's badge check for `authenticate`; E2.1 (and E2.3 for the relay token) replace all three (M4, M9, M11 — see the Status note in section 8).
+- **E2.1** adds the bench project (its channels, `LabChannels` types for the site), the calibration table, lease-bound tokens, the per-bench snapshot source, and the per-bench relay token; generated files for the site follow the section 7 ownership of that sprint.
 - **L.2** decides how the Lab runs locally; until then, with `npm run dev`, `/api/lab/status` answers 404, which the page treats as unavailable.
 - **The owner** decides section 10.8.

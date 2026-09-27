@@ -164,3 +164,24 @@ The complete `3c9a3e1` CI batch is green, including both architecture Lab jobs
 Those jobs passed real three-bench scenarios and private-container environment,
 management-loopback, and per-bench API credential checks. Final added HTTP
 queue/FIFO/snapshot-scope checks await the next head's container run.
+
+## Shared-host adapter follow-up (2026-09-27)
+
+Owner merged PR20 at `2397e2c`. Coordinator accepted the private-router contract
+and requested its bounded implementation/rehearsal; new integration branch
+`codex/shared-host-adapter` starts from that merge. Only router `lontra-caddy:8080`
+joins `edge-lontra`, with exact ingress trust (initial10.203.43.2), no app host
+ports, per-service containment and mandatory aggregate `lontra.slice`. Public
+Lab remains disabled by default and its original ACL/dev-mode gates remain.
+
+Deployment worker owns router/Compose/slice, backup worker owns read-only snapshot
+and disposable restore hooks, QA independently reviews both, root owns integration
+and shared-host CI. Local Caddy adaptation and resolved Compose checks passed;
+seven backup tests independently passed. CI must prove actual cgroup membership,
+HTTP spoofing and per-visitor budgets, scenario behavior under containment,
+UID1000 disposable-volume restore, corrupt-backup rejection and unchanged live
+checkpoint. Runtime results are not yet claimed. Existing standalone /srv/lontra
+operator scripts are preserved; shared activation has a separate root-owned
+/srv/apps/lontra release contract. Shared infra owns encrypted export and host
+activation. No Oracle resource, publication, deployment or main merge is performed
+by this follow-up. Selected region relayed by coordinator: us-sanjose-1.

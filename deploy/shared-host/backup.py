@@ -103,7 +103,7 @@ def snapshot(stage):
     if config.parent != ROOT / 'releases' or not re.fullmatch(r'[a-f0-9]{40}', config.name):
         raise ValueError('Expected a release SHA configuration directory')
     secure(config, True, private=False)
-    files = ['compose.yaml', 'compose.shared.yaml', 'Caddyfile.shared', 'kafka/start.sh']
+    files = ['compose.yaml', 'compose.shared.yaml', 'Caddyfile.shared', 'start-caddy-shared.sh', 'kafka/start.sh']
     lab = config / 'lab.enabled'
     if lab.exists() or lab.is_symlink():
         secure(lab, private=False)

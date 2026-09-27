@@ -29,7 +29,7 @@ and `LONTRA_IMAGE=<retained immutable release image reference>`. No shell expans
 quoting, or sourcing is performed by the hook. The release directory and immutable config files may be 0755/0644 beneath the
 private app ancestor; they must remain root-owned with no group/world write.
 Required files are `compose.yaml`, `compose.shared.yaml`, `Caddyfile.shared`,
-and `kafka/start.sh`. With `lab.enabled`, also include `compose.lab.yaml` and
+`start-caddy-shared.sh`, and `kafka/start.sh`. With `lab.enabled`, also include `compose.lab.yaml` and
 `compose.shared.lab.yaml`. Compose applies base, optional Lab, shared, optional
 shared Lab in that order.
 The Compose project is `lontra-creek`; its running `field-station` must use the

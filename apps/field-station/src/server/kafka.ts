@@ -22,6 +22,7 @@
  * feed running. They keep an hour, since benches start from the latest records and
  * take snapshots from the field station.
  */
+import { TOPICS } from "@lontra-creek/sim";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Kafka, logLevel, Partitioners, type Admin, type ITopicConfig, type Producer, type SASLOptions } from "kafkajs";
@@ -41,7 +42,7 @@ function creekTopic(topic: string, retentionMs: number): ITopicConfig {
 }
 
 export const TOPIC_CONFIGS: readonly ITopicConfig[] = [
-  ...CREEK_TOPICS.map(topic => creekTopic(topic, WORLD_RETENTION_MS)),
+  ...[...new Set(Object.values(TOPICS))].map(topic => creekTopic(topic, WORLD_RETENTION_MS)),
   {
     topic: NOTEBOOK_TOPIC,
     numPartitions: PARTITIONS,

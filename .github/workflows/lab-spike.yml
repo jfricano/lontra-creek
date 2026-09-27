@@ -70,6 +70,8 @@ jobs:
           deploy/make-certs.sh test-origin "$stack/secrets/origin" demo.streamotter.app
           {
             echo "KAFKA_LAB_PASSWORD=$(openssl rand -hex 32)"
+            echo "LAB_BENCH_1_SERVICE_TOKEN=$(openssl rand -hex 32)"
+            echo "LAB_BENCH_1_RELAY_TOKEN=$(openssl rand -hex 32)"
             echo "LONTRA_IMAGE=lontra-creek:ci"
             echo "LONTRA_SECRETS=$stack/secrets"
             echo "FIELD_EPOCH=$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)"
@@ -85,7 +87,7 @@ jobs:
       - name: Cut the bench's proxy and restore it
         run: |
           set -a; . "$STACK_ENV"; set +a
-          LAB_PROXY_TOKEN="$LAB_RELAY_TOKEN" \
+          LAB_PROXY_TOKEN="$LAB_BENCH_1_RELAY_TOKEN" \
           NODE_EXTRA_CA_CERTS="$LONTRA_SECRETS/origin/ca.pem" \
           STACK_ORIGIN=https://demo.streamotter.app \
           LAB_STOP_PROXY="$COMPOSE stop lab-1-kafka" \
@@ -93,6 +95,19 @@ jobs:
           LAB_SPIKE_LABEL="GitHub Actions ${{ matrix.runner }} (${{ matrix.arch }}), containers" \
           LAB_SPIKE_RESULTS="$RUNNER_TEMP/lab-spike.jsonl" \
             node --test --test-force-exit deploy/test/lab-spike.test.ts
+
+      - name: Exercise the production three-bench Lab
+        run: |
+          $COMPOSE down --volumes
+          stack="$RUNNER_TEMP/lontra"
+          deploy/make-certs.sh kafka "$stack/secrets/kafka" lab-1-kafka lab-2-kafka lab-3-kafka
+          set -a; . "$STACK_ENV"; set +a
+          # The production overlay isolates each bench's service and SCRAM credentials.
+          docker compose -f deploy/compose.yaml -f deploy/compose.lab.yaml --env-file "$STACK_ENV" up --detach --wait --wait-timeout 300
+          LAB_API_ORIGIN=https://demo.streamotter.app \
+          LAB_SITE_ORIGIN=https://streamotter.app \
+          NODE_EXTRA_CA_CERTS="$LONTRA_SECRETS/origin/ca.pem" \
+            node --test --test-force-exit deploy/test/lab.test.ts
 
       - name: Timings
         if: always()
@@ -118,8 +133,12 @@ jobs:
 
       - name: Logs
         if: always()
-        run: $COMPOSE logs --no-color --timestamps
+        run: |
+          $COMPOSE logs --no-color --timestamps
+          docker compose -f deploy/compose.yaml -f deploy/compose.lab.yaml --env-file "$STACK_ENV" logs --no-color --timestamps
 
       - name: Stop the stack
         if: always()
-        run: $COMPOSE down --volumes
+        run: |
+          $COMPOSE down --volumes
+          docker compose -f deploy/compose.yaml -f deploy/compose.lab.yaml --env-file "$STACK_ENV" down --volumes

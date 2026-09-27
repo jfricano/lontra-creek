@@ -1,0 +1,125 @@
+name: Lab spike
+
+# The relay-cut spike (E2.0): the demo host's stack in containers plus one Failure
+# Lab bench and its relay (deploy/compose.lab-spike.yaml). The test cuts the bench's
+# relay to Kafka and restores it, measuring how long the bench's subscription takes
+# to go stale and to be live again, while the demo host's gateway keeps serving.
+# The timings land in the job summary. It runs on amd64 and on arm64, the Oracle
+# Ampere host's architecture.
+
+on:
+  pull_request:
+    paths:
+      - "deploy/**"
+      - "apps/field-station/**"
+      - "packages/creek-sim/**"
+      - "package-lock.json"
+      - ".github/workflows/lab-spike.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lab-spike-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  spike:
+    name: Lab spike (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          load: true
+          tags: lontra-creek:ci
+          cache-from: |
+            type=gha,scope=lab-spike-${{ matrix.arch }}
+            type=gha,scope=stack-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=lab-spike-${{ matrix.arch }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Make throwaway secrets and certificates
+        run: |
+          stack="$RUNNER_TEMP/lontra"
+          deploy/make-secrets.sh "$stack/.env"
+          # The broker's certificate also names the bench's relay, which the broker advertises to the bench.
+          deploy/make-certs.sh kafka "$stack/secrets/kafka" lab-1-kafka
+          deploy/make-certs.sh test-origin "$stack/secrets/origin" demo.streamotter.app
+          {
+            echo "KAFKA_LAB_PASSWORD=$(openssl rand -hex 32)"
+            echo "LONTRA_IMAGE=lontra-creek:ci"
+            echo "LONTRA_SECRETS=$stack/secrets"
+            echo "FIELD_EPOCH=$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$stack/.env"
+          echo "STACK_ENV=$stack/.env" >> "$GITHUB_ENV"
+          echo "COMPOSE=docker compose -f deploy/compose.yaml -f deploy/compose.lab-spike.yaml --env-file $stack/.env" >> "$GITHUB_ENV"
+          # The test reaches Caddy by the production host name.
+          echo "127.0.0.1 demo.streamotter.app" | sudo tee -a /etc/hosts
+
+      - name: Start the stack and the bench
+        run: $COMPOSE up --detach --wait --wait-timeout 300
+
+      - name: Cut the bench's relay and restore it
+        run: |
+          set -a; . "$STACK_ENV"; set +a
+          LAB_RELAY_TOKEN="$FIELD_STATION_SERVICE_TOKEN" \
+          NODE_EXTRA_CA_CERTS="$LONTRA_SECRETS/origin/ca.pem" \
+          STACK_ORIGIN=https://demo.streamotter.app \
+          LAB_STOP_RELAY="$COMPOSE stop lab-1-kafka" \
+          LAB_START_RELAY="$COMPOSE start lab-1-kafka" \
+          LAB_SPIKE_LABEL="GitHub Actions ${{ matrix.runner }} (${{ matrix.arch }}), containers" \
+          LAB_SPIKE_RESULTS="$RUNNER_TEMP/lab-spike.jsonl" \
+            node --test --test-force-exit deploy/test/lab-spike.test.ts
+
+      - name: Timings
+        if: always()
+        run: |
+          [ -f "$RUNNER_TEMP/lab-spike.jsonl" ] || exit 0
+          {
+            echo "### Relay cut on ${{ matrix.arch }}"
+            echo
+            echo "| Cycle | Cut length | Stale after the cut | Live after the restore | Demo host readings during the cut |"
+            echo "| --- | --- | --- | --- | --- |"
+            node -e '
+              for (const line of require("node:fs").readFileSync(process.argv[1], "utf8").trim().split("\n")) {
+                const r = JSON.parse(line);
+                const s = ms => (ms / 1000).toFixed(1) + " s";
+                console.log(`| ${r.cycle} | ${s(r.cutLengthMs)} | ${s(r.staleAfterCutMs)} | ${s(r.liveAfterRestoreMs)} | ${r.demoReadingsDuringCut}, states ${JSON.stringify(r.demoStatesDuringCycle)} |`);
+              }' "$RUNNER_TEMP/lab-spike.jsonl"
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/lab-spike.jsonl"
+
+      - name: Resource use
+        if: always()
+        run: docker stats --no-stream
+
+      - name: Logs
+        if: always()
+        run: $COMPOSE logs --no-color --timestamps
+
+      - name: Stop the stack
+        if: always()
+        run: $COMPOSE down --volumes

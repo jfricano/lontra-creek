@@ -8,6 +8,7 @@
  * 0.0.0.0:<the bench's relay port>), RELAY_TARGET (default kafka:<the same port>,
  * the broker's listener for this bench), and RELAY_CONTROL (default 0.0.0.0:9180).
  */
+import type { AddressInfo } from "node:net";
 import { serviceToken } from "../identity.ts";
 import { bench } from "./benches.ts";
 import { relayControl, startRelay, type Endpoint } from "./relay.ts";
@@ -33,7 +34,7 @@ await new Promise<void>((resolve, reject) => {
   control.once("error", reject);
   control.listen(controlAt.port, controlAt.host, resolve);
 });
-log(`Control API on ${controlAt.host}:${controlAt.port}.`);
+log(`Control API on ${controlAt.host}:${(control.address() as AddressInfo).port}.`);
 
 async function stop(signal: string): Promise<void> {
   log(`${signal}: stopping.`);

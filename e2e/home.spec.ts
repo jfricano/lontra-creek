@@ -44,6 +44,12 @@ test.describe("home page live panel", () => {
     await expect(root).not.toHaveAttribute("data-connection", "connected", { timeout: 10_000 });
     await expectAllCards(page, "stale", 8_000);
 
+    // The "weren't replayed" note only appears when a newer revision arrived
+    // while the page was offline. The fixture advances one reading every 2s,
+    // so hold the drop for 5s here (well past one tick) to make a missed
+    // revision certain before restoring, rather than racing the fixture.
+    await page.waitForTimeout(5_000);
+
     await page.locator("[data-restore]").click();
     await expectAllCards(page, "live", 30_000);
     await expect(page.locator("[data-note]")).toContainText("weren't replayed", { timeout: 30_000 });

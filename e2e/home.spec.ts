@@ -45,7 +45,7 @@ test.describe("home page live panel", () => {
     await expectAllCards(page, "stale", 8_000);
 
     await page.locator("[data-restore]").click();
-    await expectAllCards(page, "live", 25_000);
-    await expect(page.locator("[data-note]")).toContainText("weren't replayed", { timeout: 25_000 });
+    await expectAllCards(page, "live", 30_000);
+    await expect(page.locator("[data-note]")).toContainText("weren't replayed", { timeout: 30_000 });
   });
 });

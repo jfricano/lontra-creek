@@ -47,14 +47,14 @@ export const PAGES: readonly Page[] = [
     label: "Field station",
     question: "What does it look like running?",
     summary: "A guided walk down Lontra Creek in six short chapters: first light, a storm, a canyon with no signal, a protected den, a new person on the tablet, and your own sighting.",
-    ready: false
+    ready: true
   },
   {
     href: "/lab/",
     label: "Failure Lab",
     question: "What happens when it breaks?",
     summary: "Borrow an isolated bench for five minutes. Foul a sensor, cut the relay, stall a laptop, restart the gateway, and follow each record through the gateway.",
-    ready: false
+    ready: true
   },
   {
     href: "/playground/",

@@ -80,3 +80,16 @@ test("back navigation gets fresh field subscriptions", async ({ page }) => {
   await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
   await expect(page.locator("[data-walk-state]")).toHaveText("live", {timeout:30000});
 });
+
+test("researcher switch remains retryable after a badge failure", async ({ page }) => {
+  await page.goto("/field-station/#chapter-5");
+  await expect(page.locator("[data-walk-state]")).toHaveText("live", { timeout: 30_000 });
+  await page.route("**/api/badge", route => route.fulfill({status:503,body:'{}'}));
+  await page.locator("[data-role-switch]").click();
+  await expect(page.locator("[data-role-switch]")).toBeEnabled({timeout:30_000});
+  await page.unroute("**/api/badge");
+  await page.locator("[data-role-switch]").click();
+  await expect(page.locator("[data-role-result]")).toContainText("field biologist", {timeout:30_000});
+  await expect(page.locator("[data-map-holt]")).toContainText("LC ");
+  await expect(page.locator("[data-role-switch]")).toBeDisabled();
+});

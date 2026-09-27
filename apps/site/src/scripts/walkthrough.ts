@@ -21,6 +21,7 @@ async function mount(root: HTMLElement): Promise<void> {
   let stopIdle = (): void => {};
   let chapter = chapterFromHash(location.hash);
   let switching = false;
+  let roleSwitchCompleted = false;
   let generation = 0;
   let previousRevision: bigint | null = null;
   const history = new FlowHistory();
@@ -118,7 +119,7 @@ async function mount(root: HTMLElement): Promise<void> {
         status.textContent = `Connection: ${state}`;
         if (state === "connected") {
           el("[data-walk-unavailable]").hidden = true;
-          for (const selector of ["[data-walk-drop]", "[data-holt-request]", "[data-role-switch]"]) button(selector).disabled = selector === "[data-role-switch]" && field?.role === "researcher";
+          for (const selector of ["[data-walk-drop]", "[data-holt-request]", "[data-role-switch]"]) button(selector).disabled = selector === "[data-role-switch]" && (switching || roleSwitchCompleted);
           if (field?.config.mode === "kafka") { button("[data-sighting-submit]").disabled = false; if (!book) watchNotebook(); }
         }
       });
@@ -130,7 +131,7 @@ async function mount(root: HTMLElement): Promise<void> {
         status.textContent = "Session paused."; el("[data-idle-notice]").hidden = false;
         for (const selector of ["[data-walk-drop]", "[data-walk-restore]", "[data-holt-request]", "[data-role-switch]", "[data-sighting-submit]"]) button(selector).disabled = true;
       });
-    } catch { status.textContent = "Field station unavailable."; el("[data-walk-unavailable]").hidden = false; }
+    } catch { const source = document.querySelector<HTMLElement>("[data-walk-source]"); if (source) source.textContent = "Field station unavailable."; status.textContent = "Field station unavailable."; el("[data-walk-unavailable]").hidden = false; }
   }
   button("[data-walk-drop]").addEventListener("click", () => {
     field?.dropConnection(); button("[data-walk-drop]").disabled = true; button("[data-walk-restore]").disabled = false;
@@ -141,10 +142,10 @@ async function mount(root: HTMLElement): Promise<void> {
   });
   button("[data-holt-request]").addEventListener("click", () => { void requestHolt(); });
   button("[data-role-switch]").addEventListener("click", () => {
-    if (!field || switching || field.role === "researcher") return;
+    if (!field || switching || roleSwitchCompleted) return;
     switching = true; button("[data-role-switch]").disabled = true;
     void field.switchRole("researcher").then(async () => {
-      switching = false;
+      switching = false; roleSwitchCompleted = true;
       el("[data-role-result]").textContent = "Signed in as the field biologist. Old subscriptions closed; new subscriptions use the new subject.";
       el("[data-notebook-entries]").replaceChildren(); book = undefined;
       watchGauge(); watchOverview(); watchNotebook(); await requestHolt();
@@ -158,7 +159,7 @@ async function mount(root: HTMLElement): Promise<void> {
       .catch(error => { el("[data-notebook-note]").textContent = error instanceof Error ? error.message : "Sighting failed."; })
       .finally(() => { button("[data-sighting-submit]").disabled = false; });
   });
-  for (const selector of ["[data-walk-retry]", "[data-session-resume]"]) button(selector).addEventListener("click", () => { location.reload(); });
+  for (const selector of ["[data-walk-retry]", "[data-session-resume]", "[data-volunteer-restart]"]) button(selector).addEventListener("click", () => { location.reload(); });
   window.addEventListener("pagehide", () => { stopIdle(); generation++; void field?.close(); });
   await start();
 }

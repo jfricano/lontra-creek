@@ -83,3 +83,29 @@ image; deployment worker is repairing it with a regression.
 Public Lab risk R2 remains explicitly unresolved: unique SCRAM users do not
 restrict Kafka topics without ACLs. No public exposure is authorized by this
 candidate. Owner risk disposition or ACL hardening required before deployment.
+
+## Increment 2 integration and review (2026-09-27)
+
+Integrated content/workbench capture `0e31fff` and versioned deployment rollback
+`7ed9f09`. PR #14 now passes Browser (all three engines), unit/typecheck, and
+amd64/arm64 Stack and Lab-spike workflows; marked ready for review, not merged.
+This CI result covers that PR, not the full current completion candidate.
+
+Independent mobile/content checks added. First combined Chromium run: 27/30
+passed; remaining failures were sitemap readiness flags and focusability of a
+scrollable Lab example. Both repaired, repeat verification pending. Reviewer
+also found the researcher retry guard used requested role instead of successful
+switch completion; changed to an explicit completion flag.
+
+Independent production-build performance samples (local static server, backend
+unavailable, three cold-cache runs each): mobile 390x844, CPU4x, RTT150ms,
+1.6Mbps down/750Kbps up: LCP616–672ms, CLS0.00115; desktop1440x900, native CPU,
+RTT40ms,10Mbps down/5Mbps up: LCP172–176ms, CLS0.000371. Initial encoded response
+bodies139,921 bytes. Synthetic EventTiming24–48ms is not a field INP result.
+These measurements do not certify hosted capacity or real-user performance.
+
+Native `dev:kafka` path added for reproducible chapter-six notebook testing using
+existing Kafka/JDK binaries, local512MiB heap, persistent logs/checkpoints and
+loopback endpoints. Independent live verification in progress. Public Lab remains
+subject to R2 and release approval. Shared-host preparation is being reconciled
+with the newer candidate; no cloud resources or public deployment performed.

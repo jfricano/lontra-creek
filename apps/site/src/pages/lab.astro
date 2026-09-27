@@ -8,7 +8,7 @@ import ContentPage from "../components/ContentPage.astro";
     <p data-lab-pool></p>
     <div class="lab-controls"><button class="button button-primary" data-lab-join disabled>Borrow a bench</button><button class="button" data-lab-return disabled>Leave queue / return bench</button><button class="button" data-lab-retry>Check again</button></div>
     <p data-lab-clock></p>
-    <aside data-lab-unavailable hidden class="status-note"><h2>The Lab is unavailable</h2><p>The static site still works. No scenario shown here is simulated as a substitute for a live bench.</p><p>To run the field station's fixture demo locally:</p><pre><code>git clone https://github.com/jfricano/lontra-creek.git
+    <aside data-lab-unavailable hidden class="status-note"><h2>The Lab is unavailable</h2><p>The static site still works. No scenario shown here is simulated as a substitute for a live bench.</p><p>To run the field station's fixture demo locally:</p><pre tabindex="0"><code>git clone https://github.com/jfricano/lontra-creek.git
 cd lontra-creek
 npm install
 npm run dev</code></pre><p>The fixture demo does not include failure benches. The repository's <a href="https://github.com/jfricano/lontra-creek/tree/main/deploy">deployment instructions</a> describe the Kafka and isolated Lab stack.</p></aside>
@@ -21,7 +21,7 @@ npm run dev</code></pre><p>The fixture demo does not include failure benches. Th
         <h3>Relay restart</h3><p>Restart your gateway. The SDK reconnects and takes a fresh snapshot.</p><button class="button" data-lab-action="gateway.restart">Restart gateway</button>
       </fieldset></section>
     </div>
-    <section class="content-card"><h2>Redacted gateway feed</h2><p>Actual actions, source states, and traces from your current lease. No payloads, credentials, or other visitors' data.</p><ol data-lab-feed aria-label="Gateway trace feed"></ol></section>
+    <section class="content-card"><h2>Redacted gateway feed</h2><p>Actual actions, source states, and traces from your current lease. No payloads, credentials, or other visitors' data.</p><ol tabindex="0" data-lab-feed aria-label="Gateway trace feed"></ol></section>
   </section>
 </ContentPage>
 <script>import "../scripts/lab.ts";</script>

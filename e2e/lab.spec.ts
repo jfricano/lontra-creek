@@ -8,7 +8,7 @@ test("disabled Lab is honest and offers local instructions", async ({ page }) =>
   await page.goto("/lab/");
   await expect(page.locator("[data-lab-unavailable]")).toBeVisible();
   await expect(page.locator("[data-lab-join]")).toBeDisabled();
-  await expect(page.locator("[data-lab-actions]")).toBeDisabled();
+  await expect(page.locator("[data-lab-action]").first()).toBeDisabled();
 });
 
 test("queue position and return use only the current session", async ({ page }) => {
@@ -36,5 +36,5 @@ test("a transient token failure can recover on the next lease poll", async ({ pa
   });
   await page.goto("/lab/"); await page.locator("[data-lab-join]").click();
   await expect.poll(()=>tokens, {timeout:10000}).toBeGreaterThanOrEqual(2);
-  await expect(page.locator("[data-lab-actions]")).toBeDisabled();
+  await expect(page.locator("[data-lab-action]").first()).toBeDisabled();
 });

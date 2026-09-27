@@ -1,0 +1,9 @@
+[Unit]
+Description=Check Lontra Creek container health and checkpoint freshness
+Requires=docker.service
+After=docker.service
+ConditionPathExists=/srv/lontra/current.env
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/lontra-health

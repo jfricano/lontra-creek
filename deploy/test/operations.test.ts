@@ -87,3 +87,43 @@ test('deployment and SSH entrypoints refuse tags and command injection before Do
     assert.ok(!existsSync(join(f.dir, 'calls')));
   } finally { f.close(); }
 });
+
+test('checkpoint backup, verify and restore preserve the world and refuse mismatched study settings', async () => {
+  const { createWorld } = await import('@lontra-creek/sim');
+  const dir = mkdtempSync(join(tmpdir(), 'lontra-checkpoint-'));
+  const helper = readFileSync(join(operations, 'checkpoint.mjs'), 'utf8');
+  const epoch = '2026-09-27T00:00:00Z';
+  const checkpoint = JSON.stringify({ format: 1, epoch, tickMs: 2000, world: createWorld({ seed: 'lontra-creek' }) });
+  const run = (action: string, text = checkpoint, extra = {}) => spawnSync(process.execPath, ['--input-type=module', '-e', helper, action], {
+    encoding: 'utf8', input: text,
+    cwd: fileURLToPath(new URL('../../apps/field-station/', import.meta.url)),
+    env: { ...process.env, FIELD_DATA_DIR: dir, FIELD_EPOCH: epoch, FIELD_GENERATION: '1', FIELD_TICK_MS: '2000', ...extra },
+  });
+  try {
+    writeFileSync(join(dir, 'world.json'), checkpoint);
+    assert.equal(run('backup').stdout, checkpoint);
+    assert.equal(run('verify').status, 0);
+    assert.notEqual(run('verify', checkpoint, { FIELD_GENERATION: '2' }).status, 0);
+    assert.notEqual(run('verify', checkpoint, { FIELD_EPOCH: '2026-09-26T00:00:00Z' }).status, 0);
+    assert.notEqual(run('verify', '{broken').status, 0);
+    writeFileSync(join(dir, 'world.json'), 'previous-file');
+    assert.equal(run('restore').status, 0);
+    assert.equal(readFileSync(join(dir, 'world.json'), 'utf8'), checkpoint);
+    assert.ok(!existsSync(join(dir, 'world.json.restore')));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('alarm generator writes disabled, instance-scoped definitions and refuses overwrite', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'lontra-alarms-'));
+  const args = [join(operations, 'alarm-definitions.mjs'), 'ocid1.compartment.oc1..test', 'ocid1.instance.oc1..test', 'ocid1.onstopic.oc1..test', dir];
+  try {
+    assert.equal(spawnSync(process.execPath, args).status, 0);
+    for (const name of ['memory-low', 'instance-unavailable', 'instance-telemetry-absent']) {
+      const alarm = JSON.parse(readFileSync(join(dir, `${name}.json`), 'utf8'));
+      assert.equal(alarm.isEnabled, false);
+      assert.match(alarm.query, /resourceId="ocid1\.instance\.oc1\.\.test"/);
+      assert.deepEqual(alarm.destinations, ['ocid1.onstopic.oc1..test']);
+    }
+    assert.notEqual(spawnSync(process.execPath, args).status, 0);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

@@ -13,7 +13,9 @@ candidate=$(mktemp "$root/releases/.candidate.XXXXXX")
 trap 'rm -f "$candidate"' EXIT
 cat "$root/stack.env" > "$candidate"
 printf 'LONTRA_IMAGE=%s\n' "$image" >> "$candidate"
-compose() { docker compose --project-directory "$root/config" -f "$root/config/compose.yaml" --env-file "$1" "${@:2}"; }
+args=(-f "$root/config/compose.yaml")
+[ ! -f "$root/lab.enabled" ] || args+=(-f "$root/config/compose.lab.yaml")
+compose() { docker compose --project-directory "$root/config" "${args[@]}" --env-file "$1" "${@:2}"; }
 compose "$candidate" config --quiet
 if compose "$candidate" up --detach --wait --wait-timeout 300; then
   if [ -f "$root/current.env" ]; then

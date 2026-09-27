@@ -27,7 +27,7 @@ jobs:
       - run: npm ci
       - name: Check deployment orchestration
         run: |
-          bash -n deploy/setup.sh deploy/operations/deploy.sh deploy/operations/ssh-command.sh
+          bash -n deploy/setup.sh deploy/operations/*.sh
           node --test deploy/test/operations.test.ts
       - name: Rehearse setup twice and preserve secrets
         run: |
@@ -50,6 +50,13 @@ jobs:
           STACK_RESTART_GATEWAY: sudo docker compose -f /srv/lontra/config/compose.yaml --env-file /srv/lontra/current.env restart gateway
           STACK_RESTART_FIELD_STATION: sudo docker compose -f /srv/lontra/config/compose.yaml --env-file /srv/lontra/current.env restart field-station
         run: node --test --test-force-exit deploy/test/stack.test.ts
+      - name: Checkpoint backup and restore drill
+        run: |
+          sudo /usr/local/sbin/lontra-checkpoint backup
+          backup=$(sudo find /srv/lontra/backups -name 'world-*.json.gz' | head -1)
+          sudo /usr/local/sbin/lontra-checkpoint verify "$backup"
+          sudo /usr/local/sbin/lontra-checkpoint restore "$backup"
+          sudo /usr/local/sbin/lontra-health
       - name: Failed candidate rolls back
         run: |
           bad=0000000000000000000000000000000000000000

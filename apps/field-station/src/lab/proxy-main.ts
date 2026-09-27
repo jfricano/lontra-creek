@@ -11,7 +11,7 @@
  * (default 0.0.0.0:9180).
  */
 import type { AddressInfo } from "node:net";
-import { relayToken } from "../identity.ts";
+
 import { bench } from "./benches.ts";
 import { proxyControl, startProxy, type Endpoint } from "./proxy.ts";
 
@@ -30,7 +30,9 @@ const proxy = await startProxy({
   target: endpoint("PROXY_TARGET", `kafka:${proxyPort}`),
   log
 });
-const control = proxyControl(proxy, relayToken());
+const token = process.env[`LAB_BENCH_${Number(process.env['LAB_BENCH'])}_RELAY_TOKEN`];
+if (!token || token.length < 32) throw new Error('A per-bench relay token of at least 32 characters is required.');
+const control = proxyControl(proxy, token);
 const controlAt = endpoint("PROXY_CONTROL", "0.0.0.0:9180");
 await new Promise<void>((resolve, reject) => {
   control.once("error", reject);

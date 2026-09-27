@@ -69,6 +69,20 @@ async function badge(): Promise<string> {
   return (await response.json() as { token: string }).token;
 }
 
+let labCookie = '';
+let labHeartbeat: NodeJS.Timeout | undefined;
+async function labRequest(path: string, method = 'GET'): Promise<Response> {
+  const response = await fetch(`${BADGES}/api/lab/${path}`, { method, headers: { origin: SITE, cookie: labCookie } });
+  const cookie = response.headers.get('set-cookie');
+  if (cookie) labCookie = cookie.split(';')[0]!;
+  return response;
+}
+async function benchToken(): Promise<string> {
+  const response = await labRequest('lease/token', 'POST');
+  assert.equal(response.status, 200, await response.clone().text());
+  return (await response.json() as { token: string }).token;
+}
+
 async function proxy(action: "cut" | "restore" | "state"): Promise<{ state: string; connections: number }> {
   const response = await fetch(`${PROXY_CONTROL}/${action}`, {
     method: action === "state" ? "GET" : "POST",
@@ -112,7 +126,9 @@ class Watch {
 const clients: Client<AppChannels>[] = [];
 after(async () => {
   if (PROXY_TOKEN !== undefined) await proxy("restore").catch(() => undefined);
+  clearInterval(labHeartbeat);
   await Promise.all(clients.map(client => client.close()));
+  if (labCookie) await labRequest("lease/return", "POST");
 });
 
 interface Cycle {
@@ -128,7 +144,16 @@ describe("a Failure Lab bench whose proxy to Kafka is cut", { skip: PROXY_TOKEN 
   let demo: Watch | null = null;
 
   before(async () => {
-    const benchClient = createClient<AppChannels>({ origin: BENCH_ORIGIN, path: BENCH_PATH, getToken: badge });
+    const deadline = Date.now() + 90_000;
+    while (true) {
+      const status = await (await labRequest('status')).json() as { benches: { state: string }[] };
+      if (status.benches.some(bench => bench.state === 'ready')) break;
+      if (Date.now() >= deadline) throw new Error('Lab did not become ready.');
+      await sleep(1000);
+    }
+    assert.equal((await labRequest('lease', 'POST')).status, 200);
+    labHeartbeat = setInterval(() => { void labRequest('lease').catch(() => undefined); }, 2000);
+    const benchClient = createClient<AppChannels>({ origin: BENCH_ORIGIN, path: BENCH_PATH, getToken: benchToken });
     clients.push(benchClient);
     bench = new Watch(benchClient);
     if (STACK !== undefined) {

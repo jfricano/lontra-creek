@@ -62,6 +62,16 @@ if [ -n "${KAFKA_LAB_USERNAME:-}${KAFKA_LAB_PASSWORD:-}" ]; then
   credential KAFKA_LAB_PASSWORD
   scram+=(--add-scram "SCRAM-SHA-512=[name=${KAFKA_LAB_USERNAME},password=${KAFKA_LAB_PASSWORD}]")
 fi
+# Independent identities for the production Lab; existing spike user remains optional.
+for number in 1 2 3; do
+  username="KAFKA_LAB_${number}_USERNAME"
+  password="KAFKA_LAB_${number}_PASSWORD"
+  if [ -n "${!username:-}${!password:-}" ]; then
+    credential "$username"
+    credential "$password"
+    scram+=(--add-scram "SCRAM-SHA-512=[name=${!username},password=${!password}]")
+  fi
+done
 for port in "$INTERNAL_PORT" "$CONTROLLER_PORT" "$CLIENT_PORT"; do
   [[ "$port" =~ ^[0-9]+$ ]] || { echo "Kafka ports must be numbers (got $port)." >&2; exit 2; }
 done

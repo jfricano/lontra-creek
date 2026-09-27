@@ -14,7 +14,7 @@ import { readConfig } from "../src/server/config.ts";
 import { benchTopicConfigs, withBenchCopies } from "../src/server/kafka.ts";
 
 const context = { requestId: "test", signal: new AbortController().signal };
-const handlerOptions = { secret: "s".repeat(32), serviceToken: "t".repeat(32), internalOrigin: "http://field-station:7410" };
+const handlerOptions = { authenticate: () => null, calibration: () => true, record: () => {}, serviceToken: "t".repeat(32), snapshotOrigin: "http://field-station:7410" };
 
 describe("bench names", () => {
   test("each bench has its own project, topics, group, proxy, and path", () => {
@@ -62,6 +62,8 @@ describe("the benches' feed", () => {
     const topics = benchTopicConfigs(["lab-1."]);
     assert.deepEqual(topics.map(config => config.topic), bench(1).topics);
     assert.ok(topics.every(config => config.numPartitions === 3));
+    assert.ok(!CREEK_TOPICS.includes("field.holts"));
+    assert.deepEqual(withBenchCopies([{ topic: "field.holts", key: "holt:A", value: "protected" }], ["lab-1."]), [{ topic: "field.holts", key: "holt:A", value: "protected" }]);
   });
 });
 
@@ -80,7 +82,7 @@ describe("a bench's project", () => {
       assert.deepEqual(source.topics, bench(1).topics);
       assert.equal(source.consumerGroup, "lontra-creek-lab-1-field");
     }
-    assert.deepEqual(Object.keys(config.channels).sort(), ["creekOverview", "holt", "otter", "reach", "station"]);
+    assert.deepEqual(Object.keys(config.channels).sort(), ["creekOverview", "otter", "reach", "station"]);
     assert.deepEqual(benchConfig(1, { brokers: ["localhost:8443"], port: 7500 }).connections["field"]?.brokers, ["localhost:8443"]);
   });
 
@@ -97,7 +99,7 @@ describe("a bench's project", () => {
     });
     const mapped = await handlers.channels.station.map({ ...context, record: record("lab-1.field.gauges") });
     assert.equal(mapped.length, 1);
-    await assert.rejects(async () => handlers.channels.station.map({ ...context, record: record("field.gauges") }), /expected lab-1\.field\.gauges/);
+    await assert.rejects(async () => handlers.channels.station.map({ ...context, record: record("field.gauges") }), /Wrong topic/);
   });
 });
 

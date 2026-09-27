@@ -132,7 +132,7 @@ gateway, bench, and edge configuration; never broaden to wildcard Origin.
 | State | Current volume / directory | Recovery requirement |
 | --- | --- | --- |
 | Kafka streams/notebooks | `lontra-creek_kafka-data` → `/var/lib/kafka/data` | Preserve during deploy/rollback; world streams six-hour retention, notebooks compact/delete two-hour retention; not a durable user database |
-| Deterministic world checkpoint | `lontra-creek_field-data` → `/var/lib/lontra` | Validated nightly local copies under `/srv/lontra/backups`, restore drill before timers enabled |
+| Deterministic world checkpoint | `lontra-creek_field-data` → `/var/lib/lontra` | Shared snapshot/disposable-verify hooks write orchestrator staging; no shared timer active. Legacy standalone copies use `/srv/lontra/backups`. |
 | Router state | No shared-router state mount | TLS/account material belongs to shared edge owner |
 | Shared secrets and Kafka CA | `/etc/apps/lontra/lontra.env`, directory named by `LONTRA_SECRETS` | Root-only operator files; separately encrypted recovery export |
 | Shared release configs | `/srv/apps/lontra/releases/<sha>` and `/srv/apps/lontra/current.env` | Root-owned immutable configuration; current env selects image and `LONTRA_CONFIG_DIR`; retain previous matching image/config |
@@ -156,10 +156,11 @@ owns the consistent world snapshot, validation and **disposable-target restore**
 hooks plus documentation of ephemeral Kafka recovery. The existing
 `lontra-checkpoint restore` intentionally changes the active station volume and
 therefore cannot serve as the shared verifier: a separate isolated volume/project
-restore adapter must be implemented and tested first. The shared infrastructure
+restore adapter is supplied by the concurrent backup-hook lane and must pass
+its integration checks before acceptance. The shared infrastructure
 owner owns export encryption, off-host transport, remote integrity/retention,
 serialization and delivery alerts after destination/key-recovery decisions.
-No shared hook is installed or accepted by this document. Keep application
+No shared hook is installed on a host or accepted for production by this document. Keep application
 backup namespaces separate and include the release/epoch/volume recovery manifest.
 
 Local checkpoint copies do not survive VM/disk/account loss and do not back up

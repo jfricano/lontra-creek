@@ -1,16 +1,11 @@
 ---
-import "@fontsource-variable/bricolage-grotesque";
 import "@fontsource-variable/figtree";
 import "@fontsource-variable/jetbrains-mono";
 import "../styles/global.css";
-import { Image } from "astro:assets";
-import logoDark from "../assets/brand/logo-dark.png";
-import logoLight from "../assets/brand/logo-light.png";
-import otterMark from "../assets/brand/otter-mark.png";
-import wordmarkDark from "../assets/brand/wordmark-dark.png";
-import wordmarkLight from "../assets/brand/wordmark-light.png";
-import ThemedImage from "../components/ThemedImage.astro";
-import { LINKS, PAGES, RELEASE } from "../site.ts";
+import figtreeLatin from "@fontsource-variable/figtree/files/figtree-latin-wght-normal.woff2?url";
+import LockupHorizontal from "../assets/brand/lockup-horizontal.svg";
+import LockupStacked from "../assets/brand/lockup-stacked.svg";
+import { LINKS, LISTED_PAGES, RELEASE, TAGLINE } from "../site.ts";
 
 interface Props {
   title: string;
@@ -23,6 +18,7 @@ const { title, description, noindex = false } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site);
 const socialImage = new URL("/social-preview.png", Astro.site);
 const current = Astro.url.pathname;
+const isCurrent = (href: string) => (current.startsWith(href) ? "page" : undefined);
 ---
 
 <!doctype html>
@@ -33,7 +29,12 @@ const current = Astro.url.pathname;
     <title>{title}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
+    <!-- Every page's largest text is set in Figtree; fetch it with the HTML, not after the CSS. -->
+    <link rel="preload" href={figtreeLatin} as="font" type="font/woff2" crossorigin />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     {noindex && <meta name="robots" content="noindex" />}
     <meta property="og:site_name" content="StreamOtter" />
     <meta property="og:title" content={title} />
@@ -43,29 +44,27 @@ const current = Astro.url.pathname;
     <meta property="og:image" content={socialImage} />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="The StreamOtter logo: an otter swimming through a stream of code" />
+    <meta property="og:image:alt" content={`The StreamOtter logo beside "${TAGLINE}" and the command npm install streamotter`} />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="theme-color" content="#05122f" />
+    <meta name="theme-color" content="#f3f7fb" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#030b1f" media="(prefers-color-scheme: dark)" />
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
     <header class="site-header">
       <div class="wrap bar">
         <a class="lockup" href="/" aria-label="StreamOtter home">
-          <Image src={otterMark} alt="" height={38} densities={[1, 2]} format="webp" loading="eager" class="lockup-mark" />
-          <ThemedImage light={wordmarkLight} dark={wordmarkDark} width={132} alt="" loading="eager" class="lockup-word" />
+          <LockupHorizontal class="brand lockup-svg" aria-hidden="true" focusable="false" />
         </a>
         <nav class="nav" aria-label="Main">
-          {PAGES.map(page => (
-            <a href={page.href} aria-current={current.startsWith(page.href) ? "page" : undefined}>{page.label}</a>
-          ))}
+          {LISTED_PAGES.map(page => <a href={page.href} aria-current={isCurrent(page.href)}>{page.label}</a>)}
         </nav>
         <div class="bar-end">
           <a class="gh" href={LINKS.github}>GitHub</a>
-          <details class="menu">
-            <summary aria-label="Menu">Menu</summary>
+          <details class="menu" data-menu>
+            <summary>Menu</summary>
             <nav aria-label="Main, small screens">
-              {PAGES.map(page => <a href={page.href}>{page.label}</a>)}
+              {LISTED_PAGES.map(page => <a href={page.href} aria-current={isCurrent(page.href)}>{page.label}</a>)}
               <a href={LINKS.github}>GitHub</a>
             </nav>
           </details>
@@ -80,24 +79,54 @@ const current = Astro.url.pathname;
     <footer class="site-footer">
       <div class="wrap foot">
         <div class="foot-brand">
-          <a href="/" aria-label="StreamOtter home"><ThemedImage light={logoLight} dark={logoDark} width={220} alt="StreamOtter" class="foot-logo" /></a>
-          <p class="muted">Live state from Kafka to the browser. Release <code>{RELEASE}</code>, MIT licensed.</p>
+          <a class="foot-lockup" href="/" aria-label="StreamOtter home">
+            <LockupStacked class="brand foot-svg" aria-hidden="true" focusable="false" />
+          </a>
+          <p class="muted">{TAGLINE} Release <code>{RELEASE}</code>, MIT licensed.</p>
           <p class="muted fiction">Lontra Creek, its field station, and its otters are fictional. The data pipeline is real.</p>
+          <p class="muted">Maintained by Jason Fricano · Orca Solutions</p>
         </div>
-        <nav class="foot-links" aria-label="Site">
-          {PAGES.map(page => <a href={page.href}>{page.label}</a>)}
+        <nav class="foot-links" aria-labelledby="foot-explore">
+          <p class="eyebrow" id="foot-explore">Explore</p>
+          {LISTED_PAGES.map(page => <a href={page.href}>{page.label}</a>)}
         </nav>
-        <nav class="foot-links" aria-label="Project">
+        <nav class="foot-links" aria-labelledby="foot-project">
+          <p class="eyebrow" id="foot-project">Project</p>
           <a href={LINKS.github}>GitHub</a>
           <a href={LINKS.npm}>npm</a>
           <a href={LINKS.gettingStarted}>Getting started</a>
           <a href={LINKS.changelog}>Changelog</a>
+          <a href={LINKS.demoRepo}>This site's source</a>
         </nav>
       </div>
       <div class="wrap copyright muted">© 2026 Orca Solutions</div>
     </footer>
   </body>
 </html>
+
+<script>
+  // The small-screen menu is a <details>: close it on Escape (back to its summary),
+  // on a click or focus outside it, and once a link in it is chosen.
+  const menu = document.querySelector<HTMLDetailsElement>("[data-menu]");
+  if (menu) {
+    const summary = menu.querySelector("summary")!;
+    const close = (refocus: boolean) => {
+      if (!menu.open) return;
+      menu.open = false;
+      if (refocus) summary.focus();
+    };
+    menu.addEventListener("keydown", event => {
+      if (event.key === "Escape") close(true);
+    });
+    menu.addEventListener("focusout", event => {
+      if (event.relatedTarget instanceof Node && !menu.contains(event.relatedTarget)) close(false);
+    });
+    document.addEventListener("click", event => {
+      if (event.target instanceof Node && !menu.contains(event.target)) close(false);
+    });
+    for (const link of menu.querySelectorAll("a")) link.addEventListener("click", () => close(false));
+  }
+</script>
 
 <style>
   .skip {
@@ -131,24 +160,15 @@ const current = Astro.url.pathname;
   .lockup {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
     flex-shrink: 0;
+    padding-block: 4px;
   }
-  .lockup :global(img) {
+  /* The lockup's viewBox is 1765.1 × 317.9; the ratio is set so the header never shifts. */
+  .lockup-svg {
     display: block;
-    height: auto;
-  }
-  .lockup :global(.lockup-mark) {
+    height: 32px;
     width: auto;
-    height: 38px;
-  }
-  .lockup :global(.lockup-word img) {
-    width: 132px;
-  }
-  .foot-brand :global(.foot-logo img) {
-    display: block;
-    width: 220px;
-    height: auto;
+    aspect-ratio: 1765.1 / 317.9;
   }
   .nav {
     display: flex;
@@ -164,10 +184,14 @@ const current = Astro.url.pathname;
     padding: 8px 10px;
     border-radius: 8px;
   }
-  .nav a:hover,
-  .nav a[aria-current="page"] {
+  .nav a:hover {
     color: var(--ink);
     background: var(--surface-2);
+  }
+  .nav a[aria-current="page"] {
+    color: var(--ink);
+    box-shadow: inset 0 -2px var(--azure);
+    border-radius: 8px 8px 0 0;
   }
   .bar-end {
     margin-left: auto;
@@ -180,7 +204,7 @@ const current = Astro.url.pathname;
     font-size: 0.93rem;
     color: var(--ink);
     text-decoration: none;
-    border: 1px solid var(--line);
+    border: 1px solid var(--line-strong);
     padding: 7px 12px;
     border-radius: 10px;
   }
@@ -197,7 +221,7 @@ const current = Astro.url.pathname;
     cursor: pointer;
     font-weight: 600;
     font-size: 0.93rem;
-    border: 1px solid var(--line);
+    border: 1px solid var(--line-strong);
     padding: 7px 12px;
     border-radius: 10px;
   }
@@ -225,6 +249,9 @@ const current = Astro.url.pathname;
   .menu nav a:hover {
     background: var(--surface-2);
   }
+  .menu nav a[aria-current="page"] {
+    box-shadow: inset 3px 0 var(--azure);
+  }
   @media (max-width: 1080px) {
     .nav,
     .gh {
@@ -232,6 +259,11 @@ const current = Astro.url.pathname;
     }
     .menu {
       display: block;
+    }
+  }
+  @media (max-width: 720px) {
+    .lockup-svg {
+      height: 28px;
     }
   }
 
@@ -250,6 +282,17 @@ const current = Astro.url.pathname;
     gap: 10px;
     align-content: start;
   }
+  .foot-lockup {
+    justify-self: start;
+    margin-bottom: 6px;
+  }
+  /* The stacked lockup's viewBox is 635.8 × 456. */
+  .foot-svg {
+    display: block;
+    height: 72px;
+    width: auto;
+    aspect-ratio: 635.8 / 456;
+  }
   .fiction {
     font-size: 0.9rem;
   }
@@ -257,6 +300,9 @@ const current = Astro.url.pathname;
     display: grid;
     gap: 8px;
     align-content: start;
+  }
+  .foot-links .eyebrow {
+    margin-bottom: 4px;
   }
   .foot-links a {
     color: var(--ink-2);
@@ -271,7 +317,11 @@ const current = Astro.url.pathname;
   }
   @media (max-width: 720px) {
     .foot {
-      grid-template-columns: minmax(0, 1fr);
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 32px 20px;
+    }
+    .foot-brand {
+      grid-column: 1 / -1;
     }
   }
 </style>

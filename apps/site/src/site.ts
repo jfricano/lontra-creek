@@ -3,6 +3,22 @@ import site from "../package.json" with { type: "json" };
 /** The StreamOtter release this site describes and its demo runs: the exact version the site installs. */
 export const RELEASE = site.dependencies.streamotter;
 
+/**
+ * StreamOtter's headline: the home page's h1, the footer, and the link cards. The README,
+ * npm, and launch posts open with the longer positioning line instead: "Kafka state in the
+ * browser that's either live or visibly stale, never silently wrong."
+ */
+export const TAGLINE = "Live state from Kafka to the browser. Never silently wrong.";
+
+export const SITE = {
+  /**
+   * False until the public launch. While false, every page is listed, placeholders
+   * included, so reviewers can reach them; once true, only pages whose real content
+   * exists appear in the navigation, the footer, and the 404 page.
+   */
+  launched: false
+};
+
 /** The StreamOtter repository tag for this release, so library links survive its later commits. */
 const STREAMOTTER_TAG = `v${RELEASE}`;
 
@@ -76,3 +92,6 @@ export const PAGES: readonly Page[] = [
     ready: false
   }
 ];
+
+/** The pages the navigation, the footer, and the 404 page offer: all of them before launch, then only ready ones. */
+export const LISTED_PAGES: readonly Page[] = SITE.launched ? PAGES.filter(page => page.ready) : PAGES;

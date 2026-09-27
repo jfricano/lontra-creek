@@ -5,6 +5,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
   rehearsal:
     runs-on: ubuntu-24.04-arm
@@ -42,13 +45,16 @@ jobs:
           if sudo -u lontra-deploy cat /srv/lontra/stack.env; then exit 1; fi
           echo '127.0.0.1 demo.streamotter.app' | sudo tee -a /etc/hosts
       - name: First deploy
-        run: sudo env LONTRA_REHEARSAL=1 /usr/local/sbin/lontra-deploy "$GITHUB_SHA"
+        run: |
+          sudo env LONTRA_REHEARSAL=1 /usr/local/sbin/lontra-deploy "$GITHUB_SHA"
+          config=$(sudo sed -n 's/^LONTRA_CONFIG_DIR=//p' /srv/lontra/current.env)
+          echo "RELEASE_CONFIG=$config" >> "$GITHUB_ENV"
       - name: Verify external behavior
         env:
           NODE_EXTRA_CA_CERTS: ${{ runner.temp }}/origin/ca.pem
           STACK_ORIGIN: https://demo.streamotter.app
-          STACK_RESTART_GATEWAY: sudo docker compose -f /srv/lontra/config/compose.yaml --env-file /srv/lontra/current.env restart gateway
-          STACK_RESTART_FIELD_STATION: sudo docker compose -f /srv/lontra/config/compose.yaml --env-file /srv/lontra/current.env restart field-station
+          STACK_RESTART_GATEWAY: sudo docker compose -f ${{ env.RELEASE_CONFIG }}/compose.yaml --env-file /srv/lontra/current.env restart gateway
+          STACK_RESTART_FIELD_STATION: sudo docker compose -f ${{ env.RELEASE_CONFIG }}/compose.yaml --env-file /srv/lontra/current.env restart field-station
         run: node --test --test-force-exit deploy/test/stack.test.ts
       - name: Checkpoint backup and restore drill
         run: |
@@ -72,4 +78,8 @@ jobs:
           done
       - name: Cleanup
         if: always()
-        run: sudo docker compose -f /srv/lontra/config/compose.yaml --env-file /srv/lontra/current.env down --volumes
+        run: |
+          if sudo test -f /srv/lontra/current.env; then
+            config=$(sudo sed -n 's/^LONTRA_CONFIG_DIR=//p' /srv/lontra/current.env)
+            sudo docker compose -f "$config/compose.yaml" --env-file /srv/lontra/current.env down --volumes
+          fi

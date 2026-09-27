@@ -1,11 +1,17 @@
 ---
-import PagePlaceholder from "../components/PagePlaceholder.astro";
-import Base from "../layouts/Base.astro";
-import { PAGES } from "../site.ts";
-
-const page = PAGES.find(candidate => candidate.href === "/when-it-breaks/")!;
+import {Code} from "astro:components";
+import ReferencePage from "../layouts/ReferencePage.astro";
+import {ERROR_FACTS,SUBSCRIPTION_STATE_FACTS,MAP_HANDLER_FAILURE} from "../release-facts.ts";
+import handlerSource from "../snippets/recovery.ts?raw";
+import {excerpt} from "../snippets/excerpt.ts";
 ---
-
-<Base title={`${page.label} · StreamOtter`} description={page.summary} noindex={!page.ready}>
-  <PagePlaceholder page={page} />
-</Base>
+<ReferencePage title="When it breaks" description="Follow the state first, then the error. Some failures affect one view; others pause the shared source.">
+<section><h2>Explore a view’s state</h2><p>This is an explanatory diagram, not a connection to the demo. Select a state to see what it means.</p><div class="reference-card"><label for="state-picker">Subscription state</label><select id="state-picker">{Object.keys(SUBSCRIPTION_STATE_FACTS).map(state=><option value={state}>{state}</option>)}</select><p aria-label="Typical recovery path">authorizing → synchronizing → live ⇄ stale → resync-required<br/>A denied or broken subscription → failed. Unsubscribe → closed.</p>{Object.entries(SUBSCRIPTION_STATE_FACTS).map(([state,fact],i)=><div data-state-detail={state} hidden={i!==0}><h3>{state}</h3><p>{fact.description}</p></div>)}<span class="sr-only" role="status" id="state-announcement"></span></div></section>
+<section><h2>One failure, two perspectives</h2><p>{MAP_HANDLER_FAILURE.summary}</p><div class="reference-grid"><div class="reference-card"><h3>Already-open browser view</h3><p><code>stale / SOURCE_UNAVAILABLE</code></p><p>The view keeps its last data, visibly stale. A source pause is a state event; it does not invoke the subscription’s error listener.</p></div><div class="reference-card"><h3>Development gateway trace</h3><p><code>map / failed / HANDLER_FAILED</code></p><p>The trace identifies the operator’s cause without exposing payloads. The production gateway has no trace endpoint.</p></div></div><p>{MAP_HANDLER_FAILURE.recovery}</p><p>A subscription that starts synchronizing while the source is already paused can receive the source’s specific reason. The normalization above describes an already-open view becoming stale.</p></section>
+<section><h2>Handle state and errors separately</h2><Code code={excerpt(handlerSource)} lang="ts" theme="night-owl" /><p>The sample is type-checked against the pinned package. A rejected wait does not necessarily stop the subscription underneath it.</p></section>
+<section><h2>Error reference</h2><p>The retryable flag below is the package default. Read the situation and any override: the flag alone does not describe the complete recovery policy.</p>{Object.entries(ERROR_FACTS).map(([code,fact])=><details><summary>{code} — {fact.publicMessage}</summary><p>{fact.meaning}</p><p><strong>Default retryable:</strong> {String(fact.defaultRetryable)}. {fact.retryableNotes}</p><ul>{fact.situations.map(s=><li>{s}</li>)}</ul><p><strong>Browser SDK:</strong> {fact.visibility.browserSdk}</p><p><strong>Gateway trace:</strong> {fact.visibility.gatewayTrace}</p><p><strong>Operator log:</strong> {fact.visibility.operatorLog}</p><p><a href={fact.sources[0]}>Pinned release reference ↗</a></p></details>)}</section>
+</ReferencePage>
+<script>
+const picker=document.querySelector<HTMLSelectElement>("#state-picker")!;
+picker.addEventListener("change",()=>{for(const node of document.querySelectorAll<HTMLElement>("[data-state-detail]"))node.hidden=node.dataset["stateDetail"]!==picker.value;document.querySelector("#state-announcement")!.textContent=`Showing ${picker.value}.`;});
+</script>

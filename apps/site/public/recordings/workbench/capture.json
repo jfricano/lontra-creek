@@ -1,0 +1,19 @@
+{
+  "version": "0.1.0-rc.3",
+  "capturedAt": "2026-09-27T22:41:01.428Z",
+  "source": "Published npm workbench; CLI-generated fixture project on loopback",
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "node": "v26.9.0",
+  "steps": [
+    "Connect: inspect the fixture source",
+    "Define: inspect the channel and schemas",
+    "Preview: subscribe to job_1 as developer",
+    "Connect: advance one real fixture record",
+    "Preview: inspect the updated state",
+    "Inspect: read payload-free trace metadata",
+    "Export: review the export controls"
+  ]
+}

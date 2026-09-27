@@ -1,11 +1,21 @@
 ---
-import PagePlaceholder from "../components/PagePlaceholder.astro";
-import Base from "../layouts/Base.astro";
-import { PAGES } from "../site.ts";
-
-const page = PAGES.find(candidate => candidate.href === "/workbench/")!;
+import ReferencePage from "../layouts/ReferencePage.astro";
+import {RELEASE,LINKS} from "../site.ts";
+const panels=[
+{key:"connect",title:"Connect",description:"See source health and staged connection checks. This capture uses the installed CLI’s fixture source; no Kafka broker is involved."},
+{key:"define",title:"Define",description:"Inspect channel versions, parameters, payload schemas, and delivery. Candidate configuration edits do not change the running gateway."},
+{key:"preview",title:"Preview",description:"Subscribe as the development principal to jobProgress with jobId job_1. The real SDK receives snapshot revision 1 and enters live."},
+{key:"inspect",title:"Inspect",description:"After advancing a fixture, follow payload-free metadata through the gateway. A source commit is not evidence of browser delivery; a receipt is not evidence of application rendering."},
+{key:"export",title:"Export",description:"Export canonical configuration for review. The workbench never writes files or changes the running gateway; validate and generate locally before restarting it."}
+];
 ---
-
-<Base title={`${page.label} · StreamOtter`} description={page.summary} noindex={!page.ready}>
-  <PagePlaceholder page={page} />
-</Base>
+<ReferencePage title="Meet the local workbench" description="Connect, Define, Preview, Inspect, and Export: a tour of the development tools installed with StreamOtter.">
+<p class="notice">Recorded locally on September 27, 2026 with <code>streamotter@{RELEASE}</code>, Node.js 26.9.0, and the CLI-generated fixture project. These are real product captures, not the hosted field station. The workbench and management API exist only in development mode and listen on loopback.</p>
+<section><h2>Recorded session</h2><video controls preload="none" poster="/recordings/workbench/preview.png" aria-label="Recorded local StreamOtter workbench session" aria-describedby="tour-description" width="1280" height="900"><source src="/recordings/workbench/tour.webm" type="video/webm" /><p>Your browser cannot play this recording. The screenshots and text transcript below cover the same steps.</p></video><p id="tour-description">Silent recording: open the workbench using its per-run token; inspect Connect and Define; subscribe to job_1 in Preview; advance one fixture record; inspect the updated state, trace, and Export controls.</p><p><a href="/recordings/workbench/capture.json">Capture provenance</a> · <a href={LINKS.gettingStarted}>Run this tour yourself ↗</a></p></section>
+{panels.map(panel=><section><h2>{panel.title}</h2><p>{panel.description}</p><figure><a href={`/recordings/workbench/${panel.key}.png`} aria-label={`Open full-size ${panel.title} screenshot`}><img src={`/recordings/workbench/${panel.key}.png`} alt={`Recorded ${panel.title} panel in StreamOtter ${RELEASE}: ${panel.description}`} loading="lazy" width="1280" /></a><figcaption>{panel.title} · local fixture capture · September 27, 2026</figcaption></figure></section>)}
+<section><h2>Run it locally</h2><pre tabindex="0"><code>{`npm install streamotter
+npx streamotter init .
+npx streamotter dev --config streamotter.json \\
+  --handlers server/handlers.mjs`}</code></pre><p>Open the printed workbench URL and enter its per-run token. The token stays in memory, so reloading asks for it again. Never expose the development workbench publicly.</p></section>
+</ReferencePage>
+<style>video,img {display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);}figure {margin:20px 0;}figcaption {font-size:.85rem;color:var(--ink-3);margin-top:8px;}</style>

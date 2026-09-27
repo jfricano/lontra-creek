@@ -61,35 +61,35 @@ export const PAGES: readonly Page[] = [
     label: "Playground",
     question: "What's it like to set up?",
     summary: "Edit a streamotter.json and get the real validator's messages as you type, with nothing to install.",
-    ready: false
+    ready: true
   },
   {
     href: "/workbench/",
     label: "Workbench",
     question: "What tools do I get?",
     summary: "A tour of the local workbench: Connect, Define, Preview, Inspect, and Export.",
-    ready: false
+    ready: true
   },
   {
     href: "/when-it-breaks/",
     label: "When it breaks",
     question: "How does it fail, exactly?",
     summary: "Every failure mode: the state it produces, the error your code receives, whether it retries, and how to handle it.",
-    ready: false
+    ready: true
   },
   {
     href: "/docs/",
     label: "Docs",
     question: "How do I build with it?",
     summary: "The guides and the V1 reference, where they're maintained: on GitHub and npm.",
-    ready: false
+    ready: true
   },
   {
     href: "/releases/",
     label: "Releases",
     question: "What works in this version?",
     summary: "The release this site runs, its verified support matrix, and its limits.",
-    ready: false
+    ready: true
   }
 ];
 

@@ -2,9 +2,11 @@
 set -euo pipefail
 [ "$EUID" -eq 0 ] || { echo 'Run as root.' >&2; exit 2; }
 root=/srv/lontra
-args=(-f "$root/config/compose.yaml")
-[ ! -f "$root/lab.enabled" ] || args+=(-f "$root/config/compose.lab.yaml")
-compose() { docker compose --project-directory "$root/config" "${args[@]}" --env-file "$root/current.env" "$@"; }
+config=$(sed -n 's/^LONTRA_CONFIG_DIR=//p' "$root/current.env")
+[[ "$config" == "$root/releases/"* && -d "$config" ]] || { echo 'Missing release config snapshot.' >&2; exit 2; }
+args=(-f "$config/compose.yaml")
+[ ! -f "$config/lab.enabled" ] || args+=(-f "$config/compose.lab.yaml")
+compose() { docker compose --project-directory "$config" "${args[@]}" --env-file "$root/current.env" "$@"; }
 status=0
 services=$(compose config --services)
 [ -n "$services" ] || { echo 'No configured services.' >&2; exit 1; }

@@ -13,6 +13,8 @@ const bad = '2'.repeat(40);
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'lontra-operations-'));
   mkdirSync(join(dir, 'releases'));
+  mkdirSync(join(dir, 'config'));
+  writeFileSync(join(dir, 'config/compose.yaml'), 'fixture config');
   mkdirSync(join(dir, 'bin'));
   writeFileSync(join(dir, 'stack.env'), 'FIELD_STATION_SECRET=fixture-only\n');
   // Exercise the deployment orchestration without root or Docker. Only the root
@@ -44,12 +46,18 @@ test('successful deploy records a release; failed candidate restores it and fail
     assert.equal(f.run(sha).status, 0);
     const current = readFileSync(join(f.dir, 'current.env'), 'utf8');
     assert.ok(current.includes(`LONTRA_IMAGE=ghcr.io/jfricano/lontra-creek:${sha}`));
+    writeFileSync(join(f.dir, 'config/compose.yaml'), 'incompatible upgraded config');
     const failed = f.run(bad);
     assert.equal(failed.status, 1);
     assert.match(failed.stderr, /Previous release restored/);
     assert.equal(readFileSync(join(f.dir, 'current.env'), 'utf8'), current);
     assert.equal(readFileSync(join(f.dir, 'current.sha'), 'utf8').trim(), sha);
-    assert.equal(f.calls().filter(args => args.includes('up')).length, 3);
+    const attempts = f.calls().filter(args => args.includes('up'));
+    assert.equal(attempts.length, 3);
+    const configAt = (args: string[]) => args[args.indexOf('--project-directory') + 1];
+    assert.notEqual(configAt(attempts[0]!), configAt(attempts[1]!));
+    assert.equal(configAt(attempts[0]!), configAt(attempts[2]!));
+    assert.equal(readFileSync(join(configAt(attempts[2]!)!, 'compose.yaml'), 'utf8'), 'fixture config');
     assert.ok(!failed.stdout.includes('fixture-only'));
   } finally { f.close(); }
 });

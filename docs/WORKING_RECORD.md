@@ -185,3 +185,12 @@ operator scripts are preserved; shared activation has a separate root-owned
 /srv/apps/lontra release contract. Shared infra owns encrypted export and host
 activation. No Oracle resource, publication, deployment or main merge is performed
 by this follow-up. Selected region relayed by coordinator: us-sanjose-1.
+
+PR21 first runtime rehearsal confirmed actual 10-container no-port/edge isolation,
+per-service caps, and parent cgroup membership/5GiB/oneCPU/no-swap/2048task limits
+on amd64 and arm64. It then caught distinct visitors sharing a request budget.
+Independent native Caddy2.11.4 reproduction proved a request-header delete and
+set on X-Client-IP deletes the resulting header; field station consequently used
+the router's address. API routing must set the verified header without deleting
+it in the same proxy operation. Existing application/browser/base-stack/setup
+checks passed; corrected shared runtime rehearsal remains required.

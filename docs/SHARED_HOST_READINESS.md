@@ -15,8 +15,12 @@ The deployment preparation branch is `feat/server-setup`, through `7ed9f09`
 Root integration is `codex/site-completion`, in the `docs-research-spikes`
 worktree; it contains newer walkthrough, Lab UI, content, captured local
 recording and lifecycle fixes. The backend engineer's `codex/lab-completion`
-branch is the required secure Lab dependency, still under independent review
-when this handoff was written. Record the **final integrated SHA** after that
+commit `1c89a0b` is the required secure Lab dependency. Independent review
+verified the fixes for protected-topic feed exclusion, configured Origin,
+nonblocking restart, read-only feed/token availability during restart, and
+immediate reset invalidation; 18 targeted HTTP/lease/redaction/environment/relay
+tests independently passed. Native Kafka scenario results remain the author's
+evidence; Caddy and three-bench container checks are still pending. Record the **final integrated SHA** after that
 review; neither an old main checkout nor this document's branch SHA is a
 complete release candidate on its own.
 

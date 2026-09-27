@@ -129,7 +129,7 @@ Starts after the owner completes HOSTING.md sections 1–3.
 
 ### 7. The rest of the site
 
-- **Field station:** the six chapters over the live stack.
+- **Field station:** the six chapters over the live stack, built on the modules the home page's live panel uses, in `apps/site/src/scripts/`: `field-client.ts` (the client, badges and handing over the tablet, dropping and restoring the page's connection), `field-views.ts` (each subscription's states, epochs counted by their snapshots, and revisions; the SDK keeps the gateway's epoch ID to itself), `field-cards.ts`, and `field-log.ts`.
 - **When it breaks:** each failure mode with its state and `StreamError`.
 - **Playground:** `validateProjectConfig` from `streamotter/contracts` in the browser; check the bundle size.
 - **Workbench:** a tour from Playwright screenshots of `npx streamotter dev` with a fixture project, captured in CI.

@@ -1,11 +1,43 @@
 ---
-import PagePlaceholder from "../components/PagePlaceholder.astro";
-import Base from "../layouts/Base.astro";
-import { PAGES } from "../site.ts";
-
-const page = PAGES.find(candidate => candidate.href === "/field-station/")!;
+import ContentPage from "../components/ContentPage.astro";
+import { REACHES, STATIONS } from "@lontra-creek/sim";
+const chapters = ["Dawn survey", "The creek rises", "Into Slate Canyon", "The protected holt", "Hand over the tablet", "Log a sighting"];
 ---
-
-<Base title={`${page.label} · StreamOtter`} description={page.summary} noindex={!page.ready}>
-  <PagePlaceholder page={page} />
-</Base>
+<ContentPage title="A field trip through live state" eyebrow="Lontra Creek · guided demo" description="Follow one real subscription from its first snapshot through a lost connection, an access check, and a new identity.">
+  <p class="status-note">Lontra Creek, its people, and its otters are fictional. The gateway and browser SDK are real. <span data-walk-source>Connecting to the field station…</span></p>
+  <div data-walkthrough>
+    <nav aria-label="Walkthrough chapters" class="chapters">{chapters.map((name,i) => <a href={`#chapter-${i+1}`} data-chapter-link>{i+1}. {name}</a>)}</nav>
+    <p role="status" data-walk-status>Opening your volunteer session…</p>
+    <div data-walk-unavailable hidden class="status-note">The field station is unavailable. The rest of the site still works. Run this demo locally with <code>npm install</code> and <code>npm run dev</code> from <a href="https://github.com/jfricano/lontra-creek">the demo repository</a>. <button class="btn" type="button" data-walk-retry>Try again</button></div>
+    <div data-idle-notice hidden class="status-note">Your session was closed after ten minutes idle or hidden. <button class="btn" type="button" data-session-resume>Resume with fresh snapshots</button></div>
+    <div class="panel-grid">
+      <section class="content-card" aria-label="Current chapter">
+        <article data-chapter="1"><h2 tabindex="-1">1. Dawn survey</h2><p>You are a volunteer at Kestrel Bend. The gauge first authorizes, then synchronizes, receives a snapshot, and becomes live. Watch the SDK timeline below.</p></article>
+        <article data-chapter="2" hidden><h2 tabindex="-1">2. The creek rises</h2><p>Every update is a full state with a newer revision. The simulation chooses its own weather; this chapter observes it.</p><p data-flow-change>Collecting readings to compare the last twelve simulation ticks…</p></article>
+        <article data-chapter="3" hidden><h2 tabindex="-1">3. Into Slate Canyon</h2><p>Cut this page's connection. Your last values stay visible and become stale while the creek continues upstream.</p><button class="btn" data-walk-drop type="button" disabled>Drop my connection</button> <button class="btn" data-walk-restore type="button" disabled>Restore connection</button><p data-revision-gap></p></article>
+        <article data-chapter="4" hidden><h2 tabindex="-1">4. The protected holt</h2><p>Den locations are restricted to researchers. Request Holt A as a volunteer: the gateway must refuse and send no data.</p><button class="btn" data-holt-request type="button" disabled>Request Holt A</button><p data-holt-result>Not requested.</p></article>
+        <article data-chapter="5" hidden><h2 tabindex="-1">5. Hand over the tablet</h2><p>The field biologist is a different subject. Changing identity closes the old subscriptions with UNAUTHENTICATED; fresh subscriptions can read the protected holt.</p><button class="btn" data-role-switch type="button" disabled>Sign in as field biologist</button><p data-role-result>Signed in as a volunteer.</p></article>
+        <article data-chapter="6" hidden><h2 tabindex="-1">6. Log a sighting</h2><p>Your private notebook is written through the site API, published to Kafka, then delivered through your own subscription.</p><p data-notebook-note>Checking whether the field station uses Kafka…</p><form data-sighting-form>
+          <label for="sighting-otter">Otter</label><select id="sighting-otter" name="otterId"><option value="LO-07">Pebble</option><option value="LO-03">Birch</option><option value="LO-11">Juniper</option><option value="untagged">Untagged otter</option></select>
+          <label for="sighting-reach">Reach</label><select id="sighting-reach" name="reachId">{REACHES.map(r=><option value={r.id}>{r.name}</option>)}</select>
+          <label for="sighting-activity">Activity</label><select id="sighting-activity" name="activity">{["resting","foraging","traveling","grooming","playing"].map(a=><option>{a}</option>)}</select>
+          <button class="btn primary" type="submit" disabled data-sighting-submit>Log sighting</button>
+        </form><ol data-notebook-entries></ol></article>
+        <nav class="chapter-controls" aria-label="Chapter navigation"><button class="btn" data-chapter-back type="button">Back</button><span data-chapter-count>1 of 6</span><button class="btn primary" data-chapter-next type="button">Next</button></nav>
+      </section>
+      <section class="content-card" aria-labelledby="gauge-title"><h2 id="gauge-title">Kestrel Bend · LC-02</h2><p>Subscription <strong data-walk-state>idle</strong></p><dl class="gauge-values"><div><dt>Flow</dt><dd><span data-walk-flow>—</span> cfs</dd></div><div><dt>Water</dt><dd><span data-walk-temp>—</span> °C</dd></div><div><dt>Revision</dt><dd data-walk-revision>—</dd></div><div><dt>Snapshot count</dt><dd data-walk-epoch>0</dd></div></dl><p>Snapshot count labels observed synchronization attempts; it is not the gateway's internal epoch ID.</p>
+        <svg viewBox="0 0 520 310" role="img" aria-label="Schematic of the fictional 14.2 kilometre Lontra Creek, with four gauge stations." class="creek-map"><path d="M75 25 C370 50 40 115 300 140 S80 240 410 280" fill="none" stroke="var(--accent)" stroke-width="8"/>{REACHES.map((reach,i)=><g><circle cx={70+i*57} cy={30+i*39} r="5" fill="var(--ink)"/><text x={82+i*57} y={24+i*39} font-size="12" fill="var(--ink)">{reach.name}</text></g>)}</svg>
+        <ul>{STATIONS.map(station=><li>{station.id} · {station.name}</li>)}</ul><p data-map-holt hidden></p>
+      </section>
+    </div>
+    <details class="content-card" open><summary>Under the hood · actual SDK events</summary><ol data-walk-log aria-label="SDK state timeline"></ol><p>The public SDK exposes revisions and snapshots; the timeline reports only events received by this browser.</p><pre><code data-chapter-code></code></pre></details>
+  </div>
+</ContentPage>
+<script>import "../scripts/walkthrough.ts";</script>
+<style>
+.chapters { display:flex; flex-wrap:wrap; gap:8px 20px; margin-block:24px; } .chapters a[aria-current] { font-weight:800; text-decoration-thickness:3px; }
+.chapter-controls { display:flex; gap:12px; justify-content:space-between; align-items:center; margin-top:28px; }
+.gauge-values { display:grid; grid-template-columns:1fr 1fr; gap:20px; } .gauge-values dd { margin:4px 0; font-family:var(--mono); overflow-wrap:anywhere; }
+.creek-map { width:100%; } [data-walk-log] { max-height:240px; overflow:auto; font: .8rem/1.6 var(--mono); }
+[data-walk-state="stale"] { color:var(--stale); } form button { margin-top:20px; }
+</style>

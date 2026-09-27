@@ -23,8 +23,18 @@ export interface SdkLog {
 export function createSdkLog(list: HTMLElement, announcer: HTMLElement, options: { limit?: number; started?: number } = {}): SdkLog {
   const limit = options.limit ?? 8;
   const started = options.started ?? performance.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const pending = new Set<string>();
+  function announce(text: string): void {
+    pending.add(text);
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      announcer.textContent = [...pending].join(". ");
+      pending.clear();
+    }, 700);
+  }
   return {
-    write(parts, announce) {
+    write(parts, announcement) {
       const item = document.createElement("li");
       const time = document.createElement("span");
       time.className = "t";
@@ -42,11 +52,9 @@ export function createSdkLog(list: HTMLElement, announcer: HTMLElement, options:
       }
       list.prepend(item);
       while (list.children.length > limit) list.lastElementChild?.remove();
-      if (announce !== undefined) announcer.textContent = announce;
+      if (announcement !== undefined) announce(announcement);
     },
-    announce(text) {
-      announcer.textContent = text;
-    }
+    announce
   };
 }
 
@@ -70,7 +78,7 @@ export function logConnection(log: SdkLog, client: Client<AppChannels>): Unliste
 export function logView<K extends ChannelName>(log: SdkLog, view: View<K>, label: string): Unlisten {
   const unlisten = [
     view.on("state", ({ state }) => {
-      const announce = state === "live" || state === "stale" ? `${label} is ${state}` : undefined;
+      const announce = state === "live" || state === "stale" || state === "resync-required" || state === "failed" ? `${label} is ${state}` : undefined;
       log.write([{ tone: subscriptionTone(state), text: label }, ` state ${state}`], announce);
     }),
     view.on("data", ({ kind, revision }) => {

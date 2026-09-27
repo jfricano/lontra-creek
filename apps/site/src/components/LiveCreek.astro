@@ -7,23 +7,25 @@
 import { LINKS } from "../site.ts";
 ---
 
-<section class="live-creek" data-live-creek data-connection="idle" data-network="online" aria-label="Live data from the Lontra Creek field station">
+<section id="live" class="live-creek" data-live-creek data-connection="idle" data-network="online" aria-label="Live data from the Lontra Creek field station">
   <div class="lc-top">
+    <slot name="tag" />
+    <button class="lc-button lc-motion" type="button" data-pause-motion aria-pressed="false">Pause motion</button>
     <span class="lc-clock"><i class="lc-dot" aria-hidden="true"></i><span data-clock>Connecting to the field station…</span></span>
     <span class="lc-source" data-source>Lontra Creek field station</span>
   </div>
 
   <div class="lc-body">
     <div class="lc-water">
-      <canvas role="img" aria-label="Lontra Creek flowing into the StreamOtter gateway. Its speed follows the live flow at Kestrel Bend."></canvas>
+      <canvas role="img" aria-label="Not connected to live data. This static creek is illustrative."></canvas>
       <span class="lc-caption">field instruments → Kafka → gateway</span>
     </div>
 
     <div class="lc-views">
       <div class="lc-views-top"><span>Your browser</span><span>connection <b data-connection>connecting</b></span></div>
 
-      <article class="lc-card" data-card>
-        <header><span class="lc-id">LC-02</span><span class="lc-name">Kestrel Bend gauge</span><span class="chip" data-state="idle">idle</span></header>
+      <article class="lc-card" data-card aria-labelledby="live-name-0">
+        <header><span class="lc-id">LC-02</span><span class="lc-name" id="live-name-0">Kestrel Bend gauge</span><span class="chip" data-state="idle">idle</span></header>
         <dl>
           <div><dt>Flow</dt><dd><span data-v="flow">—</span> <small>cfs</small></dd></div>
           <div><dt>Water</dt><dd><span data-v="temp">—</span> <small>°C</small></dd></div>
@@ -32,8 +34,8 @@ import { LINKS } from "../site.ts";
         <footer><span data-rev>—</span><span data-v="trend"></span><span data-age>waiting</span></footer>
       </article>
 
-      <article class="lc-card" data-card>
-        <header><span class="lc-id">LO-07</span><span class="lc-name">Pebble, adult female</span><span class="chip" data-state="idle">idle</span></header>
+      <article class="lc-card" data-card aria-labelledby="live-name-1">
+        <header><span class="lc-id">LO-07</span><span class="lc-name" id="live-name-1">Pebble, adult female</span><span class="chip" data-state="idle">idle</span></header>
         <dl class="lc-otter">
           <div><dt>Where</dt><dd><span data-v="reach">—</span></dd></div>
           <div><dt>Doing</dt><dd><span data-v="activity">—</span></dd></div>
@@ -43,8 +45,8 @@ import { LINKS } from "../site.ts";
         <footer><span data-rev>—</span><span data-age>waiting</span></footer>
       </article>
 
-      <article class="lc-card" data-card>
-        <header><span class="lc-id">LC-03</span><span class="lc-name">Slate Canyon gauge</span><span class="chip" data-state="idle">idle</span></header>
+      <article class="lc-card" data-card aria-labelledby="live-name-2">
+        <header><span class="lc-id">LC-03</span><span class="lc-name" id="live-name-2">Slate Canyon gauge</span><span class="chip" data-state="idle">idle</span></header>
         <dl>
           <div><dt>Stage</dt><dd><span data-v="stage">—</span> <small>ft</small></dd></div>
           <div><dt>Turbidity</dt><dd><span data-v="turbidity">—</span> <small>NTU</small></dd></div>
@@ -55,13 +57,16 @@ import { LINKS } from "../site.ts";
     </div>
   </div>
 
+  <div class="lc-bottom">
+  <div class="lc-normal">
   <div class="lc-controls">
     <button class="lc-button lc-drop" type="button" data-drop>Drop my connection</button>
     <button class="lc-button lc-restore" type="button" data-restore disabled>Restore it</button>
     <p class="lc-note" data-note>Try it: cut this page's connection. The creek keeps moving without you, and every view says it's stale until fresh snapshots arrive.</p>
   </div>
   <ol class="lc-log" data-log aria-label="What the SDK reported"></ol>
-  <div class="lc-unavailable">
+  </div>
+  <div class="lc-unavailable" role="status">
     <p>
       <b>The live demo isn't answering right now.</b> The field station's server may be restarting or down; the rest of
       this site works without it. You can run the same demo on your machine with Node.js 24 or later, no Kafka needed:
@@ -71,6 +76,7 @@ cd lontra-creek
 npm install
 npm run dev</code></pre>
     <p>Then open <code>http://127.0.0.1:4321</code>. <a href={LINKS.demoRepo}>The demo's source is on GitHub.</a></p>
+  </div>
   </div>
   <div class="sr-only" aria-live="polite" data-announce></div>
 </section>
@@ -82,7 +88,8 @@ npm run dev</code></pre>
 <style is:global>
   .live-creek {
     --p-ink: #e9f2fc;
-    --p-dim: #93a9cc;
+    --p-dim: #a3b6d6;
+    --accent: #52b8ff;
     --p-line: rgba(1, 225, 252, 0.22);
     --live: #01e1fc;
     --live-bg: rgba(1, 225, 252, 0.12);
@@ -226,7 +233,7 @@ npm run dev</code></pre>
     grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.1fr) minmax(0, 0.7fr);
   }
   .lc-card dt {
-    font-size: 0.66rem;
+    font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--p-dim);
@@ -372,19 +379,29 @@ npm run dev</code></pre>
   .lc-log .s {
     color: var(--sync);
   }
+  .lc-bottom { display: grid; }
+  .lc-normal, .lc-unavailable { grid-area: 1 / 1; min-width: 0; }
+  .live-creek[data-status="unavailable"] .lc-normal { visibility: hidden; }
+  .lc-motion { color: var(--p-ink); background: #173b66; font-size: .75rem; padding: 6px 10px; }
+  .live-creek[data-motion="paused"] *, .live-creek[data-status="unavailable"] .lc-dot { animation: none !important; }
+  .live-creek:not([data-overview="live"]) canvas { opacity: .45; filter: saturate(.3); }
+  .lc-caption { background: rgba(2,10,28,.6); border-radius: 8px; padding: 5px 8px; }
+  @media(prefers-color-scheme: dark) { .live-creek { border: 1px solid rgba(4,189,253,.18); } }
   .lc-unavailable {
-    display: none;
+    display: grid;
+    visibility: hidden;
     gap: 10px;
     padding: 14px 18px;
-    background: rgba(242, 184, 75, 0.12);
+    background: #0b1d3d;
+    border-left: 3px solid var(--stale);
     color: var(--p-ink);
     font-size: 0.92rem;
   }
   .live-creek[data-status="unavailable"] .lc-unavailable {
-    display: grid;
+    visibility: visible;
   }
   .live-creek[data-status="unavailable"] .lc-controls {
-    display: none;
+    visibility: hidden;
   }
   .lc-unavailable b {
     color: var(--stale);

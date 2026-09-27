@@ -7,6 +7,7 @@ import { FieldStationUnavailableError, openFieldClient, type FieldClient } from 
 import { $, bindCard, tickAges, type Card } from "./field-cards.ts";
 import { createSdkLog, logConnection, logView } from "./field-log.ts";
 import { shortRevision, type ChannelName, type ChannelParams } from "./field-views.ts";
+import { watchIdle } from "./idle-session.ts";
 import { CreekCanvas, type Lane } from "./creek-canvas.ts";
 
 const BASEFLOW_LC02 = 61;
@@ -27,10 +28,27 @@ export async function mountLiveCreek(root: HTMLElement): Promise<void> {
   ];
   const canvas = new CreekCanvas($(root, "canvas") as HTMLCanvasElement, lanes);
 
+  const motion = $(root, "[data-pause-motion]") as HTMLButtonElement;
+  const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+  let paused = preference.matches;
+  function renderMotion(): void {
+    root.dataset["motion"] = paused ? "paused" : "running";
+    motion.setAttribute("aria-pressed", String(paused));
+    motion.textContent = paused ? "Resume motion" : "Pause motion";
+    canvas.setPaused(paused);
+  }
+  motion.addEventListener("click", () => { paused = !paused; renderMotion(); });
+  preference.addEventListener("change", event => { paused = event.matches; renderMotion(); });
+  renderMotion();
+  canvas.setLive(false);
+
   function unavailable(why: string): void {
     if (root.dataset["status"] === "unavailable") return;
     root.dataset["status"] = "unavailable";
     source.textContent = "Field station unavailable";
+    clock.textContent = "Still trying to reach the field station";
+    canvas.setLive(false);
+    root.querySelectorAll<HTMLElement>("[data-age]").forEach(age => { age.textContent = "not connected"; });
     drop.disabled = true;
     log.write([{ tone: "w", text: why }], "The live demo is unavailable right now.");
   }
@@ -93,9 +111,25 @@ export async function mountLiveCreek(root: HTMLElement): Promise<void> {
   });
   overview.on("state", ({ state }) => {
     root.dataset["overview"] = state;
+    canvas.setLive(state === "live");
   });
 
-  tickAges(cards);
+  const stopAges = tickAges(cards);
+  const stopIdle = watchIdle(() => {
+    stopAges();
+    void field.close();
+    canvas.setLive(false);
+    clock.textContent = "Session paused after ten minutes idle";
+    drop.disabled = true; restore.disabled = true;
+    const resume = document.createElement("button");
+    resume.className = "lc-button lc-restore";
+    resume.textContent = "Resume with fresh snapshots";
+    resume.dataset["sessionResume"] = "";
+    resume.addEventListener("click", () => location.reload());
+    note.replaceChildren("Your session is paused. ", resume);
+    log.announce("Session paused after ten minutes idle. Resume for fresh snapshots.");
+  });
+  window.addEventListener("pagehide", () => { stopIdle(); stopAges(); canvas.setLive(false); void field.close(); }, { once: true });
 
   drop.addEventListener("click", () => {
     field.dropConnection();

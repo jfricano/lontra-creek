@@ -8,7 +8,7 @@ This document owns the site's scope, the demo's behavior and operating rules, an
 
 ## Ground rules
 
-**Independent of the library repository.** This repository uses StreamOtter only as a published npm package, at an exact version, installed with npm the way any developer would. It never links to the library's source: no git submodules, workspace links, local paths, or checkouts, including for tests and docs. A problem the demo finds becomes an issue on the library, and this repository upgrades after a release ships (release candidates count). The one shared asset is a copy of the logo in `assets/`.
+**Independent of the library repository.** This repository uses StreamOtter only as a published npm package, at an exact version, installed with npm the way any developer would. It never links to the library's source: no git submodules, workspace links, local paths, or checkouts, including for tests and docs. A problem the demo finds becomes an issue on the library, and this repository upgrades after a release ships (release candidates count). The one shared asset is the logo: copies of its source files in `assets/`.
 
 **Every claim matches the pinned release.** Behavior, code samples, screenshots, and limits describe the version in `package.json`. No invented adoption counts, testimonials, capacity claims, or performance numbers. A number says where it was measured. Future plans stay visibly separate from shipped features.
 

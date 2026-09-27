@@ -7,6 +7,10 @@ merge is authorized by this document. The coordinated assessment at
 `/Users/jasonfricano/coding/dev-ops/hosting-assessment.md` was read as context;
 its Lontra implementation audit used stale main. Its provider prices and
 account assumptions are not reasserted here as current verified entitlements.
+The shared infrastructure proposals in `dev-ops/oracle/README.md` and
+`dev-ops/oracle/contracts/integration-contracts.md` version 0.1 were also reviewed.
+The home region remains an owner decision; US location and Pacific time zone
+do not establish the selected Oracle region, and Singapore is not assumed.
 
 ## Candidate and evidence
 
@@ -46,11 +50,23 @@ Kafka, field station's internal listener, benches, or proxies to another
 application's network. Do not mount the host Docker socket into any app.
 
 Recommended integration: keep Lontra's Caddy as a private HTTP router and attach
-**only that router** to an external host-owned ingress network. Give it no host
+**only that router** to the host-owned external network `edge-lontra`. Give it no host
 published port and a non-TLS internal listener (for example 8080). The shared
 edge owns 443, the `demo.streamotter.app` virtual host and TLS; it forwards that
 host to `lontra-caddy:8080`. Other apps get separate virtual hosts and upstreams.
 This keeps Lontra's strict route allowlist in its own versioned config.
+
+This is a counterproposal pending shared-infrastructure acceptance, not an
+already implemented adapter. The infrastructure draft instead proposes direct
+`lontra-gateway:7400` and `lontra-field:7402` aliases on `edge-lontra`. These
+ports are accurate, but those aliases alone omit the three public Lab Socket.IO
+upstreams. More importantly, attaching the field-station container directly
+also makes its 7410 internal listener reachable on that network: Docker network
+attachment does not restrict connections to the advertised 7402 port. The
+private-router proposal avoids attaching the station or benches to the edge
+network. If the shared owner chooses direct upstreams instead, require explicit
+Lab aliases/routes and independently verified internal-listener isolation before
+acceptance. Do not activate either topology until one contract is agreed.
 
 This requires a reviewed shared-host Compose/Caddy adapter; simply deleting the
 443 mapping leaves the current TLS Caddyfile incompatible with the proposed
@@ -69,9 +85,9 @@ visitors. Do not trust every RFC1918 address or every container on the host.
 
 | Route on `demo.streamotter.app` | Internal destination | Boundary |
 | --- | --- | --- |
-| `/streamotter/*` | `gateway:7400` | Production gateway; browser Origin preserved |
-| `/api/*` | `field-station:7402` | Exact configured site CORS, credentials, 8 KB edge cap and 4 KB API body cap |
-| `/lab/1/socket.io/*` … `/lab/3/socket.io/*` | `lab-1:7400` … `lab-3:7400` | Exact configured site Origin required before WebSocket upgrade; leased authentication |
+| `/streamotter/*` | Private router → `gateway:7400` | Production gateway; browser Origin preserved |
+| `/api/*` | Private router → `field-station:7402` | Exact configured site CORS, credentials, 8 KB edge cap and 4 KB API body cap |
+| `/lab/1/socket.io/*` … `/lab/3/socket.io/*` | Private router → `lab-1:7400` … `lab-3:7400` | Exact configured site Origin required before WebSocket upgrade; leased authentication |
 | All other routes | 404 | Includes management, workbench, bench control, internal snapshots, health |
 
 ## Ports and environment names
@@ -124,6 +140,19 @@ gateway, bench, and edge configuration; never broaden to wildcard Origin.
 | Router state | `lontra-creek_caddy-data` | Reassess after shared-edge adapter; TLS/account material belongs with its actual edge owner |
 | Secrets and Kafka CA | `/srv/lontra/stack.env`, `/srv/lontra/secrets` | Root-only host ancestor; separately encrypted recovery export to approved destination |
 | Release configs | `/srv/lontra/releases` plus current/previous env and SHA records | Keep both retained releases and matching image tags; do not prune required rollback configs/images |
+
+Shared backup integration is proposed through root-owned
+`/usr/local/lib/app-backup-hooks/lontra-{snapshot,verify,export}`, each accepting
+one mode-0700 staging-directory argument and failing closed on errors. Lontra
+owns the consistent world snapshot, validation and **disposable-target restore**
+hooks plus documentation of ephemeral Kafka recovery. The existing
+`lontra-checkpoint restore` intentionally changes the active station volume and
+therefore cannot serve as the shared verifier: a separate isolated volume/project
+restore adapter must be implemented and tested first. The shared infrastructure
+owner owns export encryption, off-host transport, remote integrity/retention,
+serialization and delivery alerts after destination/key-recovery decisions.
+No shared hook is installed or accepted by this document. Keep application
+backup namespaces separate and include the release/epoch/volume recovery manifest.
 
 Local checkpoint copies do not survive VM/disk/account loss and do not back up
 Kafka or secrets. An approved encrypted off-host destination, access policy,

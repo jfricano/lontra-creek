@@ -1,0 +1,131 @@
+# Production Failure Lab overlay. Never deploy the CI-only lab-spike overlay.
+# docker compose -f deploy/compose.yaml -f deploy/compose.lab.yaml --env-file <env> up -d --wait
+# No management, bench API, proxy-control, or broker ports are published.
+x-lab-node: &lab-node
+  image: ${LONTRA_IMAGE:?}
+  init: true
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: 10m, max-file: "3" }
+x-proxy-health: &proxy-health
+  test: ["CMD", "node", "-e", "require('node:net').connect(9180, '127.0.0.1').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"]
+  interval: 5s
+  timeout: 5s
+  retries: 6
+x-bench-health: &bench-health
+  test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:7420/healthz').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+  interval: 10s
+  timeout: 5s
+  retries: 6
+  start_period: 60s
+services:
+  kafka:
+    environment:
+      KAFKA_BENCH_LISTENERS: lab-1-kafka:9101 lab-2-kafka:9102 lab-3-kafka:9103
+      KAFKA_LAB_1_USERNAME: lab-1
+      KAFKA_LAB_1_PASSWORD: ${KAFKA_LAB_1_PASSWORD:?}
+      KAFKA_LAB_2_USERNAME: lab-2
+      KAFKA_LAB_2_PASSWORD: ${KAFKA_LAB_2_PASSWORD:?}
+      KAFKA_LAB_3_USERNAME: lab-3
+      KAFKA_LAB_3_PASSWORD: ${KAFKA_LAB_3_PASSWORD:?}
+  field-station:
+    environment:
+      FIELD_LAB_BENCHES: "3"
+      LAB_BENCH_API_URLS: http://lab-1:7420,http://lab-2:7420,http://lab-3:7420
+      LAB_BENCH_1_SERVICE_TOKEN: ${LAB_BENCH_1_SERVICE_TOKEN:?}
+      LAB_BENCH_2_SERVICE_TOKEN: ${LAB_BENCH_2_SERVICE_TOKEN:?}
+      LAB_BENCH_3_SERVICE_TOKEN: ${LAB_BENCH_3_SERVICE_TOKEN:?}
+  caddy:
+    environment:
+      SITE_ORIGIN: ${SITE_ORIGIN:-https://streamotter.app}
+
+  lab-1-kafka:
+    <<: *lab-node
+    command: ["node", "src/lab/proxy-main.ts"]
+    environment:
+      NODE_ENV: production
+      LAB_BENCH: "1"
+      LAB_BENCH_1_RELAY_TOKEN: ${LAB_BENCH_1_RELAY_TOKEN:?}
+    depends_on:
+      kafka: { condition: service_healthy }
+    healthcheck: *proxy-health
+  lab-1:
+    <<: *lab-node
+    command: ["node", "src/lab/bench-main.ts"]
+    environment:
+      NODE_ENV: production
+      LAB_BENCH: "1"
+      SITE_ORIGIN: ${SITE_ORIGIN:-https://streamotter.app}
+      KAFKA_LAB_USERNAME: lab-1
+      KAFKA_LAB_PASSWORD: ${KAFKA_LAB_1_PASSWORD:?}
+      LAB_BENCH_1_SERVICE_TOKEN: ${LAB_BENCH_1_SERVICE_TOKEN:?}
+      LAB_BENCH_1_RELAY_TOKEN: ${LAB_BENCH_1_RELAY_TOKEN:?}
+      LAB_SNAPSHOT_ORIGIN: http://field-station:7410
+    volumes:
+      - ${LONTRA_SECRETS:?}/kafka/ca.pem:/etc/lontra/kafka/ca.pem:ro
+    depends_on:
+      field-station: { condition: service_healthy }
+      lab-1-kafka: { condition: service_healthy }
+    stop_grace_period: 15s
+    healthcheck: *bench-health
+
+  lab-2-kafka:
+    <<: *lab-node
+    command: ["node", "src/lab/proxy-main.ts"]
+    environment:
+      NODE_ENV: production
+      LAB_BENCH: "2"
+      LAB_BENCH_2_RELAY_TOKEN: ${LAB_BENCH_2_RELAY_TOKEN:?}
+    depends_on:
+      kafka: { condition: service_healthy }
+    healthcheck: *proxy-health
+  lab-2:
+    <<: *lab-node
+    command: ["node", "src/lab/bench-main.ts"]
+    environment:
+      NODE_ENV: production
+      LAB_BENCH: "2"
+      SITE_ORIGIN: ${SITE_ORIGIN:-https://streamotter.app}
+      KAFKA_LAB_USERNAME: lab-2
+      KAFKA_LAB_PASSWORD: ${KAFKA_LAB_2_PASSWORD:?}
+      LAB_BENCH_2_SERVICE_TOKEN: ${LAB_BENCH_2_SERVICE_TOKEN:?}
+      LAB_BENCH_2_RELAY_TOKEN: ${LAB_BENCH_2_RELAY_TOKEN:?}
+      LAB_SNAPSHOT_ORIGIN: http://field-station:7410
+    volumes:
+      - ${LONTRA_SECRETS:?}/kafka/ca.pem:/etc/lontra/kafka/ca.pem:ro
+    depends_on:
+      field-station: { condition: service_healthy }
+      lab-2-kafka: { condition: service_healthy }
+    stop_grace_period: 15s
+    healthcheck: *bench-health
+
+  lab-3-kafka:
+    <<: *lab-node
+    command: ["node", "src/lab/proxy-main.ts"]
+    environment:
+      NODE_ENV: production
+      LAB_BENCH: "3"
+      LAB_BENCH_3_RELAY_TOKEN: ${LAB_BENCH_3_RELAY_TOKEN:?}
+    depends_on:
+      kafka: { condition: service_healthy }
+    healthcheck: *proxy-health
+  lab-3:
+    <<: *lab-node
+    command: ["node", "src/lab/bench-main.ts"]
+    environment:
+      NODE_ENV: production
+      LAB_BENCH: "3"
+      SITE_ORIGIN: ${SITE_ORIGIN:-https://streamotter.app}
+      KAFKA_LAB_USERNAME: lab-3
+      KAFKA_LAB_PASSWORD: ${KAFKA_LAB_3_PASSWORD:?}
+      LAB_BENCH_3_SERVICE_TOKEN: ${LAB_BENCH_3_SERVICE_TOKEN:?}
+      LAB_BENCH_3_RELAY_TOKEN: ${LAB_BENCH_3_RELAY_TOKEN:?}
+      LAB_SNAPSHOT_ORIGIN: http://field-station:7410
+    volumes:
+      - ${LONTRA_SECRETS:?}/kafka/ca.pem:/etc/lontra/kafka/ca.pem:ro
+    depends_on:
+      field-station: { condition: service_healthy }
+      lab-3-kafka: { condition: service_healthy }
+    stop_grace_period: 15s
+    healthcheck: *bench-health

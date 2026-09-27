@@ -30,6 +30,8 @@ src=$(cd "$(dirname "$0")" && pwd)
 install -d -m 700 "$root" "$root/secrets" "$root/secrets/origin" "$root/releases"
 install -d -m 755 "$root/config" "$root/config/kafka"
 install -m 644 "$src/compose.yaml" "$root/config/compose.yaml"
+install -m 644 "$src/compose.lab.yaml" "$root/config/compose.lab.yaml"
+install -m 644 "$src/operations/checkpoint.mjs" "$root/config/checkpoint.mjs"
 install -m 644 "$src/Caddyfile" "$root/config/Caddyfile"
 install -m 755 "$src/kafka/start.sh" "$root/config/kafka/start.sh"
 "$src/make-secrets.sh" "$root/stack.env"
@@ -44,6 +46,11 @@ install -m 644 "$cert" "$root/secrets/origin/cert.pem"
 install -m 644 "$key" "$root/secrets/origin/key.pem"
 chmod 600 "$root/stack.env"
 install -m 755 "$src/operations/deploy.sh" /usr/local/sbin/lontra-deploy
+install -m 755 "$src/operations/checkpoint.sh" /usr/local/sbin/lontra-checkpoint
+install -m 755 "$src/operations/health.sh" /usr/local/sbin/lontra-health
+install -m 644 "$src"/operations/systemd/* /etc/systemd/system/
+systemctl daemon-reload
+# Installed, not enabled: operator must first rehearse restore and notification routing.
 install -m 755 "$src/operations/ssh-command.sh" /usr/local/sbin/lontra-ssh-command
 id lontra-deploy >/dev/null 2>&1 || useradd --create-home --shell /bin/bash lontra-deploy
 # Root owns authorized_keys and the home, so this credential cannot replace its restriction.

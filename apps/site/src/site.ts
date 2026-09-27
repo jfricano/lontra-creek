@@ -3,13 +3,16 @@ import site from "../package.json" with { type: "json" };
 /** The StreamOtter release this site describes and its demo runs: the exact version the site installs. */
 export const RELEASE = site.dependencies.streamotter;
 
+/** The StreamOtter repository tag for this release, so library links survive its later commits. */
+const STREAMOTTER_TAG = `v${RELEASE}`;
+
 export const LINKS = {
   github: "https://github.com/jfricano/StreamOtter",
   npm: "https://www.npmjs.com/package/streamotter",
-  guides: "https://github.com/jfricano/StreamOtter/tree/main/docs/guides",
-  gettingStarted: "https://github.com/jfricano/StreamOtter/blob/main/docs/guides/getting-started.md",
-  status: "https://github.com/jfricano/StreamOtter/blob/main/docs/IMPLEMENTATION_STATUS.md",
-  changelog: "https://github.com/jfricano/StreamOtter/blob/main/CHANGELOG.md",
+  guides: `https://github.com/jfricano/StreamOtter/tree/${STREAMOTTER_TAG}/docs/guides`,
+  gettingStarted: `https://github.com/jfricano/StreamOtter/blob/${STREAMOTTER_TAG}/docs/guides/getting-started.md`,
+  status: `https://github.com/jfricano/StreamOtter/blob/${STREAMOTTER_TAG}/docs/IMPLEMENTATION_STATUS.md`,
+  changelog: `https://github.com/jfricano/StreamOtter/blob/${STREAMOTTER_TAG}/CHANGELOG.md`,
   demoRepo: "https://github.com/jfricano/lontra-creek"
 } as const;
 

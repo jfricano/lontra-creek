@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+# A new push to the same pull request supersedes the last CI run for it. A
+# push to main gets its own group (keyed by the run id) so a quick follow-up
+# push can't cancel a run already in flight.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || ((github.ref == 'refs/heads/main' && github.run_id) || github.ref) }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 permissions:
   contents: read
 

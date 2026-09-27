@@ -39,6 +39,19 @@ npm run dev        # field station + site at http://127.0.0.1:4321
 
 `npm run dev` runs the field station without Kafka, replaying the simulation through a StreamOtter gateway in development mode, one study tick every two seconds, with the workbench at http://127.0.0.1:7401 (its one-time token is printed at startup).
 
+Four environment variables move the whole dev stack to a different port block, so more than one can run at once on the same machine:
+
+| Variable | Default | What it moves |
+| --- | --- | --- |
+| `LONTRA_SITE_PORT` | 4321 | The Astro dev server |
+| `LONTRA_GATEWAY_PORT` | 7400 | The dev gateway (also used to build its allowed origins from `LONTRA_SITE_PORT`) |
+| `LONTRA_WORKBENCH_PORT` | 7401 | The StreamOtter workbench |
+| `LONTRA_API_PORT` | 7402 | The field station's small site API, and the site's `/api` proxy target |
+
+```bash
+LONTRA_SITE_PORT=4331 LONTRA_GATEWAY_PORT=7430 LONTRA_WORKBENCH_PORT=7431 LONTRA_API_PORT=7432 npm run dev
+```
+
 In production the field station runs the simulation on the wall clock and publishes to Kafka (`apps/field-station/src/server/main.ts`), and the gateway is `streamotter start` with compiled handlers (`npm run build -w @lontra-creek/field-station`). [`deploy/compose.yaml`](deploy/compose.yaml) runs them with Kafka 4.1.2 and Caddy; [`.github/workflows/stack.yml`](.github/workflows/stack.yml) shows how to bring the stack up with throwaway secrets and test it from outside.
 
 ## The simulation in brief

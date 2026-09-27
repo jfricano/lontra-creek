@@ -4,6 +4,7 @@
  * (streamotter.json); production requires the secrets and the study's epoch.
  */
 import { fieldStationSecret, serviceToken } from "../identity.ts";
+import { MAX_BENCHES } from "../lab/benches.ts";
 import { GATEWAY_PATH } from "../project.ts";
 
 export interface KafkaSettings {
@@ -32,6 +33,8 @@ export interface ServerConfig {
   host: string;
   port: number;
   internalPort: number;
+  /** How many Failure Lab benches get a copy of the creek on their own topics (lab/benches.ts). */
+  labBenches: number;
 }
 
 function integer(env: NodeJS.ProcessEnv, name: string, fallback: number, minimum: number): number {
@@ -65,6 +68,9 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     throw new Error("Production needs Kafka over TLS with SCRAM: set KAFKA_CA_FILE, KAFKA_FIELD_STATION_USERNAME, and KAFKA_FIELD_STATION_PASSWORD.");
   }
 
+  const labBenches = integer(env, "FIELD_LAB_BENCHES", 0, 0);
+  if (labBenches > MAX_BENCHES) throw new RangeError(`FIELD_LAB_BENCHES must be at most ${MAX_BENCHES}.`);
+
   return {
     production,
     kafka: {
@@ -83,6 +89,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     gatewayPath: GATEWAY_PATH,
     host: env["FIELD_HOST"] ?? "127.0.0.1",
     port: integer(env, "FIELD_PORT", 7402, 0),
-    internalPort: integer(env, "FIELD_INTERNAL_PORT", 7410, 0)
+    internalPort: integer(env, "FIELD_INTERNAL_PORT", 7410, 0),
+    labBenches
   };
 }

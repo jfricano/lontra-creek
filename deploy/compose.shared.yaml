@@ -1,0 +1,50 @@
+# Shared-host adapter; requires Docker Compose >= 2.24.4 (!reset/!override).
+# Base: -f compose.yaml -f compose.shared.yaml
+# Optional Lab: -f compose.yaml -f compose.lab.yaml -f compose.shared.yaml -f compose.shared.lab.yaml
+# No host changes or network creation: edge-lontra is infrastructure-owned.
+services:
+  kafka:
+    cgroup_parent: ${LONTRA_CGROUP_PARENT:?set LONTRA_CGROUP_PARENT to the installed lontra.slice}
+    cpus: 0.35
+    mem_limit: 2560m
+    memswap_limit: 2560m
+    pids_limit: 512
+    environment:
+      # Bounded test starting point, never padding to evade idle reclamation.
+      KAFKA_HEAP_OPTS: -Xms512m -Xmx1536m
+  field-station:
+    cgroup_parent: ${LONTRA_CGROUP_PARENT:?set LONTRA_CGROUP_PARENT to the installed lontra.slice}
+    cpus: 0.18
+    mem_limit: 448m
+    memswap_limit: 448m
+    pids_limit: 128
+  gateway:
+    cgroup_parent: ${LONTRA_CGROUP_PARENT:?set LONTRA_CGROUP_PARENT to the installed lontra.slice}
+    cpus: 0.15
+    mem_limit: 384m
+    memswap_limit: 384m
+    pids_limit: 128
+  caddy:
+    entrypoint: ["/bin/sh", "/opt/lontra/start-caddy-shared.sh"]
+    command: ["run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    ports: !reset []
+    cgroup_parent: ${LONTRA_CGROUP_PARENT:?set LONTRA_CGROUP_PARENT to the installed lontra.slice}
+    cpus: 0.05
+    mem_limit: 128m
+    memswap_limit: 128m
+    pids_limit: 128
+    environment:
+      SITE_ORIGIN: ${SITE_ORIGIN:-https://streamotter.app}
+      LONTRA_LAB_ENABLED: "0"
+      LONTRA_TRUSTED_EDGE_IP: ${LONTRA_TRUSTED_EDGE_IP-10.203.43.2}
+    volumes: !override
+      - ./Caddyfile.shared:/etc/caddy/Caddyfile:ro
+      - ./start-caddy-shared.sh:/opt/lontra/start-caddy-shared.sh:ro
+    networks:
+      default: {}
+      edge-lontra:
+        aliases: [lontra-caddy]
+networks:
+  edge-lontra:
+    external: true
+    name: edge-lontra

@@ -1,0 +1,14 @@
+# Shared-infrastructure owner installs this root-owned unit; never app setup.
+# Requires unified cgroup v2 and Docker's systemd cgroup driver.
+# No activation is performed by this repository. Include maintenance containers.
+[Unit]
+Description=Lontra application and maintenance resource ceiling
+
+[Slice]
+CPUAccounting=yes
+MemoryAccounting=yes
+TasksAccounting=yes
+CPUQuota=100%
+MemoryMax=5G
+MemorySwapMax=0
+TasksMax=2048

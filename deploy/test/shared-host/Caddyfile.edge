@@ -1,0 +1,15 @@
+# CI-only TLS edge. The app router itself never publishes a host port.
+{
+  auto_https off
+}
+https://demo.streamotter.app:443 {
+  tls /etc/caddy/origin/cert.pem /etc/caddy/origin/key.pem
+  reverse_proxy lontra-caddy:8080 {
+    header_up -CF-Connecting-IP
+    header_up -Forwarded
+    header_up -X-Real-IP
+    header_up -X-Client-IP
+    header_up X-Forwarded-For {client_ip}
+    header_up X-Forwarded-Proto https
+  }
+}

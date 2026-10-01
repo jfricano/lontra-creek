@@ -1,0 +1,25 @@
+# Opt-in only after public Lab release gates are accepted. Apply LAST.
+# Together with base/shared limits: 1.00 CPU, 4480 MiB, 1472 PIDs maximum
+# for one instance each. Parent slice also contains replicas and maintenance.
+x-bench-limit: &bench-limit
+  cgroup_parent: ${LONTRA_CGROUP_PARENT:?set LONTRA_CGROUP_PARENT to the installed lontra.slice}
+  cpus: 0.06
+  mem_limit: 256m
+  memswap_limit: 256m
+  pids_limit: 128
+x-relay-limit: &relay-limit
+  cgroup_parent: ${LONTRA_CGROUP_PARENT:?set LONTRA_CGROUP_PARENT to the installed lontra.slice}
+  cpus: 0.03
+  mem_limit: 64m
+  memswap_limit: 64m
+  pids_limit: 64
+services:
+  caddy:
+    environment:
+      LONTRA_LAB_ENABLED: "1"
+  lab-1: *bench-limit
+  lab-2: *bench-limit
+  lab-3: *bench-limit
+  lab-1-kafka: *relay-limit
+  lab-2-kafka: *relay-limit
+  lab-3-kafka: *relay-limit

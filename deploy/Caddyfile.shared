@@ -1,0 +1,86 @@
+# Shared TLS edge -> private router. Only the validated infrastructure peer (default 10.203.43.2)
+# may send requests; it replaces X-Forwarded-For with a verified visitor IP.
+# No TLS, host port, Cloudflare trust ranges, or admin exposure on this hop.
+{
+	auto_https off
+	admin 127.0.0.1:2019
+	servers {
+		trusted_proxies static {$LONTRA_TRUSTED_EDGE_IP:10.203.43.2}
+		trusted_proxies_strict
+		client_ip_headers X-Forwarded-For
+	}
+}
+
+(verified_headers) {
+	header_up -CF-Connecting-IP
+	header_up -Forwarded
+	header_up -X-Real-IP
+	header_up X-Forwarded-For {client_ip}
+	header_up X-Forwarded-Proto https
+}
+
+:8080 {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		X-Frame-Options DENY
+		-Server
+	}
+
+	# route preserves ordering: peer/Host rejection must precede every proxy.
+	route {
+		@untrusted not remote_ip {$LONTRA_TRUSTED_EDGE_IP:10.203.43.2}
+		respond @untrusted 403
+		@wrongHost not host {$DEMO_HOST:demo.streamotter.app}
+		respond @wrongHost 404
+		@labDisabled {
+			path /lab/*
+			expression `"{$LONTRA_LAB_ENABLED:0}" != "1"`
+		}
+		respond @labDisabled 404
+
+		handle /streamotter/* {
+			reverse_proxy {$GATEWAY_UPSTREAM:gateway:7400} {
+				import verified_headers
+				header_up -X-Client-IP
+			}
+		}
+		handle /lab/1/socket.io/* {
+			@foreignOrigin1 not header Origin {$SITE_ORIGIN:https://streamotter.app}
+			respond @foreignOrigin1 403
+			reverse_proxy {$LAB_1_UPSTREAM:lab-1:7400} {
+				import verified_headers
+				header_up -X-Client-IP
+			}
+		}
+		handle /lab/2/socket.io/* {
+			@foreignOrigin2 not header Origin {$SITE_ORIGIN:https://streamotter.app}
+			respond @foreignOrigin2 403
+			reverse_proxy {$LAB_2_UPSTREAM:lab-2:7400} {
+				import verified_headers
+				header_up -X-Client-IP
+			}
+		}
+		handle /lab/3/socket.io/* {
+			@foreignOrigin3 not header Origin {$SITE_ORIGIN:https://streamotter.app}
+			respond @foreignOrigin3 403
+			reverse_proxy {$LAB_3_UPSTREAM:lab-3:7400} {
+				import verified_headers
+				header_up -X-Client-IP
+			}
+		}
+		handle /api/* {
+			request_body {
+				max_size 8KB
+			}
+			reverse_proxy {$FIELD_STATION_UPSTREAM:field-station:7402} {
+				import verified_headers
+				header_up X-Client-IP {client_ip}
+			}
+		}
+		handle {
+			respond 404
+		}
+	}
+}

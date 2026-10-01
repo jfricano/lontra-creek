@@ -28,6 +28,22 @@ ARM performance, shared-host capacity or actual Cloudflare behavior. The root's
 shared-host CI must provide the runtime evidence described below. The earlier
 standalone ARM setup rehearsal passed on PR20; it is not shared-host evidence.
 
+The integrated runtime candidate **8e07b31f0bcf935184cdc8ccc5e3136eb13d2bc8**
+passed [shared-host rehearsal 36359270595](https://github.com/jfricano/lontra-creek/actions/runs/36359270595)
+on **amd64 and arm64** on September 27. Both runs verified ten running services,
+zero published application ports, router-only edge membership, actual per-service
+caps and aggregate cgroup controls. They passed untrusted-peer/header-spoofing
+checks, independent visitor budgets, private-route and Origin restrictions,
+real Kafka/Lab scenarios, three concurrent leases and FIFO promotion. The
+snapshot/disposable verifier succeeded, rejected a deliberately corrupt backup,
+left the active checkpoint unchanged and cleaned its disposable resources.
+Lab-disabled routing was also tested while old benches were still running.
+All application, browser, standalone stack/Lab and setup checks passed at this
+revision. The shared rehearsal skips its two optional main-stack restart tests;
+the separate stack workflow supplies restart coverage. This is disposable CI
+evidence, not a deployed Oracle host or combined-app capacity result. No registry
+image was published; an ARM64 registry digest remains required for activation.
+
 ## One shared edge, separate private stacks
 
 The implemented adapter is `deploy/compose.shared.yaml` and
@@ -179,7 +195,8 @@ The existing 3 GB pre-touched Kafka heap was padded for presumed idle-reclamatio
 behavior. **Do not retain padding for that purpose on the shared host.** Older
 CI reported about 3.21 GiB broker RSS / 3.36 GiB total base stack with that heap;
 that excludes the new three-bench production load and is not a shared-host or
-capacity benchmark. No new heap/capacity measurement is claimed here.
+capacity benchmark. The short shared-host observations below cover the reduced
+heap during synthetic CI scenarios; they are not a capacity benchmark.
 
 Start the isolated synthetic-data sizing rehearsal with Kafka
 `-Xms512m -Xmx1536m`, without `AlwaysPreTouch`, then measure startup, normal load,
@@ -206,6 +223,27 @@ Memory+swap equals memory to avoid extra swap allowance. Kafka's shared overlay
 sets `-Xms512m -Xmx1536m` without pre-touch, independent of the standalone default.
 These are maximum bounds, not throughput reservations or measurements. The
 shared TLS edge is separately owned/capped by infrastructure.
+
+The September 27 rehearsal artifacts contain 11–13 Docker memory samples per
+application container after startup (roughly five seconds between sampling
+commands, plus command time). Sampled maxima in MiB:
+
+| Component | amd64 | arm64 | Configured ceiling |
+| --- | ---: | ---: | ---: |
+| Kafka | 498.10 | 469.00 | 2560 |
+| Field station | 102.90 | 100.70 | 448 |
+| Production gateway | 59.41 | 72.14 | 384 |
+| Private router | 26.43 | 16.36 | 128 |
+| Busiest bench | 88.41 | 86.66 | 256 each |
+| Busiest relay proxy | 56.11 | 58.75 | 64 each |
+
+These are Docker-reported container memory usage samples, not RSS, continuous
+peaks or an aggregate parent measurement. Build workers and the shared test edge
+are excluded. Startup precedes sampling, the run is short, and independent
+maxima must not be summed as a simultaneous host peak. In particular, one ARM64
+relay reached about **92% of its 64 MiB ceiling**; longer representative traffic,
+retention growth, CPU throttling and combined-app tests remain necessary before
+accepting production headroom. No OOM was found in the final container inspect.
 
 Every shared service also requires `LONTRA_CGROUP_PARENT=lontra.slice`. The
 provided `deploy/systemd/lontra.slice` defines an aggregate **5 GiB / 1 CPU /

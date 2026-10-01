@@ -194,3 +194,31 @@ set on X-Client-IP deletes the resulting header; field station consequently used
 the router's address. API routing must set the verified header without deleting
 it in the same proxy operation. Existing application/browser/base-stack/setup
 checks passed; corrected shared runtime rehearsal remains required.
+
+## Shared-host verified handoff (recorded 2026-09-30)
+
+PR21 runtime candidate `8e07b31f0bcf935184cdc8ccc5e3136eb13d2bc8` passed every
+check on September 27. [Shared run 36359270595](https://github.com/jfricano/lontra-creek/actions/runs/36359270595)
+passed on amd64 and arm64 after the verified-client-header fix: actual network
+and cgroup containment, spoof rejection, independent visitor budgets, private
+routes/Origin, seven real Kafka Lab tests, three leases/FIFO/address quota,
+snapshot/disposable restore, corruption rejection, unchanged active checkpoint,
+disposable cleanup and Lab-disabled routing. Two optional main-stack restart
+cases are skipped in this shared run; separate stack checks passed. Standard
+CI, all browser engines, separate Lab/stack architectures and ARM setup passed.
+
+Resource artifacts were retrieved and independently checked on September 30.
+Short sampled Docker memory maxima: Kafka 498.10MiB amd64 / 469.00MiB arm64;
+field station102.90/100.70; production gateway59.41/72.14; private router26.43/16.36.
+The busiest relay reached58.75MiB of64MiB on arm64. These post-startup samples
+exclude build workers and the shared edge, omit continuous/aggregate/long-duration
+capacity evidence, and do not certify fit with iYosi/Roost. See the readiness
+document for the per-component observations and remaining headroom validation.
+
+Remote main remains the owner's PR20 merge `2397e2c`; PR21 is mergeable. The
+separate primary checkout is now on `domain/streamotter-dev` and is preserved.
+This follow-up changes no host, DNS, registry or release switches. Public Lab
+stays off by default; Kafka ACL/development-mode disposition, combined-host
+acceptance, retained registry images/digest and encrypted off-host recovery
+remain infrastructure/release gates. The original workflow-folder path is no
+longer present; the previously ingested read-only operating rules are retained.

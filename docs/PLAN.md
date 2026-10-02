@@ -14,6 +14,12 @@ This repository holds StreamOtter's public home site and its live demo. The demo
 
 This document owns the site's scope, the demo's behavior and operating rules, and the launch criteria. StreamOtter's own behavior is defined by the library, not here. [DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md) holds the engineering steps to launch, and [HOSTING.md](HOSTING.md) the owner's account checklist.
 
+## Future site releases
+
+The [site release index](releases/README.md) and [V1.1 plan](releases/v1.1/README.md) own future site/demo work. The former V1.5 milestone is now V1.1. It adds Source failures inside `/lab/` and replaces the existing `/workbench/` tour with the actual published workbench sandbox, without another route or navigation item. `/playground/` remains the quick validator. These are planned changes; the route table and operating rules below describe the baseline until implementation and launch checks pass.
+
+Library policies, native acceptance, and package publication stay in StreamOtter's `docs/releases/v1.1/`; Lontra Creek owns visitor sessions, synthetic integration, site acceptance, and deployment. Their release decisions remain independent.
+
 ## Ground rules
 
 **Independent of the library repository.** This repository uses StreamOtter only as a published npm package, at an exact version, installed with npm the way any developer would. It never links to the library's source: no git submodules, workspace links, local paths, or checkouts, including for tests and docs. A problem the demo finds becomes an issue on the library, and this repository upgrades after a release ships (release candidates count). The one shared asset is the logo: copies of its source files in `assets/`.
@@ -146,7 +152,7 @@ Cost: $0 a month on the free tiers above, plus $14.20 a year for `streamotter.ap
 - Titles, descriptions, social previews, a sitemap, canonical URLs, and a useful not-found page exist. Page load and demo startup are measured on a named device and network profile.
 - HTTPS, WebSocket connectivity through the proxy, secrets handling, quotas, health monitoring, rollback, the budget alarm, and the fallback recording are verified on staging. Operating limits and the operator are recorded here.
 
-After launch, the proposed [V1.5 companion](./releases/v1.5/README.md) adds a Source failures track to the Failure Lab once StreamOtter publishes V1.5. It isn't a launch criterion.
+After launch, the planned [V1.1 companion](./releases/v1.1/README.md) adds Source failures and the existing Workbench page's sandbox replacement once an exact published StreamOtter release supplies the required capabilities. It is not a claim about current availability or a retroactive launch criterion.
 
 ## Open decisions
 

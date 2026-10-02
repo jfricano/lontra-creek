@@ -2,7 +2,7 @@
 
 **Owner amendment - October 1, 2026:** The next planned milestone is V1.1. Lontra Creek will replace the existing `/workbench/` page with an interactive workbench sandbox, without adding a page or navigation item. This planning amendment does not change the installed npm version or establish implementation, test, or deployment completion.
 
-**Date:** September 28, 2026 · **Revision:** 0.3 · **Status:** proposed scenario families, not executed tests.\
+**Date:** September 28, 2026 · **Revision:** 0.4 · **Status:** proposed scenario families, not executed tests.\
 **Companion:** `LONTRA_CREEK_V1_1_COMPANION_PLAN.md`.\
 **Site baseline:** `2397e2cbdfa3a32dda69920583ed9d18881ab863`.\
 **Native authority:** supplied StreamOtter V1.1 approved specification revision 1.0 plus ADR-15A/B/C and the owner amendment and F01–F48 acceptance plan.
@@ -62,8 +62,8 @@ The IDs identify **46 test families**, not the number of tests already written o
 | LC11-A37 | Unavailable Lab, queue full, idle, bfcache, and session expiry | Accurate notices and revalidation; no auto-approval/hidden lease extension; fallback labeled as recorded or static. | F25, F44 |
 | LC11-A38 | Local launcher and clean published-package install | Documented fixture/Kafka/Lab distinctions hold; launcher is local, persistent on stop, non-destructive by default, and never imports sibling source. | F46 |
 | LC11-A39 | Same-origin/private-host deployment and rollback | Actual ingress/private service boundaries, persistent volumes, TLS, lease cleanup, and compatible rollback verified before hosted release. | F38, F46, F48 |
-| LC11-A40 | Claim-to-evidence and release crosswalk | Site/library versions, scenario availability, local/hosted status, exclusions, known limits, and remaining unverified cases agree across all pages. | F43–F48 |
-| LC11-A41 | Actual sandbox UI and unchanged route | `/workbench/` serves the actual frontend from the pinned published package; no new page/navigation item. Connect, Define, validate, Preview, Inspect, and Export run against the visitor's synthetic session. No lookalike or recorded primary experience. | F44, F46 |
+| LC11-A40 | Claim-to-evidence and release crosswalk | Site/library versions, capability prerequisites, scenario availability, local/hosted status, exclusions, known limits, and unverified cases agree across pages. Independent milestones and release decisions are recorded; matching V1.1 labels are not a dependency. An unavailable mandatory feature does not count as completed site V1.1. | F43–F48 |
+| LC11-A41 | Actual sandbox UI, transferable examples, unchanged route | `/workbench/` serves the actual frontend from a pinned published package with the supported integration seam; no new page/navigation item. Connect, Define, validate, Preview, Inspect, and Export run in the visitor's synthetic session. Open with `station` alongside the pinned `init` example's `jobProgress`, a synthetic Kafka record beside its actual mapped state, and an In your app note. No lookalike or recorded primary experience. | F44, F46 |
 | LC11-A42 | Visitor isolation and stale session references | Two concurrent visitors cannot read or change each other's candidates, runtime state, traces, incidents, plans, or exports. Expired/reset/run-mismatched requests and late callbacks have no authority over a new study. | F36–F40 |
 | LC11-A43 | Restricted editor and private management boundary | Allowlisted candidate settings validate with the real published validator. Server-owned source/topic/handler/credential bindings cannot be overridden; no uploaded code, arbitrary Kafka/offset/file operations, production connections, native operator credentials, or generic management proxy. | F37–F39, F46 |
 | LC11-A44 | Sandbox lifetime, cleanup, queue, and cohost budget | Explicit allocation, reset, return, timeout, expiry, and reuse are tested. Bounded resources and fair admission protect other sessions, Lab benches, and the shared creek. Failed cleanup prevents reuse; same-study restart preserves obligations. | F25, F29–F30, F41–F43 |
@@ -93,9 +93,11 @@ Suggested user-experience target: complete the ordinary S03 path within a five-m
 ```yaml
 companion_milestone: Lontra Creek V1.1
 status: proposed
-plan_revision: '0.3'
+plan_revision: '0.4'
 site_commit: null
 native_package_versions: {}
+required_native_capabilities_and_available_versions: {}
+site_and_library_release_dispositions: {}
 native_spec_revision: '1.0'
 owner_amendment: '2026-10-01; reconciled 2026-10-02'
 mode: null # fixture-ui | real-kafka-local | container-ci | hosted-staging

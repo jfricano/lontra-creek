@@ -8,46 +8,24 @@
  * the network is back, fresh snapshots. Nothing about the gateway or other visitors
  * changes.
  *
- * Install it before the SDK loads: Socket.IO captures the WebSocket constructor
- * when its module is first evaluated.
+ * Base.astro installs the constructor in a classic head script, before bundled
+ * modules evaluate. A dynamic SDK import alone is insufficient: production chunk
+ * sharing can introduce an eager import before this module runs.
  */
-type Listener = (online: boolean) => void;
-
-let installed = false;
-let online = true;
-const sockets = new Set<WebSocket>();
-const listeners = new Set<Listener>();
+import { bootstrapTabletNetwork } from "./tablet-network-bootstrap.ts";
 
 export function installTabletNetwork(): void {
-  if (installed) return;
-  installed = true;
-  const Native = window.WebSocket;
-  class TabletWebSocket extends Native {
-    constructor(url: string | URL, protocols?: string | string[]) {
-      super(url, protocols);
-      sockets.add(this);
-      this.addEventListener("close", () => sockets.delete(this));
-      // No signal: the attempt fails, as it would out of range of a tower.
-      if (!online) this.close();
-    }
-  }
-  window.WebSocket = TabletWebSocket;
+  bootstrapTabletNetwork();
 }
 
 export function isOnline(): boolean {
-  return online;
+  return bootstrapTabletNetwork().online;
 }
 
 export function setOnline(value: boolean): void {
-  if (online === value) return;
-  online = value;
-  if (!value) {
-    for (const socket of [...sockets]) socket.close(4000, "Tablet lost signal");
-  }
-  for (const listener of listeners) listener(value);
+  bootstrapTabletNetwork().setOnline(value);
 }
 
-export function onNetworkChange(listener: Listener): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+export function onNetworkChange(listener: (online: boolean) => void): () => void {
+  return bootstrapTabletNetwork().onChange(listener);
 }

@@ -6,6 +6,7 @@ import figtreeLatin from "@fontsource-variable/figtree/files/figtree-latin-wght-
 import LockupHorizontal from "../assets/brand/lockup-horizontal.svg";
 import LockupStacked from "../assets/brand/lockup-stacked.svg";
 import { LINKS, LISTED_PAGES, RELEASE, TAGLINE } from "../site.ts";
+import { bootstrapTabletNetwork } from "../scripts/tablet-network-bootstrap.ts";
 
 interface Props {
   title: string;
@@ -26,6 +27,8 @@ const isCurrent = (href: string) => (current.startsWith(href) ? "page" : undefin
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Run before module evaluation, including SDK chunks shared by the build. -->
+    <script is:inline set:html={`(${bootstrapTabletNetwork.toString()})();`}></script>
     <title>{title}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />

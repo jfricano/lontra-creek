@@ -4,9 +4,9 @@
  * to someone else, and dropping or restoring the page's own connection. The home
  * page's live panel and the /field-station walkthrough share it.
  *
- * The SDK loads only through `openFieldClient`, after the tablet network is installed
- * (see tablet-network.ts). Nothing else may import "streamotter/client" at run time;
- * type imports are fine.
+ * Base installs the tablet network before any bundled modules evaluate (see
+ * tablet-network.ts). Pages create their SDK client through openFieldClient;
+ * the dynamic import is not itself an ordering guarantee in production builds.
  */
 import type { Client, Unlisten, WaitOptions } from "streamotter/client";
 import { channelVersions, type AppChannels } from "../generated/streamotter.generated.ts";
@@ -14,7 +14,7 @@ import { fetchConfig, requestBadge, type BadgeResponse, type FieldConfig, type R
 import { observe, type ChannelName, type ChannelParams, type View } from "./field-views.ts";
 import { installTabletNetwork, isOnline, onNetworkChange, setOnline } from "./tablet-network.ts";
 
-// Must run before the SDK is imported; see tablet-network.ts.
+// Reuse the head bootstrap; also supports isolated tests without Base.astro.
 installTabletNetwork();
 
 /** How long to wait, from the first watch(), for a first connection before saying the gateway can't be reached; the SDK keeps trying. */

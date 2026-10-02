@@ -36,6 +36,10 @@ test.describe("home page live panel", () => {
     // elements; scope to the root, which is the one hook other lanes can rely on
     // being unique.
     const root = page.locator("[data-live-creek]");
+    const other = await page.context().newPage();
+    await other.goto("/");
+    await expectAllCards(other, "live", 30_000);
+    const otherRevision = await other.locator("[data-card] [data-rev]").first().textContent();
 
     // Check for "stale" promptly: leaving the connection cut for long enough lets
     // the SDK's own automatic recovery give up and move a subscription to
@@ -43,15 +47,26 @@ test.describe("home page live panel", () => {
     await page.locator("[data-drop]").click();
     await expect(root).not.toHaveAttribute("data-connection", "connected", { timeout: 10_000 });
     await expectAllCards(page, "stale", 8_000);
+    const frozenRevisions = await page.locator("[data-card] [data-rev]").allTextContents();
+    const frozenClock = await page.locator("[data-clock]").textContent();
 
     // The "weren't replayed" note only appears when a newer revision arrived
     // while the page was offline. The fixture advances one reading every 2s,
     // so hold the drop for 5s here (well past one tick) to make a missed
     // revision certain before restoring, rather than racing the fixture.
-    await page.waitForTimeout(5_000);
+    for (let tick = 0; tick < 10; tick++) {
+      await page.waitForTimeout(500);
+      expect(await page.locator("[data-card] [data-rev]").allTextContents()).toEqual(frozenRevisions);
+      await expect(page.locator("[data-clock]")).toHaveText(frozenClock!);
+      await expect(root).not.toHaveAttribute("data-connection", "connected");
+    }
+    await expect(other.locator("[data-live-creek]")).toHaveAttribute("data-connection", "connected");
+    await expect(other.locator("[data-card] [data-rev]").first()).not.toHaveText(otherRevision!);
 
     await page.locator("[data-restore]").click();
     await expectAllCards(page, "live", 30_000);
     await expect(page.locator("[data-note]")).toContainText("weren't replayed", { timeout: 30_000 });
+    expect(await page.locator("[data-card] [data-rev]").allTextContents()).not.toEqual(frozenRevisions);
+    await other.close();
   });
 });

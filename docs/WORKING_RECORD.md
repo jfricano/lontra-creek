@@ -222,3 +222,31 @@ stays off by default; Kafka ACL/development-mode disposition, combined-host
 acceptance, retained registry images/digest and encrypted off-host recovery
 remain infrastructure/release gates. The original workflow-folder path is no
 longer present; the previously ingested read-only operating rules are retained.
+
+## Production connection cut and walkthrough layout (2026-10-02)
+
+Reproduced the owner's report on streamotter.dev: dropping the visitor's
+connection changed the controls while revisions continued advancing and the
+SDK remained connected. Production chunk sharing introduced an eager SDK import
+before the old WebSocket wrapper ran. Base now installs a self-contained classic
+head script before bundled modules evaluate; later imports reuse its per-page
+controller. Existing sockets close, offline retries fail, and restoring permits
+fresh snapshots. Vite's exact `vite-hmr` development protocol is exempt so the
+demo cut does not reload the page and erase its offline state.
+
+At the owner's suggestion, the walkthrough's actual SDK event timeline now sits
+inside the current-chapter card below navigation. It has a bounded scroll area
+and wraps long revisions on mobile. The code disclosure remains below both cards;
+cards follow their content instead of stretching to match the map.
+
+Added fixture-backed production preview mode and a Browser CI step running the
+home/walkthrough checks against built bundles on all three engines. The home
+regression checks revisions and the study clock freeze for five seconds while a
+second page keeps receiving data, then checks fresh recovery. Local validation:
+119 unit tests, typecheck, 31 development browser checks and nine production
+browser checks passed using installed Chrome; 311 built local links/assets passed.
+Desktop 1280px and mobile 375px previews confirmed timeline placement, wrapping,
+scrolling and working drop/restore controls. Internal tech-lead review approved.
+Firefox/WebKit and the remaining required CI checks are release gates for the PR;
+this record does not claim merge or deployment. Work was isolated from the owner's
+uncommitted release-planning changes in the primary checkout.

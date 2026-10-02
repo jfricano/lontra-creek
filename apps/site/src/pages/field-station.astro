@@ -24,20 +24,29 @@ const chapters = ["Dawn survey", "The creek rises", "Into Slate Canyon", "The pr
           <button class="btn primary" type="submit" disabled data-sighting-submit>Log sighting</button>
         </form><ol data-notebook-entries></ol></article>
         <nav class="chapter-controls" aria-label="Chapter navigation"><button class="btn" data-chapter-back type="button">Back</button><span data-chapter-count>1 of 6</span><button class="btn primary" data-chapter-next type="button">Next</button></nav>
+        <details class="chapter-events" open>
+          <summary>Live SDK events</summary>
+          <ol tabindex="0" data-walk-log aria-label="SDK state timeline"></ol>
+          <p>The public SDK exposes revisions and snapshots; the timeline reports only events received by this browser.</p>
+        </details>
       </section>
       <section class="content-card" aria-labelledby="gauge-title"><h2 id="gauge-title">Kestrel Bend · LC-02</h2><p>Subscription <strong data-walk-state>idle</strong></p><dl class="gauge-values"><div><dt>Flow</dt><dd><span data-walk-flow>—</span> cfs</dd></div><div><dt>Water</dt><dd><span data-walk-temp>—</span> °C</dd></div><div><dt>Revision</dt><dd data-walk-revision>—</dd></div><div><dt>Snapshot count</dt><dd data-walk-epoch>0</dd></div></dl><p>Snapshot count labels observed synchronization attempts; it is not the gateway's internal epoch ID.</p>
         <svg viewBox="0 0 520 310" role="img" aria-label="Schematic of the fictional 14.2 kilometre Lontra Creek, with four gauge stations." class="creek-map"><path d="M75 25 C370 50 40 115 300 140 S80 240 410 280" fill="none" stroke="var(--accent)" stroke-width="8"/>{REACHES.map((reach,i)=><g><circle cx={70+i*57} cy={30+i*39} r="5" fill="var(--ink)"/><text x={82+i*57} y={24+i*39} font-size="12" fill="var(--ink)">{reach.name}</text></g>)}</svg>
         <ul>{STATIONS.map(station=><li>{station.id} · {station.name}</li>)}</ul><p data-map-holt hidden></p>
       </section>
     </div>
-    <details class="content-card" open><summary>Under the hood · actual SDK events</summary><ol tabindex="0" data-walk-log aria-label="SDK state timeline"></ol><p>The public SDK exposes revisions and snapshots; the timeline reports only events received by this browser.</p><pre tabindex="0"><code data-chapter-code></code></pre></details>
+    <details class="content-card walkthrough-code" open><summary>Under the hood · walkthrough code</summary><pre tabindex="0"><code data-chapter-code></code></pre></details>
   </div>
 </ContentPage>
 <script>import "../scripts/walkthrough.ts";</script>
 <style>
+/* Each panel follows its content rather than stretching to its taller neighbour. */
+.panel-grid { align-items:start; }
+.chapter-events { margin-top:28px; padding-top:20px; border-top:1px solid var(--line); }
+.walkthrough-code { margin-top:24px; }
 .chapters { display:flex; flex-wrap:wrap; gap:8px 20px; margin-block:24px; } .chapters a[aria-current] { font-weight:800; text-decoration-thickness:3px; }
 .chapter-controls { display:flex; gap:12px; justify-content:space-between; align-items:center; margin-top:28px; }
 .gauge-values { display:grid; grid-template-columns:1fr 1fr; gap:20px; } .gauge-values dd { margin:4px 0; font-family:var(--mono); overflow-wrap:anywhere; }
-.creek-map { width:100%; } [data-walk-log] { max-height:240px; overflow:auto; font: .8rem/1.6 var(--mono); }
+.creek-map { width:100%; } [data-walk-log] { max-height:240px; overflow:auto; overflow-wrap:anywhere; font: .8rem/1.6 var(--mono); }
 [data-walk-state="stale"] { color:var(--stale); } form button { margin-top:20px; }
 </style>

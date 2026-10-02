@@ -2,6 +2,7 @@
  * Local development: the field station (gateway on the simulation replay, workbench,
  * site API) and the site, together. Ctrl+C stops both.
  *   npm run dev
+ *   node scripts/dev.mjs --preview  # build + preview with the same fixture backend
  *
  * Environment (all optional; defaults match today's ports): LONTRA_SITE_PORT
  * (4321), LONTRA_GATEWAY_PORT (7400), LONTRA_WORKBENCH_PORT (7401), LONTRA_API_PORT
@@ -10,7 +11,7 @@
  * block and a second stack can run alongside this one (docs/TEAM_PLAN.md, F.1;
  * README.md, Develop).
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 
 const children = [];
@@ -39,7 +40,21 @@ function stop() {
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
 
-run("field", process.execPath, ["scripts/dev.ts"], new URL("../apps/field-station/", import.meta.url));
 const astro = createRequire(new URL("../apps/site/package.json", import.meta.url)).resolve("astro/package.json").replace(/package\.json$/, "bin/astro.mjs");
+const preview = process.argv.includes("--preview");
+const siteDirectory = new URL("../apps/site/", import.meta.url);
+if (preview) {
+  // Exercise the deployed bundles against the same local fixture backend.
+  const built = spawnSync(process.execPath, [astro, "build"], {
+    cwd: siteDirectory,
+    stdio: "inherit",
+    // Preview inherits Vite's /api proxy; the fixture API is same-origin-only.
+    env: { ...process.env, ASTRO_TELEMETRY_DISABLED: "1", PUBLIC_FIELD_STATION_ORIGIN: "" }
+  });
+  if (built.status !== 0) process.exit(built.status ?? 1);
+}
+run("field", process.execPath, ["scripts/dev.ts"], new URL("../apps/field-station/", import.meta.url));
 // --ignore-lock keeps Astro in the foreground: Astro 7 detaches its dev server when it detects an AI agent.
-run("site", process.execPath, [astro, "dev", "--ignore-lock"], new URL("../apps/site/", import.meta.url));
+run("site", process.execPath, preview
+  ? [astro, "preview", "--ignore-lock", "--host", "127.0.0.1", "--port", process.env["LONTRA_SITE_PORT"] || "4321"]
+  : [astro, "dev", "--ignore-lock"], siteDirectory);

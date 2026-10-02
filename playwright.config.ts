@@ -13,6 +13,7 @@ import { defineConfig, devices } from "@playwright/test";
 const SITE_PORT = Number(process.env["LONTRA_SITE_PORT"] ?? 4321);
 const SITE_URL = `http://127.0.0.1:${SITE_PORT}`;
 const CI = process.env["CI"] !== undefined;
+const PRODUCTION = process.env["LONTRA_BROWSER_MODE"] === "production";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -30,9 +31,9 @@ export default defineConfig({
     { name: "webkit", use: { ...devices["Desktop Safari"] } }
   ],
   webServer: {
-    command: "npm run dev",
+    command: PRODUCTION ? "node scripts/dev.mjs --preview" : "npm run dev",
     url: SITE_URL,
-    reuseExistingServer: !CI,
+    reuseExistingServer: !CI && !PRODUCTION,
     // The field station and Astro both need to start; generous on a cold cache.
     timeout: 120_000
   }

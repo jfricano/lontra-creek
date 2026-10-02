@@ -39,6 +39,14 @@ npm run dev        # field station + site at http://127.0.0.1:4321
 
 `npm run dev` runs the field station without Kafka, replaying the simulation through a StreamOtter gateway in development mode, one study tick every two seconds, with the workbench at http://127.0.0.1:7401 (its one-time token is printed at startup).
 
+Browser checks run with `npm run test:browser`. To verify connection loss and recovery against built production bundles using the same fixture backend:
+
+```bash
+LONTRA_BROWSER_MODE=production npm run test:browser -- e2e/home.spec.ts e2e/walkthrough.spec.ts
+```
+
+`node scripts/dev.mjs --preview` builds and serves that fixture-backed production preview for manual checks. It uses the same port variables below.
+
 Four environment variables move the whole dev stack to a different port block, so more than one can run at once on the same machine:
 
 | Variable | Default | What it moves |

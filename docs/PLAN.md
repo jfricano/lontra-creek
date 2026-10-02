@@ -146,6 +146,8 @@ Cost: $0 a month on the free tiers above, plus $14.20 a year for `streamotter.ap
 - Titles, descriptions, social previews, a sitemap, canonical URLs, and a useful not-found page exist. Page load and demo startup are measured on a named device and network profile.
 - HTTPS, WebSocket connectivity through the proxy, secrets handling, quotas, health monitoring, rollback, the budget alarm, and the fallback recording are verified on staging. Operating limits and the operator are recorded here.
 
+After launch, the proposed [V1.5 companion](./releases/v1.5/README.md) adds a Source failures track to the Failure Lab once StreamOtter publishes V1.5. It isn't a launch criterion.
+
 ## Open decisions
 
 - Confirm the hosting above (Oracle Cloud Always Free and Cloudflare), or choose the AWS fallback.

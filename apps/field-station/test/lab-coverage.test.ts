@@ -12,7 +12,7 @@
  */
 import assert from 'node:assert/strict';
 import type { Server } from 'node:http';
-import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -255,6 +255,24 @@ describe('the publisher gate and study discard', () => {
     // Discarding again (a retried reset, after the ledger is gone) is harmless and keeps the first record.
     assert.deepEqual(await s.registry.discard(1, S1), summary);
     assert.equal(await readFile(join(s.dataDir, 'lab', 'lab-1', 'summaries', `${S1}.json`), 'utf8'), text);
+  });
+
+  test('a failed ledger open is not kept, and discard goes on past an unreadable ledger', async t => {
+    const s = await studies(t); const dir = join(s.dataDir, 'lab', 'lab-1', 'studies', S1);
+    await mkdir(dir, { recursive: true }); await writeFile(join(dir, 'ledger.json'), '{"format":1,');
+    s.registry.open(1, S1);
+    await assert.rejects(s.registry.ledger(1, S1), SyntaxError);
+    // Repaired (or a transient read error passed): the next call reads the file again.
+    await writeFile(join(dir, 'ledger.json'), JSON.stringify({ format: 1, bench: 1, studyId: S1, entries: [], obligations: [], barriers: [] }));
+    assert.equal((await s.registry.ledger(1, S1)).entries().length, 0);
+    // A ledger that stays unreadable doesn't stop the study's discard, so the bench's reset can finish.
+    const dir2 = join(s.dataDir, 'lab', 'lab-1', 'studies', S2);
+    await mkdir(dir2, { recursive: true }); await writeFile(join(dir2, 'ledger.json'), '{"format":1,');
+    s.registry.open(1, S2);
+    await assert.rejects(s.registry.ledger(1, S2), SyntaxError);
+    await s.registry.close(1, S2);
+    assert.deepEqual((await s.registry.discard(1, S2)).entries, []);
+    await assert.rejects(stat(join(s.dataDir, 'lab', 'lab-1', 'studies', S2)));
   });
 
   test('opening a new study sweeps strays a crash left on disk', async t => {

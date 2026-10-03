@@ -102,7 +102,8 @@ export class LabStudies {
     if (this.current(bench) === studyId) throw new StudyClosedError();
     const study = this.#current.get(bench)?.studyId === studyId ? this.#current.get(bench)! : null;
     const path = join(this.#dir(bench, studyId), 'ledger.json');
-    const ledger = study?.ledger ? await study.ledger : await FileCoverageLedger.open(path, bench, studyId, this.#now).catch(() => null);
+    // An unreadable ledger doesn't stop the discard: the study is going either way.
+    const ledger = await (study?.ledger ?? FileCoverageLedger.open(path, bench, studyId, this.#now)).catch(() => null);
     await ledger?.discard();
     const dir = join(this.#root, `lab-${bench}`, 'summaries'); const file = join(dir, `${studyId}.json`);
     // Written once: a retried discard, when the ledger is already gone, never replaces the first record with an empty one.
@@ -127,7 +128,11 @@ export class LabStudies {
   ledger(bench: BenchId, studyId: string): Promise<FileCoverageLedger> {
     const study = this.#current.get(bench);
     if (!study || study.studyId !== studyId || study.state !== 'open') return Promise.reject(new StudyClosedError());
-    study.ledger ??= FileCoverageLedger.open(join(this.#dir(bench, studyId), 'ledger.json'), bench, studyId, this.#now);
+    if (!study.ledger) {
+      const opening = FileCoverageLedger.open(join(this.#dir(bench, studyId), 'ledger.json'), bench, studyId, this.#now);
+      // A failed open isn't kept: the next call tries the file again.
+      study.ledger = opening; opening.catch(() => { if (study.ledger === opening) study.ledger = null; });
+    }
     return study.ledger;
   }
   /** What bench N's snapshots serve: the higher revision of the shared view and the open study's own write. */

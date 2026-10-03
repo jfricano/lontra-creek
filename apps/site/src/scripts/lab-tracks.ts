@@ -55,9 +55,11 @@ export function mountTracks(root: ParentNode): Tracks | null {
     event.preventDefault();
     choose({ track, scenario: id });
   });
-  // Back, forward, or an edited hash: follow the URL.
-  window.addEventListener("popstate", () => apply(selectionFromUrl(location), true));
-  window.addEventListener("hashchange", () => apply(selectionFromUrl(location), true));
+  // Back, forward, or an edited hash: follow the URL. A jump to another anchor on the page, such as a
+  // scenario's bench controls, keeps the current track rather than falling back to the default.
+  const follow = (): void => { if (/^#?(connections|source-failures)?$/.test(location.hash)) apply(selectionFromUrl(location), true); };
+  window.addEventListener("popstate", follow);
+  window.addEventListener("hashchange", follow);
   apply(selection, true);
 
   const note = root.querySelector<HTMLElement>("[data-lab-capability]");

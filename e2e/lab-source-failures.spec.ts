@@ -123,6 +123,10 @@ test("the chooser and scenario links work from the keyboard without moving focus
   await expect(link).toBeFocused();
   expect(new URL(page.url()).searchParams.get("scenario")).toBe("conflicting-readings");
   expect(await page.evaluate(() => (window as unknown as { marker?: boolean }).marker)).toBe(true);
+  // Jumping to the bench controls keeps the track.
+  await page.locator('[data-lab-track="source-failures"] [data-lab-scenario="fouled-sensor"] a[href="#control-fouled-sensor"]').click();
+  await expect(source).toHaveAttribute("aria-current", "true");
+  await expect(page.locator('[data-lab-track="source-failures"]')).toBeVisible();
   await page.goBack().catch(() => undefined); // replaceState: Back leaves /lab/ rather than stepping through selections
   expect(posts(requests)).toEqual([]);
 });

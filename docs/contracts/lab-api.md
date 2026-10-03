@@ -4,6 +4,8 @@ September 26, 2026 · The interfaces between the Failure Lab backend (`be-lab`),
 
 [PLAN.md](../PLAN.md#the-failure-lab-lab) owns what the Lab is for and what visitors see; [DEPLOYMENT_PLAN.md](../DEPLOYMENT_PLAN.md#6-the-failure-lab-ships-with-the-launch) workstream 6 owns the engineering order. This document fixes the interfaces those build against: routes, payloads, timings, and security rules. Where it states StreamOtter's behavior, the source is the pinned release, `streamotter@0.1.0-rc.3`, as published on npm (its `src/` is installed under `node_modules/@streamotter/*`). Changes to this contract go through `lead`; an implementation that needs a different interface says so in its pull request and updates this file in the same pull request.
 
+V1.1 amends this contract additively (source-failure intents, current-incident projection, operation status, capabilities, and study restart versus reset); see the [V1.1 implementation plan](../releases/v1.1/IMPLEMENTATION_PLAN.md) and its decisions. The workbench sandbox has its own [contract](sandbox-api.md).
+
 Section 1 fixes the relay-cut mechanism's shape, as E2.0's spike (PR #17, `spike/lab-relay-cut`) built it. Section 9 says what the contract requires of it regardless of implementation.
 
 ## 1. The pieces

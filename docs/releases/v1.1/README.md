@@ -14,6 +14,15 @@ Start with the creek's `station` channel alongside the pinned `streamotter init`
 2. [Acceptance plan](LONTRA_CREEK_V1_1_ACCEPTANCE_PLAN.md): LC11-A01–A46, including six sandbox families.
 3. [Implementation handoff](LONTRA_CREEK_V1_1_HANDOFF.md).
 
+## Implementation records
+
+- [Implementation plan and work breakdown](IMPLEMENTATION_PLAN.md): the pull-request sequence, branching, team, and gates.
+- [Status](STATUS.md): the live tracker of slices, gates, and acceptance evidence.
+- [Slice A baseline](BASELINE.md): compatibility and exposure review of the current `main`.
+- Decisions: [LC11-ADR-01 coverage ledger and guard](decisions/LC11-ADR-01-coverage-ledger-and-guard.md), [LC11-ADR-02 restart and reset](decisions/LC11-ADR-02-study-restart-and-reset.md), [LC11-ADR-03 private operations and Kafka authority](decisions/LC11-ADR-03-private-operations-and-kafka-authority.md), [LC11-ADR-04 workbench sandbox](decisions/LC11-ADR-04-workbench-sandbox-architecture.md).
+- [Requirements on published StreamOtter packages](UPSTREAM_REQUIREMENTS.md).
+- [Workbench sandbox API contract](../../contracts/sandbox-api.md) (draft).
+
 ## Separate ownership and release gates
 
 [StreamOtter](https://github.com/jfricano/StreamOtter/tree/3c0443efcab3053111e997e4aeb7c12ede02edaf/docs/releases/v1.1) owns native failure handling, F01–F48, the approved specification/ADRs, and the published workbench frontend/integration contract. Lontra Creek consumes an exact published npm release; missing support remains an upstream dependency, not permission to link sibling runtime source or emulate native success.

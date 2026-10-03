@@ -1,8 +1,46 @@
 ---
 import ContentPage from "../components/ContentPage.astro";
+import type { LabTrack } from "../../../field-station/src/lab/contract.ts";
+import { DELIVERY_LABELS, SCENARIOS, TRACKS, TRACK_LABELS } from "../lab-catalog.ts";
+import { AVAILABILITY_ICONS, scenarioAvailability } from "../scripts/lab-catalog-model.ts";
+
+const tracks: { id: LabTrack; icon: string; intro: string }[] = [
+  { id: "connections", icon: "⇄", intro: "What happens between Kafka, the gateway, and browsers: a cut relay, a client that can't keep up, a restart. Fouled sensor bridges to the other track." },
+  { id: "source-failures", icon: "⚠", intro: "What happens when a record itself is bad: pause and retry, quarantine, guarded continuation, evaluation and reprocessing, and cases where the safe answer is to hold. Each story has one implementation; Fouled sensor appears in both tracks with one set of controls." }
+];
+// Before the backend answers, and without JavaScript: unavailable, with a reason that holds either way.
+const pending = { kind: "pending" } as const;
 ---
 <ContentPage title="What happens when it breaks?" eyebrow="Failure Lab" description="Borrow an isolated bench for five minutes. Break its sensor or connection, then watch the real gateway report what happened.">
   <p class="status-note">Lontra Creek is fictional. A working Lab uses real Kafka, a real gateway, and your browser SDK. Failure actions affect only your leased bench.</p>
+  <nav class="lab-tracks" aria-label="Lab tracks" data-lab-tracks>
+    {tracks.map(track => <a class="lab-track-link" href={`#${track.id}`} data-lab-track-link={track.id}><span aria-hidden="true">{track.icon}</span> {TRACK_LABELS[track.id]}</a>)}
+  </nav>
+  <noscript><p class="status-note">Without JavaScript this page explains every scenario, but it can't check the backend, borrow a bench, or start anything.</p></noscript>
+  {tracks.map(track => (
+    <section class="lab-track" id={track.id} data-lab-track={track.id} aria-labelledby={`${track.id}-title`}>
+      <h2 id={`${track.id}-title`}>{TRACK_LABELS[track.id]}</h2>
+      <p>{track.intro}</p>
+      {track.id === "source-failures" && <p class="lab-capability" data-lab-capability>Every new exercise stays unavailable until this backend reports that it can run it. Of these nine stories, this version of the site runs only Fouled sensor.</p>}
+      <ol class="lab-catalog">
+        {TRACKS[track.id].map(id => {
+          const entry = SCENARIOS[id]; const availability = scenarioAvailability(id, pending); const key = `${track.id}-${id}`;
+          return (
+            <li class="lab-scenario" id={key} data-lab-scenario={id}>
+              <p class="lab-selected" data-lab-selected-mark hidden><span aria-hidden="true">◆</span> Linked scenario</p>
+              <h3><a href={`?scenario=${id}#${track.id}`} data-lab-scenario-link>{entry.title}</a></h3>
+              {entry.delivery && <p class="lab-meta"><span class="mono">{entry.story}</span> · <span class="lab-delivery" data-delivery={entry.delivery}>{DELIVERY_LABELS[entry.delivery]}</span>{entry.note && <> · {entry.note}</>}</p>}
+              <p>{entry.establishes}</p>
+              <p class="lab-availability" id={`${key}-availability`} data-lab-availability data-state={availability.state}><span aria-hidden="true" data-lab-availability-icon>{AVAILABILITY_ICONS[availability.state]}</span> <span data-lab-availability-text>{availability.text}</span></p>
+              {entry.controls
+                ? <p><a href={`#${entry.controls}`}>Bench controls: {entry.title.split(":")[0]}</a></p>
+                : <button type="button" class="button button-quiet" aria-disabled="true" aria-describedby={`${key}-availability`} data-lab-start={id}>Start this scenario</button>}
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  ))}
   <section data-lab>
     <p role="status" data-lab-message>Checking the Lab…</p>
     <p data-lab-pool></p>
@@ -14,13 +52,33 @@ npm install
 npm run dev</code></pre><p>The fixture demo does not include failure benches. The repository's <a href="https://github.com/jfricano/lontra-creek/blob/main/docs/LOCAL_LAB.md">local Lab instructions</a> show how to build and run the Kafka stack with three isolated benches.</p></aside>
     <div class="panel-grid">
       <section class="content-card"><h2>Your bench</h2><p data-lab-state>Not leased.</p><p>LC-03 subscription: <strong data-lab-view-state>idle</strong></p><dl><dt>Stage</dt><dd data-lab-stage>—</dd><dt>Flow</dt><dd data-lab-flow>—</dd><dt>Revision</dt><dd data-lab-revision>—</dd></dl><p data-lab-snapshot-note></p><p aria-live="polite" data-lab-outcome></p></section>
-      <section class="content-card"><h2>Four controlled failures</h2><fieldset data-lab-actions disabled><legend>Actions on your leased bench</legend>
-        <h3>Fouled sensor</h3><p>Remove LC-03's calibration. The map handler fails and pauses at the record; restoring the table and resuming retries that same record.</p><button class="button button-quiet" data-lab-action="sensor.foul">Foul sensor</button> <button class="button button-quiet" data-lab-action="sensor.restore">Restore calibration</button> <button class="button button-quiet" data-lab-action="source.resume">Resume source</button>
-        <h3>Flash flood takes the relay</h3><p>Cut only this bench's Kafka path. Views become stale, then recover after restoration. Watch the feed for this run's actual timing.</p><button class="button button-quiet" data-lab-action="relay.cut">Cut relay</button> <button class="button button-quiet" data-lab-action="relay.restore">Restore relay</button>
-        <h3>Laptop on a satellite link</h3><p>A separate client stops acknowledging frames. Its receipt timeout disconnects it; your own view keeps flowing.</p><button class="button button-quiet" data-lab-action="satellite.start">Start slow client</button>
-        <h3>Relay restart</h3><p>Restart your gateway. The SDK reconnects and takes a fresh snapshot.</p><button class="button button-quiet" data-lab-action="gateway.restart">Restart gateway</button>
+      <section class="content-card"><h2>Bench controls</h2><fieldset data-lab-actions disabled><legend>Actions on your leased bench</legend>
+        <h3 id="control-fouled-sensor">Fouled sensor</h3><p>Remove LC-03's calibration. The map handler fails and pauses at the record; restoring the table and resuming retries that same record.</p><button class="button button-quiet" data-lab-action="sensor.foul">Foul sensor</button> <button class="button button-quiet" data-lab-action="sensor.restore">Restore calibration</button> <button class="button button-quiet" data-lab-action="source.resume">Resume source</button>
+        <h3 id="control-relay-cut">Flash flood takes the relay</h3><p>Cut only this bench's Kafka path. Views become stale, then recover after restoration. Watch the feed for this run's actual timing.</p><button class="button button-quiet" data-lab-action="relay.cut">Cut relay</button> <button class="button button-quiet" data-lab-action="relay.restore">Restore relay</button>
+        <h3 id="control-slow-client">Laptop on a satellite link</h3><p>A separate client stops acknowledging frames. Its receipt timeout disconnects it; your own view keeps flowing.</p><button class="button button-quiet" data-lab-action="satellite.start">Start slow client</button>
+        <h3 id="control-relay-restart">Relay restart</h3><p>Restart your gateway. The SDK reconnects and takes a fresh snapshot.</p><button class="button button-quiet" data-lab-action="gateway.restart">Restart gateway</button>
       </fieldset></section>
     </div>
+    <section class="content-card lab-incident" data-lab-incident aria-labelledby="incident-title">
+      <h2 id="incident-title">Current incident</h2>
+      <div data-lab-incident-empty>
+        <p><strong>No incident to show.</strong> This panel shows a quarantine incident only when the backend reports one for your leased bench. It never shows sample data.</p>
+        <p data-lab-incident-reason>Until this backend reports that it supports incidents, this panel stays empty.</p>
+        <p class="muted">Fouled sensor's pause is a held source, not a quarantine incident: follow it in Your bench and the gateway feed.</p>
+      </div>
+      <div data-lab-incident-body hidden>
+        <p class="lab-incident-head"><strong data-lab-incident-label></strong>: <span data-lab-incident-summary></span></p>
+        <div class="lab-incident-areas">
+          <section aria-labelledby="incident-view-title"><h3 id="incident-view-title">Application view</h3><p class="muted">What your page's SDK reports.</p>
+            <dl><dt>Connection</dt><dd data-lab-incident-connection>—</dd><dt>LC-03 subscription</dt><dd data-lab-incident-subscription>—</dd><dt>Last observed</dt><dd data-lab-incident-last>—</dd></dl><p data-lab-incident-stale></p></section>
+          <section aria-labelledby="incident-disposition-title"><h3 id="incident-disposition-title">Record disposition</h3><p class="muted">What the backend observed.</p>
+            <dl><dt>Failure</dt><dd data-lab-incident-failure></dd><dt>Policy</dt><dd data-lab-incident-policy></dd><dt>Evidence</dt><dd data-lab-incident-evidence></dd><dt>Source</dt><dd data-lab-incident-source></dd><dt>Recovery</dt><dd data-lab-incident-recovery></dd><dt data-lab-incident-evaluation-term>Evaluation</dt><dd data-lab-incident-evaluation></dd><dt data-lab-incident-reprocess-term>Reprocessing</dt><dd data-lab-incident-reprocess></dd><dt>Next supported action</dt><dd data-lab-incident-next></dd></dl>
+            <details data-lab-incident-detail><summary>Source coordinates and fingerprints</summary><dl data-lab-incident-detail-list></dl></details></section>
+          <section aria-labelledby="incident-steps-title"><h3 id="incident-steps-title">Observed steps</h3><p class="muted">Oldest first. Missing steps stay missing.</p>
+            <ol tabindex="0" aria-labelledby="incident-steps-title" data-lab-incident-steps></ol></section>
+        </div>
+      </div>
+    </section>
     <section class="content-card"><h2>Redacted gateway feed</h2><p>Actual actions, source states, and traces from your current lease. No payloads, credentials, or other visitors' data.</p>
       <p>The scenario view shows what each scenario turns on: your actions, failed or rejected traces, source state changes, the LC-03 record a fouled sensor stopped on (topic, partition, and offset), and trace gaps. A record retried after Resume is marked <strong>Retried</strong>. “Mapper returned” means the bench's map handler finished for that record; it isn't proof that the gateway delivered it or committed its offset.</p>
       <label class="feed-toggle"><input type="checkbox" data-lab-feed-all> Show the full feed, including every <code>ok</code> trace</label>
@@ -28,4 +86,37 @@ npm run dev</code></pre><p>The fixture demo does not include failure benches. Th
   </section>
 </ContentPage>
 <script>import "../scripts/lab.ts";</script>
-<style>.lab-controls { display:flex; gap:12px; flex-wrap:wrap; margin-block:20px; } fieldset { border:0; padding:0; min-width:0; } fieldset button { margin-block:4px; } [data-lab-feed] { max-height:420px; overflow:auto; font: .8rem/1.6 var(--mono); } dd { margin:4px 0 16px; overflow-wrap:anywhere; } .feed-toggle { display:flex; gap:8px; align-items:center; margin-block:12px; } .feed-retried { font-weight:700; border-inline-start:3px solid currentColor; padding-inline-start:6px; }</style>
+<style>.lab-controls { display:flex; gap:12px; flex-wrap:wrap; margin-block:20px; } fieldset { border:0; padding:0; min-width:0; } fieldset button { margin-block:4px; } [data-lab-feed] { max-height:420px; overflow:auto; font: .8rem/1.6 var(--mono); } dd { margin:4px 0 16px; overflow-wrap:anywhere; } .feed-toggle { display:flex; gap:8px; align-items:center; margin-block:12px; }
+.lab-tracks { display:flex; flex-wrap:wrap; gap:8px; margin-block:28px 8px; }
+.lab-track-link { display:inline-flex; align-items:center; gap:8px; padding:10px 16px; border:1px solid var(--line-strong); border-radius:999px; color:var(--ink); text-decoration:none; font-weight:650; background:var(--surface); }
+.lab-track-link:hover { border-color:var(--accent); color:var(--accent); }
+.lab-track-link[aria-current="true"] { background:var(--button-bg); color:var(--button-ink); border-color:transparent; }
+.lab-track-link[aria-current="true"]::after { content:"· selected"; font-weight:500; }
+.lab-catalog { list-style:none; padding:0; margin:16px 0 0; display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr)); gap:16px; }
+.lab-scenario { padding:18px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); min-width:0; scroll-margin-top:96px; }
+.lab-scenario[aria-current="true"] { border:2px solid var(--accent); padding:17px; }
+.lab-scenario h3 { margin-block:4px 6px; } .lab-scenario h3 a { color:inherit; }
+.lab-meta, .lab-selected { font:600 .78rem/1.4 var(--mono); color:var(--ink-2); }
+.lab-selected { color:var(--accent); }
+.lab-delivery { white-space:nowrap; }
+.lab-delivery[data-delivery="local-ci"] { border-bottom:1px dashed currentColor; }
+.lab-availability { font-size:.92rem; color:var(--ink-2); }
+.lab-availability[data-state="unavailable"], .lab-availability[data-state="pending"] { padding-inline-start:10px; border-inline-start:3px solid var(--line-strong); }
+.lab-scenario button[aria-disabled="true"] { opacity:.6; cursor:not-allowed; }
+.lab-capability { padding:12px 14px; background:var(--surface-2); border-radius:10px; }
+.lab-incident { margin-block:24px; }
+.lab-incident-areas { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:24px; }
+.lab-incident-areas > section { min-width:0; }
+[data-lab-incident-steps] { max-height:320px; overflow:auto; font:.8rem/1.6 var(--mono); padding-inline-start:20px; }
+details summary { cursor:pointer; font-weight:650; }
+@media (max-width:1000px) { .lab-incident-areas { grid-template-columns:1fr; } }
+</style>
+<style is:global>
+/* Elements the scripts create carry no scoping attribute, so their rules are global (this page only). */
+.feed-retried { font-weight:700; border-inline-start:3px solid currentColor; padding-inline-start:6px; }
+.lab-mark { display:inline-flex; gap:6px; align-items:baseline; font-weight:650; }
+.lab-mark[data-tone="held"] { color:var(--stale); }
+.lab-mark[data-tone="failed"] { color:var(--failed); }
+.lab-mark-note { display:block; font-size:.88rem; color:var(--ink-2); }
+.lab-step-gap { font-style:italic; }
+</style>

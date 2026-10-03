@@ -62,8 +62,12 @@ services:
       LAB_BENCH_1_SERVICE_TOKEN: ${LAB_BENCH_1_SERVICE_TOKEN:?}
       LAB_BENCH_1_RELAY_TOKEN: ${LAB_BENCH_1_RELAY_TOKEN:?}
       LAB_SNAPSHOT_ORIGIN: http://field-station:7410
+      LAB_STATE_DIR: /var/lib/lontra
     volumes:
       - ${LONTRA_SECRETS:?}/kafka/ca.pem:/etc/lontra/kafka/ca.pem:ro
+      # The bench's study (study.json, its journal directory, discarded-study summaries):
+      # kept across bench restarts so a restart resumes the same study (LC11-ADR-02).
+      - lab-1-state:/var/lib/lontra
     depends_on:
       field-station: { condition: service_healthy }
       lab-1-kafka: { condition: service_healthy }
@@ -92,8 +96,12 @@ services:
       LAB_BENCH_2_SERVICE_TOKEN: ${LAB_BENCH_2_SERVICE_TOKEN:?}
       LAB_BENCH_2_RELAY_TOKEN: ${LAB_BENCH_2_RELAY_TOKEN:?}
       LAB_SNAPSHOT_ORIGIN: http://field-station:7410
+      LAB_STATE_DIR: /var/lib/lontra
     volumes:
       - ${LONTRA_SECRETS:?}/kafka/ca.pem:/etc/lontra/kafka/ca.pem:ro
+      # The bench's study (study.json, its journal directory, discarded-study summaries):
+      # kept across bench restarts so a restart resumes the same study (LC11-ADR-02).
+      - lab-2-state:/var/lib/lontra
     depends_on:
       field-station: { condition: service_healthy }
       lab-2-kafka: { condition: service_healthy }
@@ -122,10 +130,19 @@ services:
       LAB_BENCH_3_SERVICE_TOKEN: ${LAB_BENCH_3_SERVICE_TOKEN:?}
       LAB_BENCH_3_RELAY_TOKEN: ${LAB_BENCH_3_RELAY_TOKEN:?}
       LAB_SNAPSHOT_ORIGIN: http://field-station:7410
+      LAB_STATE_DIR: /var/lib/lontra
     volumes:
       - ${LONTRA_SECRETS:?}/kafka/ca.pem:/etc/lontra/kafka/ca.pem:ro
+      # The bench's study (study.json, its journal directory, discarded-study summaries):
+      # kept across bench restarts so a restart resumes the same study (LC11-ADR-02).
+      - lab-3-state:/var/lib/lontra
     depends_on:
       field-station: { condition: service_healthy }
       lab-3-kafka: { condition: service_healthy }
     stop_grace_period: 15s
     healthcheck: *bench-health
+
+volumes:
+  lab-1-state:
+  lab-2-state:
+  lab-3-state:

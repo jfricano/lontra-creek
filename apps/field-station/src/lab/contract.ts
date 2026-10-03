@@ -233,7 +233,8 @@ export type RecoveryHoldReason =
   | "coverage-withheld"   // the scenario deliberately withholds snapshot coverage ("Snapshot coverage not ready")
   | "coverage-pending"    // the authoritative update is released but the served state hasn't reached it
   | "unknown-record"      // no ledger entry was published at these coordinates: nothing can attest coverage
-  | "no-coordinates";     // the incident names no record, so no ledger entry can be matched
+  | "no-coordinates"      // the incident names no record, so no ledger entry can be matched
+  | "obligation-limit";   // the study already holds as many recovery obligations as it may (64): it promises no more
 
 export type RecoveryAssessment =
   | { decision: "hold"; studyId: string; reason: RecoveryHoldReason; evidenceRef: string | null }

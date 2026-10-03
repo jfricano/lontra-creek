@@ -215,7 +215,7 @@ export class FileCoverageLedger implements CoverageLedger, RecoveryAssessor, Sna
       if (entry.status === 'pending' || !entry.watermark || entry.affected.some(key => !atOrPast(entry.watermark!.revisions[key], entry.revision))) return hold('coverage-pending', entry);
       let barrier = this.#file.barriers.at(-1);
       if (!this.#file.obligations.some(item => sameRecord(item.record, record))) {
-        if (this.#file.obligations.length >= MAX_OBLIGATIONS) return hold('coverage-pending', entry);
+        if (this.#file.obligations.length >= MAX_OBLIGATIONS) return hold('obligation-limit', entry);
         // Cumulative: every earlier obligation's watermark, and this one's.
         const runIds = [...new Set([...this.#file.obligations.map(item => item.runId), entry.runId])];
         const revisions: Record<string, string> = {}; let tick = 0;

@@ -20,7 +20,7 @@ import { describe, test, type TestContext } from 'node:test';
 import { advanceTo, createWorld, currentEmissions, type Emission, type WorldState } from '@lontra-creek/sim';
 import { snapshotAcknowledges } from '../src/lab/bench.ts';
 import type { RecordCoordinates, RecoveryAssessment } from '../src/lab/contract.ts';
-import { deriveMutation, FileCoverageLedger, type DomainMutation, type ServedState } from '../src/lab/coverage.ts';
+import { barrierId, deriveMutation, FileCoverageLedger, type DomainMutation, type ServedState } from '../src/lab/coverage.ts';
 import { LabStudies, StudyClosedError, type ScenarioSink } from '../src/lab/studies.ts';
 import { internalApi } from '../src/server/http.ts';
 import type { FieldStation } from '../src/server/station.ts';
@@ -116,6 +116,21 @@ describe('the recovery guard', () => {
     const unknown = await ledger.assess({ studyId: S1, sourceId: 'field', record: { ...at, offset: '101' } });
     assert.deepEqual([unknown.decision, unknown.decision === 'hold' && unknown.reason], ['hold', 'unknown-record']);
     assert.equal(ledger.barriers().length, 0, 'a hold issues no barrier');
+  });
+
+  test('a study holding as many obligations as it may holds with its own reason', async t => {
+    const dir = await mkdtemp(join(tmpdir(), 'lab-ledger-')); t.after(() => rm(dir, { recursive: true, force: true }));
+    const ledger = await FileCoverageLedger.open(join(dir, 'ledger.json'), 1, S1, () => 0);
+    await ledger.record({ scenarioId: 'S03', runId: 'run-1', mutation: flowLc03(), derived: deriveMutation(world(), flowLc03()), coverage: 'pending' });
+    await ledger.establish('run-1', { tick: () => TICK + 1, revision: () => Expected.revision(TICK + 1) });
+    const at = { topic: 'lab-1.field.gauges', partition: 1, offset: '100' };
+    await ledger.published('run-1', at);
+    // At most 32 runs, one publication each, so 64 obligations are reached only by a ledger file written elsewhere.
+    const file = JSON.parse(await readFile(join(dir, 'ledger.json'), 'utf8')) as { obligations: unknown[] };
+    file.obligations = Array.from({ length: 64 }, (_, i) => ({ runId: 'run-1', record: { ...at, offset: String(1000 + i) }, assessedAt: new Date(0).toISOString(), barrier: barrierId(S1, 1) }));
+    await writeFile(join(dir, 'ledger.json'), JSON.stringify(file));
+    const full = await FileCoverageLedger.open(join(dir, 'ledger.json'), 1, S1, () => 0);
+    assert.deepEqual(await full.assess({ studyId: S1, sourceId: 'field', record: at }), { decision: 'hold', studyId: S1, reason: 'obligation-limit', evidenceRef: `ledger:lab-1/${S1}#run-1` });
   });
 
   test('established coverage yields a barrier over every affected instance; a second incident keeps the first obligation', async t => {

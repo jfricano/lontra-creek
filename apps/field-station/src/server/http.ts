@@ -22,6 +22,7 @@ import type { FieldStation } from "./station.ts";
 import { LeasePool } from '../lab/leases.ts';
 import { LabError, ACTIONS } from '../lab/errors.ts';
 import type { LabAction } from '../lab/contract.ts';
+import { labCapabilities, refuseIntent } from '../lab/capabilities.ts';
 
 type Headers = Record<string, string>;
 
@@ -132,16 +133,21 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
           if (request.method === 'POST' && origin !== undefined && !config.siteOrigins.includes(origin)) throw new LabError('origin-not-allowed', 403);
           const lab = options.lab;
           const route = `${request.method} ${url.pathname}`;
-          if (!['GET /api/lab/status', 'POST /api/lab/lease', 'GET /api/lab/lease', 'POST /api/lab/lease/return', 'POST /api/lab/lease/token', 'POST /api/lab/actions', 'GET /api/lab/trace'].includes(route)) return send(response, 404, { error: 'Not found.' }, cors);
+          if (!['GET /api/lab/status', 'POST /api/lab/lease', 'GET /api/lab/lease', 'POST /api/lab/lease/return', 'POST /api/lab/lease/token', 'POST /api/lab/actions', 'GET /api/lab/trace', 'GET /api/lab/capabilities'].includes(route)) return send(response, 404, { error: 'Not found.' }, cors);
           let session = readSession(request.headers.cookie, config.secret);
           if (!session && route === 'POST /api/lab/lease') {
             const badge = badgeFor({ cookieHeader: undefined, role: 'volunteer', secret: config.secret, secure: config.production });
             cors['set-cookie'] = badge.setCookie!; session = readSession(badge.setCookie!, config.secret);
           }
-          if (route !== 'GET /api/lab/status' && !session) throw new LabError('no-session', 401);
+          if (route !== 'GET /api/lab/status' && route !== 'GET /api/lab/capabilities' && !session) throw new LabError('no-session', 401);
           const body = request.method === 'POST' ? await readJson(request) : {};
           const keys = Object.keys(body);
-          if (keys.some(key => route !== 'POST /api/lab/actions' || key !== 'action') || [...url.searchParams.keys()].some(key => route !== 'GET /api/lab/trace' || key !== 'after')) throw new LabError('invalid-request', 400);
+          // A proposed intent (contract section 12) has its own shape; it is validated, then refused.
+          const intent = route === 'POST /api/lab/actions' && 'intent' in body;
+          if (!intent && keys.some(key => route !== 'POST /api/lab/actions' || key !== 'action') || [...url.searchParams.keys()].some(key => route !== 'GET /api/lab/trace' || key !== 'after')) throw new LabError('invalid-request', 400);
+          // Neither touches the pool: the summary is static per process, and no installed release supports an intent.
+          if (route === 'GET /api/lab/capabilities') return send(response, 200, labCapabilities({ labEnabled: lab?.enabled ?? false, now: Date.now() }), cors);
+          if (intent) refuseIntent(body);
           if (!lab) {
             if (route === 'GET /api/lab/status') return send(response, 200, { enabled: false, now: new Date().toISOString(), benches: [], queueLength: 0, nextFreeAt: null }, cors);
             throw new LabError('lab-unavailable', 503);

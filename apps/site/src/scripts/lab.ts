@@ -15,6 +15,7 @@ const MESSAGES: Record<LabErrorCode, string> = {
   "origin-not-allowed": "The Lab only accepts requests from this site.",
   "no-lease": "You don't have a bench right now.",
   "not-applicable": "That action doesn't apply to your bench's current state.",
+  "unsupported-scenario": "This backend does not support this scenario.",
   "too-many-requests": "Too many Lab requests from your address. Trying again shortly.",
   "too-many-actions": "One action a second, please.",
   "too-many-places": "Your address already holds two places in the Lab.",

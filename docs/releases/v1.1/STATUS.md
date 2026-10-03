@@ -11,12 +11,12 @@ Updated October 3, 2026 · The live tracker for [IMPLEMENTATION_PLAN.md](IMPLEME
 | P0 | Planning, baseline, decisions, sandbox contract | In review | `docs/v1.1-implementation-plan` | A40 planning record |
 | W1 | Lab foundation hardening | In review | `fix/v1.1-lab-hardening` · #31 | A03, A27 (partly), A30, A37: unit and fixture |
 | W2 | Sandbox session service | In review | `feat/v1.1-sandbox-sessions` · #32 | Session layer only, unit and fixture; no sandbox runtime yet |
-| W3 | `/workbench/` page shell | In progress | `feat/v1.1-workbench-page` | |
-| W4 | Source failures track shell | In progress | `feat/v1.1-failures-track` | |
-| W5 | Study identity and coverage ledger | In progress | `feat/v1.1-study-identity` | |
+| W3 | `/workbench/` page shell | In review | `feat/v1.1-workbench-page` · #34 | A35, A45; A41 and A46 partly: unit and fixture; real UI not mounted (W9a) |
+| W4 | Source failures track shell | In review | `feat/v1.1-failures-track` · #35 | A01, A04, A36 (new UI), A37: unit and fixture |
+| W5 | Study identity and coverage ledger | Fixing review findings | `feat/v1.1-study-identity` · #36 (draft) | A14 (app side), A25, A26, A33: unit; Lab workflow on local Kafka |
 | W6 | Local launcher (`dev:lab`) | In review | `feat/v1.1-dev-lab` · #30 | See #30 |
 | W7 | Kafka authorization (local and CI) | In review | `feat/v1.1-kafka-acls` · #33 | A29 at local and CI level; hosted broker unchanged |
-| W8 | Site content | Not started | | |
+| W8 | Site content | In review | `feat/v1.1-site-content` · #37 | A01, A02, A40: unit and fixture |
 | W9a | Actual sandbox | Blocked on upstream R1–R6 | | |
 | W9b | Source failure exercises | Blocked on upstream R7–R9 | | |
 | W10 | Verification and release review | Not started | | |

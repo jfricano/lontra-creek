@@ -114,7 +114,7 @@ async function mount(root: HTMLElement): Promise<void> {
         if (event.kind === "snapshot" && previous) el("[data-lab-snapshot-note]").textContent = `Fresh snapshot ${previous} → ${event.revision}; intermediate states were not replayed.`;
         previous = event.revision;
       });
-    } finally { if (connectingLeaseId === current.leaseId) connectingLeaseId = undefined; }
+    } finally { if (activeSequence === sequence) connectingLeaseId = undefined; } // a newer connect owns the marker otherwise
   }
   async function renderLease(next: LabLease): Promise<void> {
     heartbeatHealthy = true;

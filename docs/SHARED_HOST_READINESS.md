@@ -137,6 +137,10 @@ Operator env names, without secret values:
 - Lab wiring: `LAB_BENCH_API_URLS`, `FIELD_LAB_BENCHES`, `LAB_BENCH`,
   `LAB_SNAPSHOT_ORIGIN`, optional `LAB_LEASE_SECONDS` (at most 300; the field station refuses
   to start above that), `LAB_QUEUE_MAX`.
+- Lab rollout: deploy the bench images and the field station together. Since study
+  identity (Lab contract section 8), a new bench with an old field station fails
+  every reset (401 on `/lab-internal/N/studies/<studyId>/close`), and an old bench
+  with a new field station reports no readiness and is never granted a lease.
 - CI credentials and guards: `DEPLOY_HOST`, `DEPLOY_KEY`, `DEPLOY_KNOWN_HOSTS`,
   `CLOUDFLARE_API_TOKEN`; variables `CLOUDFLARE_ACCOUNT_ID`,
   `CLOUDFLARE_PAGES_PROJECT`, `LONTRA_IMAGES_ENABLED`, `LONTRA_DEPLOY_ENABLED`,

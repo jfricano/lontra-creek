@@ -55,8 +55,10 @@ export class LeasePool {
       slot.nextPoll = now + 5000;
       try {
         const status = await this.#client.call<BenchStatus>(bench, '/bench/v1/status');
-        slot.status = status; slot.lastSeen = now;
         const place = [...this.#places.values()].find(p => p.lease?.bench === bench);
+        // A leased bench whose process restarted reports `starting` until it has read its study back: as long as an unanswered one.
+        if (place && status.state === 'starting' && now - slot.lastSeen < 15_000) { slot.status = status; continue; }
+        slot.status = status; slot.lastSeen = now;
         if (place && (status.state !== 'leased' || status.lease?.leaseId !== place.lease!.id)) { await this.#end(place, 'bench-failed'); continue; }
         // Only a clean-lease-eligible bench is granted (LC11-ADR-02). A leased bench whose source is held stays leased.
         // A ready bench that isn't eligible (its last cleanup didn't finish) is reset again on the usual schedule.

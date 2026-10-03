@@ -170,18 +170,20 @@ export class BenchRuntime {
     this.#timer = setInterval(() => { void this.tick(); }, this.#tickMs);
   }
   async #boot(): Promise<void> {
-    await this.#relay(false);
     const loaded = await this.#store.load();
     const study = loaded === 'corrupt' ? null : loaded;
     const leaseLive = study?.lease ? Date.parse(study.lease.expiresAt) > this.#now() : false;
     if (study && (study.phase === 'clean' || study.phase === 'open' && leaseLive)) {
       study.restarts.process++; await this.#store.save(study);
       this.#study = study; this.#scope = scopeFor(study.studyId); this.#scenario.calibration = study.calibration;
-      await this.#startGateway();
+      // The lease continues: report it at once, so the field station keeps it while the gateway starts (control stays false until then).
       if (study.phase === 'open') { this.#lease = study.lease; this.#feed.reset(study.lease!.leaseId); this.#feed.add({ kind: 'bench', event: 'gap' }); this.#state = 'leased'; }
-      else { this.#cleanupOk = true; this.#state = 'ready'; }
+      await this.#relay(false);
+      await this.#startGateway();
+      if (study.phase === 'clean') { this.#cleanupOk = true; this.#state = 'ready'; }
       return;
     }
+    await this.#relay(false);
     this.#study = study; this.#scope = scopeFor(study?.studyId ?? ''); this.#scope.closed = true;
     await this.#discard(null, false);
     await this.#provision();

@@ -160,3 +160,18 @@ test('only a clean-lease-eligible bench is granted; a held source keeps its leas
   assert.ok(after.indexOf('gate.close') >= 0 && after.indexOf('gate.close') < after.indexOf('/bench/v1/reset'), 'the gate closes before the reset is asked for');
   assert.ok(f.gate.includes(`close 2 ${study}`));
 });
+
+test('a leased bench that reports starting while its process restarts keeps the lease for at most 15 seconds', async () => {
+  const f = fixture(1); await f.pool.initialize(); await f.pool.sweep();
+  const a = f.session('a'); await f.pool.join(a, 'a'); await f.pool.token(a);
+  const leased = { ...f.slots.get(1)! };
+  Object.assign(f.slots.get(1)!, { state: 'starting', lease: null, study: null });
+  f.advance(5000); f.pool.heartbeat(a); await f.pool.sweep();
+  assert.equal(f.pool.view(a).status, 'active');
+  Object.assign(f.slots.get(1)!, { state: leased.state, lease: leased.lease, study: leased.study });
+  f.advance(5000); f.pool.heartbeat(a); await f.pool.sweep();
+  assert.equal(f.pool.view(a).status, 'active', 'the restarted bench resumed the lease');
+  Object.assign(f.slots.get(1)!, { state: 'starting', lease: null, study: null });
+  for (let i = 0; i < 3; i++) { f.advance(5000); f.pool.heartbeat(a); await f.pool.sweep(); }
+  assert.equal((f.pool.view(a) as { reason: string }).reason, 'bench-failed', 'a bench that never resumes ends the lease');
+});

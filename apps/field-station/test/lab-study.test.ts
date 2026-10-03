@@ -19,7 +19,8 @@ import { after, before, beforeEach, describe, test, type TestContext } from 'nod
 import { validateProjectConfig, type Gateway, type ProjectConfig } from 'streamotter/contracts';
 import type { HandlerRegistry } from 'streamotter/gateway';
 import type { LabChannels } from '../src/lab/bench.ts';
-import type { BenchStatus, StudySummary } from '../src/lab/contract.ts';
+import type { BenchId, BenchStatus, StudySummary } from '../src/lab/contract.ts';
+import { LeasePool, type BenchClient } from '../src/lab/leases.ts';
 import { BenchRuntime, type StudyGateClient } from '../src/lab/runtime.ts';
 import { consumerGroupFor, generationFor, newStudyId } from '../src/lab/study.ts';
 
@@ -51,13 +52,14 @@ async function volume(t: TestContext) {
   const configs: ProjectConfig<LabChannels>[] = []; const handlers: HandlerRegistry<LabChannels>[] = [];
   const groups = new Set<string>();
   const faults = { deleteGroup: false, close: false };
-  let holdClose: Promise<void> | null = null;
+  let holdClose: Promise<void> | null = null; let holdStart: Promise<void> | null = null; let releaseStart: (() => void) | null = null;
   const gate: StudyGateClient = {
     async close(studyId) { steps.push(`gate.close ${studyId}`); if (holdClose) await holdClose; if (faults.close) throw new Error('field station unavailable'); },
     async discard(studyId) { steps.push(`gate.discard ${studyId}`); }
   };
   const gateway = (group: string) => ({ async start() {}, async stop() { steps.push(`gateway.stop ${group}`); }, async revoke(target: { subject: string }) { steps.push(`revoke ${target.subject}`); } }) as unknown as Gateway;
-  const runtime = async () => {
+  /** A bench process on this volume, not yet booted. */
+  const create = () => {
     const bench = new BenchRuntime({ LAB_BENCH: '1', LAB_BENCH_1_SERVICE_TOKEN: SERVICE, LAB_BENCH_1_RELAY_TOKEN: 'r'.repeat(32), LAB_RELAY_ORIGIN: relayOrigin }, {
       now: () => now, tickMs: 3_600_000, stateDir, gate, quiesceMs: 50,
       // The real admin client reaches Kafka at BENCH_KAFKA_BROKERS, the relay proxy itself: refused while the relay is cut.
@@ -65,13 +67,18 @@ async function volume(t: TestContext) {
       services: async (config, registry) => {
         const group = config.sources['field']!.kind === 'kafka' ? (config.sources['field'] as { consumerGroup: string }).consumerGroup : '';
         steps.push(`gateway.start ${group}`); configs.push(config); handlers.push(registry); groups.add(group);
+        if (holdStart) await holdStart;
         return { gateway: gateway(group), management: { origin: managementOrigin, async close() {} } };
       }
     });
-    await bench.start(); t.after(() => bench.close());
+    // A failing test still shuts its bench down: a held gateway start is let go and the boot finishes before close.
+    let booting: Promise<void> | undefined; const start = bench.start.bind(bench); bench.start = () => (booting = start());
+    t.after(async () => { releaseStart?.(); await booting; await bench.close(); });
     return bench;
   };
-  return { stateDir, steps, configs, handlers, groups, faults, gate, runtime, advance: (ms: number) => { now += ms; }, at: () => now, hold: (p: Promise<void> | null) => { holdClose = p; } };
+  const runtime = async () => { const bench = create(); await bench.start(); return bench; };
+  return { stateDir, steps, configs, handlers, groups, faults, gate, create, runtime, advance: (ms: number) => { now += ms; }, at: () => now, hold: (p: Promise<void> | null) => { holdClose = p; }, /** Holds every gateway start until the returned function is called. */
+    holdStart: () => { holdStart = new Promise<void>(resolve => { releaseStart = () => { holdStart = null; releaseStart = null; resolve(); }; }); return releaseStart!; } };
 }
 const studyOf = (bench: BenchRuntime) => bench.status().study!;
 const lease = (bench: BenchRuntime, at: number, leaseId = 'lease-1', ms = 120_000) => bench.run(() => bench.lease(leaseId, new Date(at + ms).toISOString()));
@@ -158,6 +165,45 @@ describe('restart keeps the study (LC11-A14 app side, A33)', () => {
     assert.notEqual(fresh.studyId, old.studyId); assert.equal(second.status().state, 'ready');
     assert.ok(v.steps.includes(`deleteGroup ${old.consumerGroup}`)); assert.ok(v.steps.includes(`gate.discard ${old.studyId}`));
     assert.deepEqual(await readdir(join(v.stateDir, 'lab-1', 'studies')), [fresh.studyId]);
+  });
+
+  test('the field station keeps the lease while a restarted bench process boots, and the same study resumes', async t => {
+    const v = await volume(t);
+    // The field station's pool, its publisher gate, and the bench API over HTTP, as in production.
+    let origin = '';
+    const client: BenchClient = { async call<T>(_bench: BenchId, path: string, method = 'GET', body?: unknown): Promise<T> {
+      const response = await fetch(`${origin}${path}`, { method, headers: { authorization: `Bearer ${SERVICE}`, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      if (!response.ok) throw new Error(`The bench answered ${response.status}.`); return await response.json() as T;
+    } };
+    const opened = new Map<BenchId, string>();
+    const studies = { open: (bench: BenchId, studyId: string) => { opened.set(bench, studyId); }, close: async (bench: BenchId, studyId: string) => { if (opened.get(bench) === studyId) opened.delete(bench); }, current: (bench: BenchId) => opened.get(bench) ?? null };
+    const pool = new LeasePool({ client, benches: [1], gatewayOrigin: 'https://demo.test', now: () => v.at(), studies });
+    const first = v.create(); const firstApi = first.api(); origin = await listen(firstApi); await first.start();
+    await pool.initialize(); await settle(first); v.advance(5000); await pool.sweep();
+    const visitor = { subject: 'visitor', role: 'volunteer' as const, exp: v.at() + 1_800_000 };
+    const granted = await pool.join(visitor, '192.0.2.9'); assert.equal(granted.status, 'ready');
+    await pool.token(visitor);
+    const before = studyOf(first);
+    // The process exits with its volume intact; the new one listens before it boots, and its gateway takes a while to start.
+    await close(firstApi); await first.close();
+    const release = v.holdStart();
+    const second = v.create(); const secondApi = second.api(); origin = await listen(secondApi); t.after(() => close(secondApi));
+    const starts = v.steps.filter(step => step.startsWith('gateway.start')).length;
+    const booting = second.start();
+    while (v.steps.filter(step => step.startsWith('gateway.start')).length === starts) await new Promise(resolve => setImmediate(resolve));
+    const during = await client.call<BenchStatus>(1, '/bench/v1/status');
+    assert.deepEqual([during.state, during.lease?.leaseId, during.study?.studyId], ['leased', granted.status === 'ready' && granted.leaseId, before.studyId]);
+    assert.equal(during.readiness.control, false, 'control is unavailable until the gateway is up');
+    v.advance(5000); pool.heartbeat(visitor); await pool.sweep();
+    assert.equal(pool.view(visitor).status, 'active', 'a booting bench does not end the lease');
+    release(); await booting;
+    v.advance(5000); pool.heartbeat(visitor); await pool.sweep();
+    assert.equal(pool.view(visitor).status, 'active');
+    const after = studyOf(second);
+    assert.deepEqual([after.studyId, after.consumerGroup, after.restarts], [before.studyId, before.consumerGroup, { gateway: 0, process: 1 }]);
+    assert.equal(second.status().readiness.control, true);
+    assert.equal(opened.get(1), before.studyId, 'the study stays open for publication');
+    assert.equal((await pool.token(visitor)).bench, 1, 'the page fetches a new token for the same lease');
   });
 });
 

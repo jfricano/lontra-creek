@@ -22,6 +22,8 @@ import type { FieldStation } from "./station.ts";
 import { LeasePool } from '../lab/leases.ts';
 import { LabError, ACTIONS } from '../lab/errors.ts';
 import type { LabAction } from '../lab/contract.ts';
+import type { SandboxPool } from '../sandbox/leases.ts';
+import { sandboxRoute } from '../sandbox/routes.ts';
 
 type Headers = Record<string, string>;
 
@@ -88,7 +90,7 @@ export function clientAddress(request: IncomingMessage): string {
   return (typeof header === "string" && header !== "" ? header : request.socket.remoteAddress) ?? "unknown";
 }
 
-export function publicApi(options: { config: ServerConfig; station: FieldStation; notebooks: Notebooks; lab?: LeasePool; limiter?: RateLimiter; log?: (message: string) => void }): Server {
+export function publicApi(options: { config: ServerConfig; station: FieldStation; notebooks: Notebooks; lab?: LeasePool; sandbox?: SandboxPool; limiter?: RateLimiter; log?: (message: string) => void }): Server {
   const { config, station, notebooks } = options;
   const limiter = options.limiter ?? new RateLimiter({ burst: 30, perSecond: 1 });
   const labLimiter = new RateLimiter({ burst: 20, perSecond: 3 });
@@ -117,12 +119,14 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
       }
       if (request.method === "OPTIONS") {
         if (cors["access-control-allow-origin"] === undefined) return send(response, 403, { error: "Origin not allowed." }, cors);
-        response.writeHead(204, { ...cors, "access-control-allow-methods": "GET, POST", "access-control-allow-headers": "content-type", "access-control-max-age": "600" });
+        response.writeHead(204, { ...cors, "access-control-allow-methods": "GET, POST", "access-control-allow-headers": url.pathname.startsWith("/api/sandbox/wb/") ? "content-type, x-streamotter-workbench" : "content-type", "access-control-max-age": "600" });
         return response.end();
       }
 
-      const isLab = url.pathname.startsWith('/api/lab/');
+      // The workbench sandbox shares the Lab request budget (sandbox contract §2).
+      const isLab = url.pathname.startsWith('/api/lab/') || url.pathname.startsWith('/api/sandbox/');
       const wait = (isLab ? labLimiter : limiter).take(clientAddress(request));
+      if (url.pathname.startsWith('/api/sandbox/')) return sandboxRoute(request, response, url, { pool: options.sandbox, siteOrigins: config.siteOrigins, secret: config.secret, secure: config.production, cors, address: clientAddress(request), wait });
       if (wait > 0) return send(response, 429, { error: "Too many requests.", ...(isLab ? { code: "too-many-requests" } : {}) }, { ...cors, "retry-after": String(wait) });
 
       if (isLab) {

@@ -6,16 +6,17 @@ import { fromRecord, topicFor, viewPath } from '../records.ts';
 import { projectConfig } from '../project.ts';
 import { bench } from './benches.ts';
 import type { FeedEvent } from './feed.ts';
+import type { BenchSnapshot } from './contract.ts';
 export type LabChannels = Omit<AppChannels, 'notebook' | 'holt'>;
 export type BenchChannels = LabChannels;
-export interface BenchOptions { host?: string; port?: number; brokers?: readonly string[]; caFile?: string; consumerGroup?: string; allowedOrigins?: readonly string[]; }
+export interface BenchOptions { host?: string; port?: number; brokers?: readonly string[]; caFile?: string; consumerGroup?: string; allowedOrigins?: readonly string[]; /** The study's source generation, `lab-N-<studyId>` (study.ts). */ generation?: string; }
 const BENCH_LIMITS: Partial<Limits> = { maxConnections: 8, maxSubscriptionsPerConnection: 12 };
 export function benchConfig(number: number, options: BenchOptions = {}): ProjectConfig<LabChannels> {
   const b = bench(number); const production = projectConfig('production'); const field = production.connections['field']; const source = production.sources['field'];
   if (!field || field.tls === false || source?.kind !== 'kafka') throw new Error('Production Kafka over TLS is required.');
   const connection: KafkaConnection = { brokers: [...(options.brokers ?? [`${b.proxyHost}:${b.proxyPort}`])], tls: { caFile: options.caFile ?? field.tls.caFile ?? '/etc/lontra/kafka/ca.pem' }, sasl: { mechanism: 'scram-sha-512', username: { env: 'KAFKA_LAB_USERNAME' }, password: { env: 'KAFKA_LAB_PASSWORD' } } };
   const { notebook: _n, holt: _h, ...channels } = production.channels;
-  return { configVersion: 1, projectId: b.projectId, gateway: { host: options.host ?? '0.0.0.0', port: options.port ?? 7400, path: b.gatewayPath, allowedOrigins: [...(options.allowedOrigins ?? production.gateway.allowedOrigins)] }, connections: { field: connection }, sources: { field: { ...source, generation: `lab-${number}-field-1`, topics: [...b.topics], consumerGroup: options.consumerGroup ?? b.consumerGroup, startFrom: 'latest' } }, schemas: production.schemas, channels, limits: BENCH_LIMITS };
+  return { configVersion: 1, projectId: b.projectId, gateway: { host: options.host ?? '0.0.0.0', port: options.port ?? 7400, path: b.gatewayPath, allowedOrigins: [...(options.allowedOrigins ?? production.gateway.allowedOrigins)] }, connections: { field: connection }, sources: { field: { ...source, generation: options.generation ?? `lab-${number}-field-1`, topics: [...b.topics], consumerGroup: options.consumerGroup ?? b.consumerGroup, startFrom: 'latest' } }, schemas: production.schemas, channels, limits: BENCH_LIMITS };
 }
 export interface BenchHandlerOptions {
   authenticate: (token: string) => Principal | null;
@@ -60,4 +61,13 @@ export function benchEnvironment(env: NodeJS.ProcessEnv): { number: 1 | 2 | 3; s
   }
   const secret = (kind: string): string => { const value = env[`LAB_BENCH_${number}_${kind}_TOKEN`]; if (!value || value.length < 32) throw new Error(`Bench ${kind} token requires 32 characters.`); return value; };
   return { number: number as 1 | 2 | 3, serviceToken: secret('SERVICE'), relayToken: secret('RELAY'), snapshotOrigin: new URL(env['LAB_SNAPSHOT_ORIGIN'] ?? 'http://field-station:7410').origin };
+}
+/**
+ * Whether a bench snapshot acknowledges the boundary the gateway requires. Only an
+ * exact echo of that barrier with `acknowledged: true` counts: a missing, lagging,
+ * or different acknowledgment never does (LC11-ADR-01). rc.3's snapshot handler
+ * receives no boundary, so nothing calls this until W9b binds the native type.
+ */
+export function snapshotAcknowledges(required: string, snapshot: BenchSnapshot): boolean {
+  return typeof required === 'string' && required !== '' && snapshot.boundary?.barrier === required && snapshot.boundary.acknowledged === true;
 }

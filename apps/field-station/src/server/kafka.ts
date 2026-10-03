@@ -21,6 +21,10 @@
  * station's own connection, never a bench's proxy, so cutting a bench off leaves its
  * feed running. They keep an hour, since benches start from the latest records and
  * take snapshots from the field station.
+ *
+ * Scenario records (Lab contract section 8a) are sent one at a time, to a bench's
+ * copy only, after the study's publisher gate (lab/studies.ts) admits them; the
+ * gate, not this module, refuses a closed study.
  */
 import { TOPICS } from "@lontra-creek/sim";
 import { randomUUID } from "node:crypto";
@@ -73,6 +77,11 @@ export function withBenchCopies(records: readonly OutgoingRecord[], prefixes: re
 
 export interface KafkaIO {
   publisher: Publisher;
+  /**
+   * Sends one Failure Lab scenario record and reports where it landed. Only
+   * LabStudies.publish calls it, after its publisher gate (lab/studies.ts).
+   */
+  scenario: { send(record: OutgoingRecord): Promise<{ topic: string; partition: number; offset: string }> };
   /** Every record value on a topic, from the beginning up to its end when called. */
   readAll(topic: string): Promise<(string | null)[]>;
 }
@@ -163,6 +172,18 @@ export async function connectKafka(
     }
   };
 
+  const scenario: KafkaIO["scenario"] = {
+    async send(record: OutgoingRecord) {
+      if (producer === null) {
+        connecting ??= connect().finally(() => { connecting = null; });
+        producer = await connecting;
+      }
+      const [metadata] = await producer.send({ acks: -1, topic: record.topic, messages: [{ key: record.key, value: record.value }] });
+      if (metadata === undefined) throw new Error("Kafka acknowledged no record.");
+      return { topic: metadata.topicName, partition: metadata.partition, offset: metadata.baseOffset ?? "-1" };
+    }
+  };
+
   async function readAll(topic: string): Promise<(string | null)[]> {
     return withAdmin(async admin => {
       // Where each partition ends now. Anything later was written by this process.
@@ -204,5 +225,5 @@ export async function connectKafka(
     });
   }
 
-  return { publisher, readAll };
+  return { publisher, scenario, readAll };
 }

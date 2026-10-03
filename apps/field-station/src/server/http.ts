@@ -8,7 +8,9 @@
  *
  * Internal, on the compose network only: GET /internal/views/:channel/:id, the
  * current view or notebook the gateway's snapshot handler asks for, with the
- * service token.
+ * service token. Under /lab-internal/N/, with bench N's own token only: that
+ * bench's snapshots (Lab contract section 8) and its study and recovery routes
+ * (section 8a).
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
@@ -21,7 +23,8 @@ import type { FieldStation } from "./station.ts";
 
 import { LeasePool } from '../lab/leases.ts';
 import { LabError, ACTIONS } from '../lab/errors.ts';
-import type { LabAction } from '../lab/contract.ts';
+import type { BenchId, LabAction, RecoveryAssessRequest } from '../lab/contract.ts';
+import { StudyClosedError, type LabStudies } from '../lab/studies.ts';
 
 type Headers = Record<string, string>;
 
@@ -206,24 +209,78 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
   });
 }
 
-export function internalApi(options: { serviceToken: string; station: FieldStation; notebooks: Notebooks; labTokens?: readonly string[] }): Server {
+/** Reads a bench's small JSON body: an object of at most 4 KB, or null. */
+async function benchBody(request: IncomingMessage): Promise<Record<string, unknown> | null> {
+  try {
+    let text = "";
+    for await (const chunk of request) { text += chunk; if (Buffer.byteLength(text) > 4_096) return null; }
+    const value: unknown = text === "" ? {} : JSON.parse(text);
+    return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  } catch { return null; }
+}
+
+/** A recovery request as the contract types it, or null. Coordinates only; a record's bytes are never accepted. */
+function assessRequest(body: Record<string, unknown>): RecoveryAssessRequest | null {
+  const { studyId, sourceId, record } = body;
+  if (typeof studyId !== "string" || typeof sourceId !== "string" || Object.keys(body).some(key => !["studyId", "sourceId", "record"].includes(key))) return null;
+  if (record === undefined) return { studyId, sourceId };
+  const r = record as Record<string, unknown>;
+  if (typeof r !== "object" || r === null || Object.keys(r).length !== 3 || typeof r["topic"] !== "string" || !Number.isSafeInteger(r["partition"]) || typeof r["offset"] !== "string" || !/^\d{1,20}$/.test(r["offset"])) return null;
+  return { studyId, sourceId, record: { topic: r["topic"], partition: r["partition"] as number, offset: r["offset"] } };
+}
+
+export function internalApi(options: { serviceToken: string; station: FieldStation; notebooks: Notebooks; labTokens?: readonly string[]; studies?: LabStudies }): Server {
   const expected = Buffer.from(`Bearer ${options.serviceToken}`);
   const authorized = (request: IncomingMessage): boolean => {
     const provided = Buffer.from(request.headers.authorization ?? "");
     return provided.length === expected.length && timingSafeEqual(provided, expected);
   };
 
-  return createServer((request, response) => {
+  const benchAuthorized = (bench: number, request: IncomingMessage): boolean => {
+    const token = options.labTokens?.[bench - 1];
+    const expectedLab = Buffer.from(`Bearer ${token ?? ''}`);
+    const provided = Buffer.from(request.headers.authorization ?? '');
+    return token !== undefined && provided.length === expectedLab.length && timingSafeEqual(provided, expectedLab);
+  };
+
+  return createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://field-station.invalid");
+    // The private study and recovery surface (Lab contract section 8a): bench N's own token, POST only.
+    const study = /^\/lab-internal\/([123])\/(?:studies\/([A-Za-z0-9_-]{16})\/(close|discard)|recovery\/(assess))$/.exec(url.pathname);
+    if (study) {
+      const bench = Number(study[1]) as BenchId;
+      if (!benchAuthorized(bench, request)) return send(response, 401, { error: 'Unauthorized.' });
+      const studies = options.studies;
+      if (request.method !== 'POST' || !studies) return send(response, 404, { error: 'Not found.' });
+      try {
+        if (study[3] === 'close') return send(response, 200, await studies.close(bench, study[2]!));
+        if (study[3] === 'discard') return send(response, 200, await studies.discard(bench, study[2]!));
+        const body = await benchBody(request); const input = body && assessRequest(body);
+        if (!input) return send(response, 400, { error: 'Invalid request.' });
+        return send(response, 200, await studies.assess(bench, input));
+      } catch (error) {
+        if (error instanceof StudyClosedError) return send(response, 409, { error: 'The study is not open.', code: 'study-closed' });
+        if (error instanceof RangeError) return send(response, 400, { error: 'Invalid request.' });
+        return send(response, 500, { error: 'Study operation failed.' });
+      }
+    }
     const restricted = /^\/lab-internal\/([123])\/views\/(station|otter|reach|creekOverview)\/([^/]+)$/.exec(url.pathname);
     if (restricted) {
-      const token = options.labTokens?.[Number(restricted[1]) - 1];
-      const expectedLab = Buffer.from(`Bearer ${token ?? ''}`);
-      const provided = Buffer.from(request.headers.authorization ?? '');
-      if (!token || provided.length !== expectedLab.length || !timingSafeEqual(provided, expectedLab)) return send(response, 401, { error: 'Unauthorized.' });
+      const bench = Number(restricted[1]) as BenchId;
+      if (!benchAuthorized(bench, request)) return send(response, 401, { error: 'Unauthorized.' });
       if (request.method !== 'GET') return send(response, 404, { error: 'Not found.' });
       if (!options.station.ready) return send(response, 503, { error: 'Catching up.' });
       let id: string; try { id = decodeURIComponent(restricted[3]!); } catch { return send(response, 400, { error: 'Invalid request.' }); }
+      // With studies, the bench's served state: the shared creek or its open study's own
+      // writes, and a boundary acknowledgment only when one is asked for (section 8a).
+      if (options.studies) {
+        const boundary = url.searchParams.get('boundary');
+        if (boundary !== null && boundary.length > 96) return send(response, 400, { error: 'Invalid request.' });
+        try {
+          const snapshot = await options.studies.snapshot(bench, `${restricted[2]}:${id}`, boundary);
+          return snapshot ? send(response, 200, snapshot) : send(response, 404, { error: 'Not found.' });
+        } catch { return send(response, 500, { error: 'Snapshot failed.' }); }
+      }
       const view = options.station.view(`${restricted[2]}:${id}`);
       return view ? send(response, 200, { revision: view.revision, data: view.data }) : send(response, 404, { error: 'Not found.' });
     }

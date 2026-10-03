@@ -152,9 +152,127 @@ export interface LabError {
 
 export interface BenchStatus {
   bench: BenchId;
+  /**
+   * `ready`: no lease, clean-lease eligible. `leased`: a lease is bound to the open
+   * study, whatever its source is doing. `failed`: the last cleanup or the gateway
+   * failed; the field station retries the reset. A source that isn't healthy after a
+   * same-study restart is not `failed` (LC11-ADR-02).
+   */
   state: "starting" | "ready" | "leased" | "resetting" | "failed";
   lease: { leaseId: string; expiresAt: string } | null;
   scenario: LabBenchState;
   /** Self-checks the stack test reads (section 10.6). */
   checks: { developmentPrincipals: number; fixtureSources: number; managementHost: string };
+  /** LC11-ADR-02's three readiness facts (section 8). */
+  readiness: BenchReadiness;
+  /** The study the bench is running; null while starting and between discarding one study and provisioning the next. */
+  study: BenchStudy | null;
+}
+
+/** Three separate facts, never folded into one (LC11-ADR-02). */
+export interface BenchReadiness {
+  /** The bench API and its gateway's loopback management API answer. `GET /healthz` reports this. */
+  control: boolean;
+  /** The bench's source is consuming (`healthy`). Shown, never a reason to fail or end a lease. */
+  source: boolean;
+  /** No study is open and the last cleanup succeeded. The field station grants only these benches. */
+  cleanLease: boolean;
+}
+
+/** A bench study's identity. Private: the field station reads it; visitors never see it. */
+export interface BenchStudy {
+  /** Random and URL-safe, 16 characters. */
+  studyId: string;
+  /** The bench source's generation, `lab-N-<studyId>`. */
+  generation: string;
+  /** `streamotter-lab-N-<studyId>`. */
+  consumerGroup: string;
+  createdAt: string;
+  /** `provisioning` until its gateway has consumed once; `clean` until a lease binds it; then `open` until discarded. */
+  phase: "provisioning" | "clean" | "open";
+  /** Same-study restarts actually run, by kind, so a gateway restart is never reported as process durability (LC11-A14 versus A15). */
+  restarts: { gateway: number; process: number };
+}
+
+/** Bounded metadata a discarded study leaves behind on the bench's volume. Never payloads. */
+export interface StudySummary {
+  bench: BenchId;
+  studyId: string;
+  generation: string;
+  consumerGroup: string;
+  createdAt: string;
+  closedAt: string;
+  phase: BenchStudy["phase"];
+  leaseId: string | null;
+  restarts: BenchStudy["restarts"];
+  /** Completed work, recorded honestly; late callbacks are those that arrived after the study closed. */
+  counts: { actions: number; recordsProcessed: number; recordsFailed: number; lateCallbacks: number };
+  lastSource: SourceStatus["status"] | null;
+  /** False when pending work outlived the bounded quiesce wait. */
+  quiesced: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// The private recovery surface (Lab contract section 8a, LC11-ADR-01).
+// Field station, internal port, /lab-internal/N/..., bench N's own service token.
+// Application-owned: no native guard calls these in rc.3; W9b binds them.
+// ---------------------------------------------------------------------------
+
+/** Kafka coordinates of a record. Never its bytes. */
+export interface RecordCoordinates { topic: string; partition: number; offset: string }
+
+/** `POST /lab-internal/N/recovery/assess`. */
+export interface RecoveryAssessRequest {
+  studyId: string;
+  sourceId: string;
+  /** The incident's record, when the gateway knows it. Matched against the ledger's publication coordinates. */
+  record?: RecordCoordinates;
+}
+
+export type RecoveryHoldReason =
+  | "coverage-withheld"   // the scenario deliberately withholds snapshot coverage ("Snapshot coverage not ready")
+  | "coverage-pending"    // the authoritative update is released but the served state hasn't reached it
+  | "unknown-record"      // no ledger entry was published at these coordinates: nothing can attest coverage
+  | "no-coordinates"      // the incident names no record, so no ledger entry can be matched
+  | "obligation-limit";   // the study already holds as many recovery obligations as it may (64): it promises no more
+
+export type RecoveryAssessment =
+  | { decision: "hold"; studyId: string; reason: RecoveryHoldReason; evidenceRef: string | null }
+  | {
+      decision: "recoverable";
+      studyId: string;
+      /** Opaque, at most 96 characters: the cumulative barrier over every obligation in the study. */
+      barrier: string;
+      /** Channel instance keys (`station:LC-03`) the barrier covers: the union over every obligation. */
+      covers: string[];
+      /** Names the ledger entries the answer rests on. */
+      evidenceRef: string;
+    };
+
+/** Present on a bench snapshot only when the request named a boundary (`?boundary=`). */
+export interface SnapshotBoundary {
+  /** Echoes the requested barrier exactly; a caller must check it. */
+  barrier: string;
+  acknowledged: boolean;
+  reason?: "lagging" | "unknown-barrier" | "wrong-study" | "malformed";
+}
+
+/** `GET /lab-internal/N/views/:channel/:id[?boundary=]`. */
+export interface BenchSnapshot {
+  revision: string;
+  data: unknown;
+  boundary?: SnapshotBoundary;
+}
+
+/** `POST /lab-internal/N/studies/:studyId/close`: the publisher gate is shut for the study. */
+export interface StudyClosed { studyId: string; state: "closed"; inFlight: number }
+
+/** `POST /lab-internal/N/studies/:studyId/discard`: the ledger's bounded summary, then its entries are removed. */
+export interface LedgerSummary {
+  bench: BenchId;
+  studyId: string;
+  closedAt: string;
+  entries: { scenarioId: string; runId: string; status: "withheld" | "pending" | "established"; affected: string[]; published: boolean }[];
+  obligations: number;
+  barriers: number;
 }

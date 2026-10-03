@@ -42,13 +42,14 @@ Configuration defaults, not measured capacity. The real values are recorded on t
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | Benches | 3 | Fixed pool |
-| Lease | 300 s | From the moment it's granted, and never past the visitor's session expiry |
+| Lease | 300 s | From the moment it's granted, and never past the visitor's session expiry. `LAB_LEASE_SECONDS` can shorten it but not lengthen it: benches refuse a lease over 300 s, so the field station refuses a larger value at startup |
 | Claim window | 30 s | A granted lease whose page hasn't fetched a bench token by then is released |
 | Active idle limit | 30 s | A lease with no heartbeat for this long ends |
 | Queue idle limit | 90 s | A place in line with no heartbeat for this long is dropped (background tabs poll less often) |
 | Ended view | 60 s | How long `GET /api/lab/lease` keeps reporting an ended lease and why |
-| Scenario actions | 1 per second | Per lease (field station) and per bench (bench API) |
+| Scenario actions | 1 per second | Per lease (field station) and per bench (bench API); an action that fails doesn't count |
 | Reset deadline | 60 s | A bench not ready by then is unavailable; the field station retries every 30 s |
+| Bench poll grace | 15 s | A bench reports `failed` only after its background polls of its own gateway have failed for this long; one slow or failed poll changes nothing |
 | Queue | 50 places | Then `queue-full` |
 | Places per client address | 2 | Leases plus places in line, keyed by `X-Client-IP` |
 | Lab request budget | 20 at once, 3 a second | Per client address, for `/api/lab/*`, instead of the general `/api` budget (30 at once, 1 a second), which a polling page would exhaust |
@@ -72,7 +73,7 @@ Routes on the field station's public listener, behind Caddy at `https://demo.str
 
 ### Rules for every route
 
-- **CORS and Origin** as for the rest of `/api`: the site's origin with credentials; a `POST` carrying a foreign `Origin` gets 403 `origin-not-allowed`. The preflight allows `GET, POST` today, so the Lab uses no other methods.
+- **CORS and Origin** as for the rest of `/api`: the site's origin with credentials; a `POST` carrying a foreign `Origin` gets 403 `origin-not-allowed`. The preflight allows `GET, POST` today, so the Lab uses no other methods. Error answers carry the same CORS headers as successes, including a 400 for a malformed or oversized body anywhere under `/api`, so the page can read them.
 - **Session**: the `lc_session` cookie (`HttpOnly; SameSite=Strict; Path=/api`, 30 minutes, `src/sessions.ts`). Only `POST /api/lab/lease` starts one when there is none, exactly as `POST /api/badge` does (a volunteer session via `badgeFor`), so the Lab needs no separate sign-in. Every other route that needs a session answers 401 `no-session` without one.
 - **Budget**: the Lab budget in section 2, plus 429s with `Retry-After`.
 - **Heartbeat**: every request with a valid session that has a place or lease counts as its heartbeat.
@@ -194,7 +195,12 @@ export type LabFeedItem =
     })
   /** The bench's source changed status, as its gateway reports it. */
   | (FeedBase & { kind: "source"; sourceId: string; status: SourceStatus["status"]; reason?: ErrorCode })
-  /** An LC-03 reading during the fouled-sensor scenario, so the page can show the same record failing and then processed. */
+  /**
+   * An LC-03 reading, so the page can show the same record failing and then retried.
+   * `processed` means the bench's map handler returned for this record. It is written
+   * before StreamOtter validates, delivers, or commits anything, so it is not proof of
+   * acceptance or of the offset advancing; the page labels it "mapper returned".
+   */
   | (FeedBase & { kind: "record"; stationId: "LC-03"; topic: string; partition: number; offset: string; outcome: "failed" | "processed" })
   /** A scenario action the bench carried out. */
   | (FeedBase & { kind: "action"; action: LabAction })
@@ -222,7 +228,7 @@ export type LabErrorCode =
   | "too-many-places"     // 429: this client address already holds two places
   | "queue-full"          // 503
   | "lab-unavailable"     // 503: the Lab is off, or no bench is working
-  | "bench-unavailable";  // 503: the lease's bench didn't answer
+  | "bench-unavailable";  // 503: the lease's bench didn't answer, or answered that it failed; the lease ends as bench-failed
 
 export interface LabError {
   error: string;
@@ -239,7 +245,7 @@ export interface LabError {
 | `GET /api/lab/lease` | Required | The session's place or lease; the heartbeat | 200 `LabLease`; 401 |
 | `POST /api/lab/lease/return` | Required | Leave the line or return the bench early. Empty body. Idempotent. | 200 `LabLease` (`ended` with `left` or `returned`, or `none`); 401 |
 | `POST /api/lab/lease/token` | Required | A bench token for the session's lease. The first one claims the lease (`ready` becomes `active`). | 200 `LabToken`; 409 `no-lease`; 503 `bench-unavailable` |
-| `POST /api/lab/actions` | Required | Body `{ "action": LabAction }`: one scenario action on the session's own bench | 200 `LabActionResult`; 400 unknown action; 409 `no-lease`, `not-applicable`; 429 `too-many-actions`; 503 `bench-unavailable` |
+| `POST /api/lab/actions` | Required | Body `{ "action": LabAction }`: one scenario action on the session's own bench | 200 `LabActionResult`; 400 unknown action; 409 `no-lease`, `not-applicable`; 429 `too-many-actions`; 503 `bench-unavailable` (the bench failed to carry it out, for example its relay control didn't answer; the lease ends as `bench-failed`) |
 | `GET /api/lab/trace?after=<next>` | Required | The redacted feed for the session's active lease; without `after`, from the start of the lease | 200 `LabFeedPage`; 400 malformed `after`; 409 `no-lease` |
 
 Errors carry a `LabError` body. Unknown `/api/lab/*` routes answer 404 `{ "error": "Not found." }` like the rest of `/api`.
@@ -262,13 +268,13 @@ none ─────────────────────────
 - **Returning early.** `POST /api/lab/lease/return` ends the lease as `returned` and starts the reset at once. Leaving the line is the same call. The page also sends it on `pagehide` with `keepalive: true`; if that is lost, the idle limit frees the bench.
 - **Reset between leases.** Every end of a lease, whatever the reason, is followed by `POST /bench/v1/reset` (section 8). The bench refuses the old lease's tokens immediately, then restores itself; the next lease is granted only once the bench reports `ready`. A bench that isn't ready within 60 seconds is `unavailable` and the field station retries the reset every 30 seconds.
 - **Session expiry.** Sessions last 30 minutes from sign-in and aren't extended (`src/sessions.ts`). A lease never outlasts its session; a place in line is dropped when its session ends (`session-ended`). The queued view carries `sessionExpiresAt`, so the page can warn a visitor whose session will end before their turn is likely. After it ends, the next `POST /api/lab/lease` starts a new session (a new subject) at the back of the line. The walkthrough is unaffected until it next asks for a badge, which then also gets the new subject, as it would today.
-- **Bench failure.** The field station polls each bench's status every 5 seconds. A bench that doesn't answer for 15 seconds, or reports another lease or none, ends its lease as `bench-failed` and is marked `unavailable` until a reset succeeds.
+- **Bench failure.** The field station polls each bench's status every 5 seconds. A bench that doesn't answer for 15 seconds, reports another lease or none, or reports `failed`, ends its lease as `bench-failed` and is marked `unavailable` until a reset succeeds. A bench reports `failed` when a reset or gateway restart fails, or when its own polls of its gateway have failed for 15 seconds in a row (section 8). A bench API answer for the lease other than 400, 409, or 429 also ends it as `bench-failed`, and the visitor's request gets 503 `bench-unavailable`.
 - **Field station restart.** Leases and the line live in the field station's memory. On startup it resets every bench before granting anything, which also disconnects any visitor still on a bench. Pages then see `none` (or 401 if their session also ended) and say that the Lab restarted.
 - **What the page shows.** `none`: the scenarios, "Borrow a bench", and the pool from `GET /api/lab/status`. `queued`: position, line length, `nextFreeAt`, a way to leave, and the local-run instructions (PLAN.md). `ready`/`active`: bench number, time left from `expiresAt − now`, the scenario controls (disabled until `nextActionAt`), the views, and the feed. `ended`: why, and a way to join again. No bench ready and `enabled` true: busy. `GET /api/lab/status` failing, `enabled: false`, or every bench `unavailable`: the unavailable notice ([ui-components.md](ui-components.md#4-notices-including-the-unavailable-state)).
 
 ## 5. Scenario actions
 
-At most one a second per lease (field station, 429 `too-many-actions` with `Retry-After: 1`) and per bench (bench API). Each action applies only to the session's own bench and only when its precondition holds; otherwise 409 `not-applicable` and nothing changes. Reset undoes all of them.
+At most one a second per lease (field station, 429 `too-many-actions` with `Retry-After: 1`) and per bench (bench API); an action that fails doesn't spend the second. Each action applies only to the session's own bench and only when its precondition holds; otherwise 409 `not-applicable` and nothing changes. Reset undoes all of them.
 
 "Views" below are the page's own SDK subscriptions to its bench (the bench serves only public creek channels: no `holt`, no `notebook`). The page shows timings it measures itself, from the action's response to the state it observes, labeled as measured on this deployment just now.
 
@@ -276,7 +282,7 @@ At most one a second per lease (field station, 429 `too-many-actions` with `Retr
 | --- | --- | --- | --- |
 | `sensor.foul` | Calibration present | Removes LC-03's calibration table; the bench's `map` handler throws on the next LC-03 reading. | At the next LC-03 reading: a `record` item (`failed`, with its topic, partition, and offset), a trace `map` `failed` `HANDLER_FAILED` on the `station` channel, and the source `paused` with reason `HANDLER_FAILED`. Every view that was live on that source goes `stale` with reason `SOURCE_UNAVAILABLE`, while the trace shows `HANDLER_FAILED`. A view that starts or resynchronizes while the source is paused goes `stale` with the source's own reason, `HANDLER_FAILED` (`src/runtime/subscription.ts`), so the page shows whichever reason the SDK gives. Nothing after that record is processed or committed. |
 | `sensor.restore` | Calibration removed | Puts the table back. | `calibration: "present"`; the source stays `paused` and the views `stale`: StreamOtter never resumes a paused source on its own. |
-| `source.resume` | Source `paused` | `gateway.resumeSource()` for the bench's source. | StreamOtter retries the same record: a `record` item `processed` with the same offset, trace `map` `ok`, the source `healthy`, and every view `authorizing`, `synchronizing`, then `live` from a fresh snapshot. With the table still removed, the same record fails again and the source pauses again: nothing is skipped. |
+| `source.resume` | Source `paused` | `gateway.resumeSource()` for the bench's source. If StreamOtter refuses because the source left `paused` since the bench's last poll, 409 `not-applicable`. | StreamOtter retries the same record: a `record` item `processed` (the mapper returned; section 6) with the same offset, trace `map` `ok`, the source `healthy`, and every view `authorizing`, `synchronizing`, then `live` from a fresh snapshot. With the table still removed, the same record fails again and the source pauses again: nothing is skipped. |
 | `relay.cut` | Relay up, gateway running | Cuts the bench's path to Kafka (section 9). | Within 20 seconds (StreamOtter marks the source degraded after 12 s without broker activity): the source `degraded` with `SOURCE_UNAVAILABLE`, and every view `stale` with `SOURCE_UNAVAILABLE`. The page's own connection stays `connected`: only the source is down, unlike walkthrough chapter 3, where the visitor's connection drops. |
 | `relay.restore` | Relay cut | Restores the path. | Within 30 seconds: the source `healthy`, and every view `synchronizing`, then `live` from a fresh snapshot. |
 | `satellite.start` | Satellite idle, source healthy, gateway running | Connects a raw Socket.IO client to its own gateway, subscribes to one station, and never sends a receipt. It runs once per action. | The feed shows the satellite's subscription (`subscriber: "satellite"`): `authorize` `ok`, `snapshot` `ok`, `send` `ok`, then after `receiptTimeoutMs`, `receipt` `failed` `OVERLOADED` and `satellite-disconnected`. Meanwhile the visitor's views stay `live` with new revisions, and `commit` `ok` items keep arriving: the source never waits for a slow client. |
@@ -295,6 +301,10 @@ At most one a second per lease (field station, 429 `too-many-actions` with `Retr
 3. **No noise.** `map` traces with outcome `filtered` (a record meant for another channel) are dropped. `queue` traces with outcome `filtered` stay: they show a duplicate or older revision being dropped for a subscription.
 4. **No identifiers.** `subscriptionId` becomes `subscriber` (`"satellite"` for the satellite client's subscriptions, `"you"` for every other, which can only be the leaseholder's); `requestId` becomes `group`.
 5. **No payloads or secrets.** Only the fields in `LabFeedItem` are served. Record values, snapshot data, tokens, the management token, and configuration never enter the feed. `record` items carry only the bench's own topic, partition, and offset.
+
+**What `record` items mean.** The bench writes a `record` item from its `map` handler: `failed` just before it throws, `processed` just before it returns. Neither says anything about what StreamOtter did next. `processed` is not proof that the record passed validation, reached a browser, or that its offset was committed, so the page shows it as **mapper returned** and takes stronger facts (source status, view states) from their own items.
+
+**What the page shows.** By default a scenario view: the visitor's actions, traces with outcome `failed` or `rejected`, source status changes, `failed` records with their topic, partition, and offset, bench events (including `gap`), and the page's own note when it fell behind. A `processed` record at the same coordinates as an earlier `failed` one is marked **Retried**; other `processed` records and `ok` traces appear only in the full feed, behind a toggle. Items are shown in time order (`at`), since traces arrive a poll after the bench's own items. One outcome line below the bench's view states how the latest scenario ended, from feed items and the page's own observations: the retried record after Resume, or the slow client's disconnection (with `OVERLOADED` when the feed shows its `receipt` trace failing) beside the visitor's own view state and revisions.
 
 **Delivery and rate.** Polling, not server-sent events: it fits the field station's request-and-response API and its budget, needs no long-lived connections through Cloudflare, and doubles as the heartbeat. The page polls `GET /api/lab/trace` once a second while its lease is active and stops when it ends. The bench keeps the last 500 items per lease and returns at most 100 per request; if the page falls behind, the response has `gap: true` and continues from the oldest item kept, and the page says some steps weren't shown.
 
@@ -333,6 +343,8 @@ At most one a second per lease (field station, 429 `too-many-actions` with `Retr
 
   `LabChannels` are the bench project's generated types (E2.1 adds the bench project and its generation).
 
+  The SDK reports `auth-required` after any `getToken` rejection and then waits for `reconnect()`. The page therefore treats a token failure with no HTTP answer (network failure, timeout), a 429, or a 5xx as transient and calls `reconnect()` after 1 s, doubling to 30 s, starting again from 1 s once connected. Any other answer, in particular 409 `no-lease` once the lease has ended, is final: the page polls its lease at once and shows why. An `auth-required` the gateway causes itself (a revoked lease) is final too. The home page and walkthrough recover from a failed `POST /api/badge` the same way (`apps/site/src/scripts/sign-in-retry.ts`). The page also starts at most one connect per lease at a time, so a slow token request isn't repeated by every poll.
+
 ## 8. The bench API
 
 On each bench, port 7420, reachable only on the Compose network (no published port, no Caddy route). Every route except `/healthz` requires `Authorization: Bearer <that bench's service token>`, compared in constant time; 401 otherwise. Each bench has its own service token; the field station holds all three.
@@ -358,6 +370,10 @@ export interface BenchStatus {
 | `GET /bench/v1/feed?leaseId=&after=&limit=` | | The lease's redacted feed | 200 `LabFeedPage`; 400 malformed cursor; 409 other lease |
 | `POST /bench/v1/reset` | `{ leaseId: string \| null }` | Ends the lease (or whichever is current, for `null`) and restores the bench | 202 `BenchStatus` (`resetting`) |
 
+**Errors.** Every error body is `{ error, code }` with a `LabErrorCode`. 400 `invalid-request` is for a malformed or oversized body or an invalid parameter; 409 carries `no-lease` (another lease, or none) or `not-applicable`; 429 `too-many-actions`. Anything else that goes wrong is the bench's own failure (its management API, its relay control, a gateway call): 500 `bench-unavailable`, never 400. The field station passes the bench's 400, 409, and 429 codes through to the visitor unchanged (so a bench's `no-lease` stays `no-lease`) and treats any other answer as the bench failing (section 4).
+
+**Background polling.** About once a second the bench polls its gateway's sources and traces, or resets once the lease's time is up. At most one such tick waits in the bench's work queue, so a reset or gateway restart that holds the queue for 30 seconds doesn't stack polls ahead of the visitor's calls. A failed poll changes nothing by itself; the bench reports `failed` only once polls have failed for 15 seconds in a row.
+
 **Reset**, in order, until the bench reports `ready`:
 
 1. Clear the current lease, so `authenticate` refuses its tokens from this moment, and forget its tokens.
@@ -373,7 +389,7 @@ export interface BenchStatus {
 
 **Status.** The E2.0 spike (PR #17, `spike/lab-relay-cut`) proves the relay cut but does not yet meet M4 or M11 (section 10.5): its bench accepts the walkthrough's badge check in `authenticate` instead of lease-bound tokens, and its environment and snapshots come from the field station's production secrets and internal API (`FIELD_STATION_SECRET`, `FIELD_STATION_SERVICE_TOKEN`, `FIELD_STATION_INTERNAL_URL`). E2.1 must close both gaps before any bench faces the public. S11 (section 10.6) checks it at the stack level.
 
-**Field station environment** (names are suggestions for `be-lab` and `devops`): `LAB_BENCH_API_URLS` (the three bench API origins; unset means `enabled: false`), `LAB_BENCH_1_SERVICE_TOKEN` to `LAB_BENCH_3_SERVICE_TOKEN` (32 characters or more, from `deploy/make-secrets.sh`), `LAB_LEASE_SECONDS`, `LAB_QUEUE_MAX`. Separate from the E2.0 spike's `FIELD_LAB_BENCHES` (`deploy/compose.lab-spike.yaml`): the number of benches whose `lab-N.*` topic copies the field station publishes over its own Kafka connection, unrelated to the Lab API's lease traffic.
+**Field station environment** (names are suggestions for `be-lab` and `devops`): `LAB_BENCH_API_URLS` (the three bench API origins; unset means `enabled: false`), `LAB_BENCH_1_SERVICE_TOKEN` to `LAB_BENCH_3_SERVICE_TOKEN` (32 characters or more, from `deploy/make-secrets.sh`), `LAB_LEASE_SECONDS` (1 to 300; the field station refuses to start with a larger value, since benches refuse longer leases), `LAB_QUEUE_MAX`. Separate from the E2.0 spike's `FIELD_LAB_BENCHES` (`deploy/compose.lab-spike.yaml`): the number of benches whose `lab-N.*` topic copies the field station publishes over its own Kafka connection, unrelated to the Lab API's lease traffic.
 
 ## 9. What the relay cut must do
 
@@ -484,3 +500,4 @@ Yes, development-mode benches can face the public with these mitigations. In `0.
 - **E2.1** adds the bench project (its channels, `LabChannels` types for the site), the calibration table, lease-bound tokens, the per-bench snapshot source, and the per-bench relay token; generated files for the site follow the section 7 ownership of that sprint.
 - **L.2** decides how the Lab runs locally; until then, with `npm run dev`, `/api/lab/status` answers 404, which the page treats as unavailable.
 - **The owner** decides section 10.8.
+- **V1.1 W1 (October 3, 2026)** applied the October 2 review's Lab findings ([CODE_REVIEW_2026-10-02.md](../reviews/CODE_REVIEW_2026-10-02.md) S1, L1–L8) and the site evaluation's Lab items 2–4. Observable changes: bench-side failures answer 500 `bench-unavailable` instead of 400 and end the lease (sections 4, 8); a bench's `no-lease` reaches the visitor as `no-lease`, not `not-applicable` (section 8); a failed action doesn't spend the one-a-second budget (section 5); `LAB_LEASE_SECONDS` above 300 is refused at startup (sections 2, 8); `/api` error answers carry CORS (section 3); the page retries transient token failures (section 7) and shows a scenario view of the feed with `processed` records labeled "mapper returned" (section 6). No route, payload type, or error code was added or removed.

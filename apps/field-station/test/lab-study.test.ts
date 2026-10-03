@@ -11,7 +11,7 @@
  */
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
-import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -164,6 +164,19 @@ describe('restart keeps the study (LC11-A14 app side, A33)', () => {
     const second = await v.runtime(); const fresh = studyOf(second);
     assert.notEqual(fresh.studyId, old.studyId); assert.equal(second.status().state, 'ready');
     assert.ok(v.steps.includes(`deleteGroup ${old.consumerGroup}`)); assert.ok(v.steps.includes(`gate.discard ${old.studyId}`));
+    assert.deepEqual(await readdir(join(v.stateDir, 'lab-1', 'studies')), [fresh.studyId]);
+  });
+
+  test('an unreadable study.json at boot discards the old study with the reset steps', async t => {
+    const v = await volume(t); const first = await v.runtime(); const old = studyOf(first);
+    await lease(first, v.at()); await first.close();
+    // A torn write: the descriptor can't be trusted, but the old study's directory names it.
+    const path = join(v.stateDir, 'lab-1', 'study.json'); await writeFile(path, (await readFile(path, 'utf8')).slice(0, -7));
+    v.steps.length = 0;
+    const second = await v.runtime(); const fresh = studyOf(second);
+    assert.notEqual(fresh.studyId, old.studyId); assert.equal(second.status().state, 'ready');
+    assert.deepEqual(v.steps, [`gate.close ${old.studyId}`, `deleteGroup ${old.consumerGroup}`, `gate.discard ${old.studyId}`, `gateway.start ${fresh.consumerGroup}`]);
+    assert.ok(!v.groups.has(old.consumerGroup));
     assert.deepEqual(await readdir(join(v.stateDir, 'lab-1', 'studies')), [fresh.studyId]);
   });
 

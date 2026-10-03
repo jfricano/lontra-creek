@@ -13,7 +13,7 @@ import { benchConfig, benchHandlers, benchEnvironment, type LabChannels } from '
 import type { BenchStatus, LabAction, LabBenchState, StudySummary } from './contract.ts';
 import { LabFeed } from './feed.ts';
 import { ACTIONS, LabError, MAX_LEASE_MS } from './errors.ts';
-import { newStudy, StudyStore, type StudyDescriptor } from './study.ts';
+import { consumerGroupFor, newStudy, StudyStore, type StudyDescriptor } from './study.ts';
 /** How long background polls may keep failing before the bench reports `failed`: one slow answer must not end a visitor's lease. */
 export const POLL_GRACE_MS = 15_000;
 /** How long a reset waits for the closing study's pending work before it carries on (LC11-ADR-02 step 4). */
@@ -185,7 +185,7 @@ export class BenchRuntime {
     }
     await this.#relay(false);
     this.#study = study; this.#scope = scopeFor(study?.studyId ?? ''); this.#scope.closed = true;
-    await this.#discard(null, false);
+    await this.#discard(study?.lease ?? null, false);
     await this.#provision();
   }
   /**
@@ -254,8 +254,8 @@ export class BenchRuntime {
     await this.#relay(false);
     await this.#stopGateway();
     if (study) { await this.#deleteGroupFn(study.consumerGroup); await this.#store.remove(study.studyId); await this.#gate.discard(study.studyId); }
-    // Directories a crash left behind belong to no live study.
-    for (const stray of await this.#store.studies()) await this.#store.remove(stray);
+    // Directories a crash or an unreadable study.json left behind belong to no live study: each is discarded with the same steps.
+    for (const stray of await this.#store.studies()) { await this.#gate.close(stray); await this.#deleteGroupFn(consumerGroupFor(this.#settings.number, stray)); await this.#store.remove(stray); await this.#gate.discard(stray); }
     this.#study = null; this.#feed.reset();
   }
   /** Step 7: a new identity, generation, group, and journal directory, then its gateway. A new study's source must consume. */

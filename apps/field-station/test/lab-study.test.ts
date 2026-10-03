@@ -24,7 +24,7 @@ import { BenchRuntime, type StudyGateClient } from '../src/lab/runtime.ts';
 import { consumerGroupFor, generationFor, newStudyId } from '../src/lab/study.ts';
 
 const SERVICE = 's'.repeat(32);
-const world = { sources: 'healthy' as 'healthy' | 'paused' };
+const world = { sources: 'healthy' as 'healthy' | 'paused', relay: 'up' as 'up' | 'cut' };
 const json = (response: import('node:http').ServerResponse, status: number, value: unknown) => { response.writeHead(status, { 'content-type': 'application/json' }); response.end(JSON.stringify(value)); };
 const management = createServer((request, response) => {
   const path = new URL(request.url ?? '/', 'http://management.invalid').pathname;
@@ -33,13 +33,14 @@ const management = createServer((request, response) => {
   if (path === '/management/v1/sources') return json(response, 200, { ok: true, data: { items: [{ sourceId: 'field', status: world.sources, ...(world.sources === 'paused' ? { reason: 'HANDLER_FAILED' } : {}) }] } });
   json(response, 404, { ok: false });
 });
-const relay = createServer((_request, response) => json(response, 200, {}));
+// The relay control, as the proxy's: /cut and /restore flip the path to Kafka.
+const relay = createServer((request, response) => { if (request.url === '/cut') world.relay = 'cut'; if (request.url === '/restore') world.relay = 'up'; json(response, 200, {}); });
 function listen(server: Server): Promise<string> { return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(`http://127.0.0.1:${(server.address() as AddressInfo).port}`))); }
 const close = (server: Server) => { server.closeAllConnections(); return new Promise<void>(resolve => server.close(() => resolve())); };
 let managementOrigin = ''; let relayOrigin = '';
 before(async () => { managementOrigin = await listen(management); relayOrigin = await listen(relay); });
 after(async () => { await close(management); await close(relay); });
-beforeEach(() => { world.sources = 'healthy'; });
+beforeEach(() => { world.sources = 'healthy'; world.relay = 'up'; });
 
 /** One bench's volume and Kafka, shared by every BenchRuntime a test starts on it (a process restart). */
 async function volume(t: TestContext) {
@@ -59,7 +60,8 @@ async function volume(t: TestContext) {
   const runtime = async () => {
     const bench = new BenchRuntime({ LAB_BENCH: '1', LAB_BENCH_1_SERVICE_TOKEN: SERVICE, LAB_BENCH_1_RELAY_TOKEN: 'r'.repeat(32), LAB_RELAY_ORIGIN: relayOrigin }, {
       now: () => now, tickMs: 3_600_000, stateDir, gate, quiesceMs: 50,
-      deleteGroup: async group => { steps.push(`deleteGroup ${group}`); if (faults.deleteGroup) throw new Error('broker refused'); groups.delete(group); },
+      // The real admin client reaches Kafka at BENCH_KAFKA_BROKERS, the relay proxy itself: refused while the relay is cut.
+      deleteGroup: async group => { steps.push(`deleteGroup ${group}`); if (faults.deleteGroup) throw new Error('broker refused'); if (world.relay === 'cut') throw new Error('connect ECONNREFUSED lab-1-kafka:9101'); groups.delete(group); },
       services: async (config, registry) => {
         const group = config.sources['field']!.kind === 'kafka' ? (config.sources['field'] as { consumerGroup: string }).consumerGroup : '';
         steps.push(`gateway.start ${group}`); configs.push(config); handlers.push(registry); groups.add(group);
@@ -252,5 +254,15 @@ describe('reset discards the study (LC11-A25, A26)', () => {
     release(); await held; await settle(bench); await settle(bench);
     assert.equal(studyOf(bench).restarts.gateway, 0);
     assert.equal(bench.status().state, 'ready');
+  });
+
+  test('a lease that ends with the relay cut restores the relay before the old group is deleted', async t => {
+    const v = await volume(t); const bench = await v.runtime(); const old = studyOf(bench);
+    await lease(bench, v.at()); await bench.run(() => bench.action('lease-1', 'relay.cut'));
+    assert.equal(world.relay, 'cut');
+    await bench.run(() => bench.reset());
+    assert.equal(world.relay, 'up'); assert.equal(bench.status().scenario.relay, 'up');
+    assert.equal(bench.status().state, 'ready'); assert.equal(bench.status().readiness.cleanLease, true);
+    assert.ok(!v.groups.has(old.consumerGroup), 'the old group was deleted through the restored relay');
   });
 });

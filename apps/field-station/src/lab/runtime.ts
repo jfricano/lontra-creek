@@ -224,7 +224,7 @@ export class BenchRuntime {
    * Reset is study discard (LC11-ADR-02), in order: invalidate the lease and tokens;
    * revoke its subject; shut the field station's publisher gate for the study;
    * quiesce pending work with a bounded wait; write the study's bounded summary;
-   * stop the gateway, delete its group, remove its journal directory, and have the
+   * restore the relay; stop the gateway, delete its group, remove its journal directory, and have the
    * field station summarize and remove its ledger; then provision a new study. Any
    * failure leaves the bench `failed` and not clean-lease eligible; the field
    * station retries on its 30-second schedule.
@@ -248,6 +248,8 @@ export class BenchRuntime {
     this.#satellite?.disconnect(); this.#satellite = undefined; this.#scenario.satellite = 'idle';
     const quiesced = !quiesce || await Promise.race([Promise.allSettled([...scope.pending]).then(() => true), sleep(this.#quiesceMs, false, { ref: false })]);
     if (study) await this.#store.summarize({ bench: this.#settings.number as StudySummary['bench'], studyId: study.studyId, generation: study.generation, consumerGroup: study.consumerGroup, createdAt: study.createdAt, closedAt: new Date(this.#now()).toISOString(), phase: study.phase, leaseId: lease?.leaseId ?? null, restarts: { ...study.restarts }, counts: { ...scope.counts }, lastSource: scope.lastSource, quiesced });
+    // The admin client reaches Kafka through the relay proxy, so a lease that ended cut restores it first.
+    await this.#relay(false);
     await this.#stopGateway();
     if (study) { await this.#deleteGroupFn(study.consumerGroup); await this.#store.remove(study.studyId); await this.#gate.discard(study.studyId); }
     // Directories a crash left behind belong to no live study.

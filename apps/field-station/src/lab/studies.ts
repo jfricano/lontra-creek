@@ -63,6 +63,8 @@ export class LabStudies {
   readonly #log: (message: string) => void;
   readonly #current = new Map<BenchId, Study>();
   readonly #closed = new Map<BenchId, string[]>();
+  /** Discards under way, by bench and study, so a repeated call joins the first. */
+  readonly #discarding = new Map<string, Promise<LedgerSummary>>();
   constructor(options: { dataDir: string; world: WorldSource; now?: () => number; closeWaitMs?: number; log?: (message: string) => void }) {
     this.#root = join(options.dataDir, 'lab'); this.#world = options.world; this.#now = options.now ?? Date.now; this.#closeWaitMs = options.closeWaitMs ?? CLOSE_WAIT_MS; this.#log = options.log ?? (() => undefined);
   }
@@ -80,7 +82,9 @@ export class LabStudies {
     if (current?.studyId === studyId) return;
     if (current) { current.state = 'closed'; this.#remember(bench, current.studyId); }
     this.#current.set(bench, { bench, studyId, state: 'open', ledger: null, views: new Map(), prepared: new Map(), inFlight: new Set() });
-    void this.#sweep(bench, studyId).catch(error => this.#log(`Lab ${bench}: sweeping stray studies failed: ${error instanceof Error ? error.message : String(error)}`));
+    // A superseded study is discarded through its own ledger instance, so its in-flight publications see it discarded and write nothing.
+    void (async () => { if (current) await this.#discard(bench, current.studyId, current); await this.#sweep(bench, studyId); })()
+      .catch(error => this.#log(`Lab ${bench}: sweeping stray studies failed: ${error instanceof Error ? error.message : String(error)}`));
   }
   async #sweep(bench: BenchId, keep: string): Promise<void> {
     let names: string[]; try { names = await readdir(join(this.#root, `lab-${bench}`, 'studies')); } catch { return; }
@@ -101,6 +105,16 @@ export class LabStudies {
     if (!STUDY_ID.test(studyId)) throw new RangeError('Invalid study ID.');
     if (this.current(bench) === studyId) throw new StudyClosedError();
     const study = this.#current.get(bench)?.studyId === studyId ? this.#current.get(bench)! : null;
+    return this.#discard(bench, studyId, study);
+  }
+  #discard(bench: BenchId, studyId: string, study: Study | null): Promise<LedgerSummary> {
+    const key = `${bench}/${studyId}`;
+    const running = this.#discarding.get(key);
+    if (running) return running;
+    const discarding = this.#discardOnce(bench, studyId, study).finally(() => this.#discarding.delete(key));
+    this.#discarding.set(key, discarding); return discarding;
+  }
+  async #discardOnce(bench: BenchId, studyId: string, study: Study | null): Promise<LedgerSummary> {
     const path = join(this.#dir(bench, studyId), 'ledger.json');
     // An unreadable ledger doesn't stop the discard: the study is going either way.
     const ledger = await (study?.ledger ?? FileCoverageLedger.open(path, bench, studyId, this.#now)).catch(() => null);
@@ -121,7 +135,7 @@ export class LabStudies {
       }
     }
     await rm(this.#dir(bench, studyId), { recursive: true, force: true });
-    if (study) { study.views.clear(); study.prepared.clear(); this.#current.delete(bench); }
+    if (study) { study.views.clear(); study.prepared.clear(); if (this.#current.get(bench) === study) this.#current.delete(bench); }
     return summary;
   }
   /** The open study's ledger; refused for any other study, which confines late calls to nothing. */

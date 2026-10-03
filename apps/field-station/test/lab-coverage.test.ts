@@ -275,6 +275,25 @@ describe('the publisher gate and study discard', () => {
     await assert.rejects(stat(join(s.dataDir, 'lab', 'lab-1', 'studies', S2)));
   });
 
+  test('a study superseded while open is discarded through its own ledger, so a late publication recreates nothing', async t => {
+    const s = await studies(t); s.registry.open(1, S1);
+    await s.registry.beginRun(1, S1, { scenarioId: 'S03', runId: 'run-1', mutation: flowLc03(), coverage: 'withheld' });
+    let land!: (at: RecordCoordinates) => void;
+    const slow: ScenarioSink = { send: () => new Promise(resolve => { land = resolve; }) };
+    const inFlight = s.registry.publish(1, S1, 'run-1', record('run-1'), slow);
+    await new Promise(resolve => setImmediate(resolve));
+    // The next lease's study opens without S1 ever being closed (the pool's close was lost).
+    s.registry.open(1, S2);
+    const summaries = join(s.dataDir, 'lab', 'lab-1', 'summaries');
+    for (let i = 0; i < 50 && !(await readdir(summaries).catch(() => [] as string[])).includes(`${S1}.json`); i++) await new Promise(resolve => setTimeout(resolve, 5));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    land({ topic: 'lab-1.field.gauges', partition: 0, offset: '42' }); await inFlight;
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.deepEqual(await readdir(join(s.dataDir, 'lab', 'lab-1', 'studies')), [], 'the discarded study\'s ledger stays removed');
+    const summary = JSON.parse(await readFile(join(summaries, `${S1}.json`), 'utf8')) as { entries: unknown[] };
+    assert.equal(summary.entries.length, 1, 'its summary still records the run');
+  });
+
   test('opening a new study sweeps strays a crash left on disk', async t => {
     const s = await studies(t); s.registry.open(1, S1);
     await s.registry.beginRun(1, S1, { scenarioId: 'S03', runId: 'run-1', mutation: flowLc03(), coverage: 'pending' });

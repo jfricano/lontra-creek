@@ -8,6 +8,8 @@
  * proxies to the field station.
  */
 
+import { HttpStatusError } from "./sign-in-retry.ts";
+
 // `?.` on env: Vite always supplies it in the browser; Node's test runner, which loads
 // this module without Vite's transform, does not.
 const API_ORIGIN = (import.meta.env?.PUBLIC_FIELD_STATION_ORIGIN ?? "").replace(/\/+$/, "");
@@ -44,7 +46,7 @@ export async function requestBadge(role: Role, signal?: AbortSignal): Promise<Ba
     credentials: "include",
     ...(signal === undefined ? {} : { signal })
   });
-  if (!response.ok) throw new Error(`Signing in failed (${response.status}).`);
+  if (!response.ok) throw new HttpStatusError(`Signing in failed (${response.status}).`, response.status);
   return await response.json() as BadgeResponse;
 }
 

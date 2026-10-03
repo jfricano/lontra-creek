@@ -5,6 +5,9 @@
  */
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import type { Gateway } from 'streamotter/contracts';
@@ -44,8 +47,9 @@ beforeEach(() => { Object.assign(world, { sources: 'healthy', relayFails: false,
 
 async function bench(t: import('node:test').TestContext) {
   let now = Date.parse('2026-10-03T00:00:00Z');
+  const stateDir = await mkdtemp(join(tmpdir(), 'lab-runtime-')); t.after(() => rm(stateDir, { recursive: true, force: true }));
   const runtime = new BenchRuntime({ LAB_BENCH: '1', LAB_BENCH_1_SERVICE_TOKEN: SERVICE, LAB_BENCH_1_RELAY_TOKEN: 'r'.repeat(32), LAB_RELAY_ORIGIN: relayOrigin }, {
-    now: () => now, tickMs: 3_600_000,
+    now: () => now, tickMs: 3_600_000, stateDir, gate: { async close() {}, async discard() {} }, deleteGroup: async () => {},
     services: async () => ({ gateway, management: { origin: managementOrigin, async close() {} } })
   });
   await runtime.start();

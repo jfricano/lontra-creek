@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { createServer, type Server } from 'node:http';
 import { TENANT_ID } from '@lontra-creek/sim';
 import { createGateway } from 'streamotter/gateway';
@@ -9,11 +10,28 @@ import { io, type Socket } from 'socket.io-client';
 import { Kafka } from 'kafkajs';
 import { readFileSync } from 'node:fs';
 import { benchConfig, benchHandlers, benchEnvironment, type LabChannels } from './bench.ts';
-import type { BenchStatus, LabAction, LabBenchState } from './contract.ts';
+import type { BenchStatus, LabAction, LabBenchState, StudySummary } from './contract.ts';
 import { LabFeed } from './feed.ts';
 import { ACTIONS, LabError, MAX_LEASE_MS } from './errors.ts';
+import { newStudy, StudyStore, type StudyDescriptor } from './study.ts';
 /** How long background polls may keep failing before the bench reports `failed`: one slow answer must not end a visitor's lease. */
 export const POLL_GRACE_MS = 15_000;
+/** How long a reset waits for the closing study's pending work before it carries on (LC11-ADR-02 step 4). */
+export const QUIESCE_MS = 5_000;
+/** Kafka's error for a group that doesn't exist: a group that never committed is already gone. */
+const GROUP_ID_NOT_FOUND = 69;
+/**
+ * The field station's half of a reset: its publisher gate and its coverage ledger
+ * (Lab contract section 8a). Both calls are idempotent; either failing fails the reset.
+ */
+export interface StudyGateClient { close(studyId: string): Promise<void>; discard(studyId: string): Promise<void> }
+/**
+ * What one study's callbacks may touch. Each gateway's handlers, satellite socket,
+ * and background job capture the scope of the study they started under; once it is
+ * closed they write nothing, and are only counted (late) in that study's summary.
+ */
+interface StudyScope { studyId: string; closed: boolean; pending: Set<Promise<unknown>>; counts: StudySummary['counts']; lastSource: StudySummary['lastSource'] }
+const scopeFor = (studyId: string): StudyScope => ({ studyId, closed: false, pending: new Set(), counts: { actions: 0, recordsProcessed: 0, recordsFailed: 0, lateCallbacks: 0 }, lastSource: null });
 /** A running gateway and its loopback management API. */
 export interface BenchServices { gateway: Gateway; management: { origin: string; close(): Promise<void> } }
 export interface BenchRuntimeOptions {
@@ -22,6 +40,20 @@ export interface BenchRuntimeOptions {
   tickMs?: number;
   /** Starts the gateway and management API; tests substitute stand-ins. */
   services?: (config: ProjectConfig<LabChannels>, handlers: HandlerRegistry<LabChannels>, managementToken: string, port: number) => Promise<BenchServices>;
+  /** The bench's volume. Defaults to LAB_STATE_DIR, else /var/lib/lontra in production and .data elsewhere. */
+  stateDir?: string;
+  /** Deletes a consumer group; tests substitute a stand-in for the Kafka admin client. */
+  deleteGroup?: (group: string) => Promise<void>;
+  /** The field station's study gate; defaults to its private API at LAB_SNAPSHOT_ORIGIN. */
+  gate?: StudyGateClient;
+  quiesceMs?: number;
+}
+function fieldStationGate(number: number, origin: string, token: string): StudyGateClient {
+  const call = async (studyId: string, step: 'close' | 'discard') => {
+    const response = await fetch(`${origin}/lab-internal/${number}/studies/${encodeURIComponent(studyId)}/${step}`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) });
+    if (!response.ok) throw new Error(`The field station refused to ${step} the study.`);
+  };
+  return { close: studyId => call(studyId, 'close'), discard: studyId => call(studyId, 'discard') };
 }
 async function gatewayServices(config: ProjectConfig<LabChannels>, handlers: HandlerRegistry<LabChannels>, token: string, port: number): Promise<BenchServices> {
   // Validate the exact same config under production rules before development enables traces.
@@ -46,7 +78,17 @@ export class BenchRuntime {
   #management: BenchServices['management'] | undefined;
   #managementToken = randomBytes(32).toString('base64url');
   #traceCursor: string | null = null;
-  #group = `lab-${randomUUID()}`;
+  /** The study this bench runs; null only before boot and between discarding one study and provisioning the next. */
+  #study: StudyDescriptor | null = null;
+  #scope: StudyScope = scopeFor('');
+  /** A lease invalidated by the bench API ahead of the queued reset, which still has to revoke it. */
+  #ended: { leaseId: string; expiresAt: string } | null = null;
+  /** Whether the last cleanup (reset, or provisioning at boot) completed. */
+  #cleanupOk = false;
+  readonly #store: StudyStore;
+  readonly #gate: StudyGateClient;
+  readonly #deleteGroupFn: (group: string) => Promise<void>;
+  readonly #quiesceMs: number;
   #satellite: Socket | undefined;
   #nextAction = 0;
   #tail: Promise<unknown> = Promise.resolve();
@@ -57,9 +99,28 @@ export class BenchRuntime {
   readonly #now: () => number;
   readonly #tickMs: number;
   readonly #services: NonNullable<BenchRuntimeOptions['services']>;
-  constructor(env: NodeJS.ProcessEnv, options: BenchRuntimeOptions = {}) { this.#env = env; this.#settings = benchEnvironment(env); this.#now = options.now ?? Date.now; this.#tickMs = options.tickMs ?? 1000; this.#services = options.services ?? gatewayServices; }
+  constructor(env: NodeJS.ProcessEnv, options: BenchRuntimeOptions = {}) {
+    this.#env = env; this.#settings = benchEnvironment(env); this.#now = options.now ?? Date.now; this.#tickMs = options.tickMs ?? 1000; this.#services = options.services ?? gatewayServices;
+    this.#store = new StudyStore(options.stateDir ?? env['LAB_STATE_DIR'] ?? (env['NODE_ENV'] === 'production' ? '/var/lib/lontra' : '.data'), this.#settings.number);
+    this.#gate = options.gate ?? fieldStationGate(this.#settings.number, this.#settings.snapshotOrigin, this.#settings.serviceToken);
+    this.#deleteGroupFn = options.deleteGroup ?? (group => this.#deleteGroup(group)); this.#quiesceMs = options.quiesceMs ?? QUIESCE_MS;
+  }
   run<T>(fn: () => Promise<T>): Promise<T> { const p = this.#tail.then(fn); this.#tail = p.catch(() => undefined); return p; }
-  status(): BenchStatus { return { bench: this.#settings.number, state: this.#state, lease: this.#lease, scenario: structuredClone(this.#scenario), checks: { developmentPrincipals: this.#principalCount, fixtureSources: 0, managementHost: '127.0.0.1' } }; }
+  status(): BenchStatus {
+    const study = this.#study;
+    return { bench: this.#settings.number, state: this.#state, lease: this.#lease, scenario: structuredClone(this.#scenario), checks: { developmentPrincipals: this.#principalCount, fixtureSources: 0, managementHost: '127.0.0.1' }, readiness: this.readiness(),
+      study: study && { studyId: study.studyId, generation: study.generation, consumerGroup: study.consumerGroup, createdAt: study.createdAt, phase: study.phase, restarts: { ...study.restarts } } };
+  }
+  /**
+   * LC11-ADR-02's three facts. Control: the gateway and its management API are up and
+   * answering. Source: consuming. Clean lease: a provisioned study no lease has used,
+   * after a cleanup that completed. A held or paused source changes only `source`.
+   */
+  readiness(): BenchStatus['readiness'] {
+    const running = this.#scenario.gateway === 'running' && this.#management !== undefined;
+    const control = running && (this.#state === 'ready' || this.#state === 'leased') && this.#pollFailingSince === null;
+    return { control, source: running && this.#scenario.source.status === 'healthy', cleanLease: this.#state === 'ready' && this.#cleanupOk && this.#study?.phase === 'clean' };
+  }
   authenticate(token: string): Principal | null { const lease = this.#lease; if (!lease || Date.parse(lease.expiresAt) <= this.#now() || !this.#tokens.has(token)) return null; return { tenantId: TENANT_ID, subject: `lab-${lease.leaseId}`, sessionId: lease.leaseId, expiresAt: lease.expiresAt, claims: { role: 'volunteer', bench: this.#settings.number } }; }
   async #managementCall<T>(path: string): Promise<T> {
     if (!this.#management) throw new Error('Management unavailable.');
@@ -78,20 +139,53 @@ export class BenchRuntime {
     return envelope.data;
   }
   async #relay(cut: boolean): Promise<void> { const origin = this.#env['LAB_RELAY_ORIGIN'] ?? `http://lab-${this.#settings.number}-kafka:9180`; const response = await fetch(`${origin}/${cut ? 'cut' : 'restore'}`, { method: 'POST', headers: { authorization: `Bearer ${this.#settings.relayToken}` }, signal: AbortSignal.timeout(3000) }); if (!response.ok) throw new Error('Relay unavailable.'); this.#scenario.relay = cut ? 'cut' : 'up'; }
-  #config() { return benchConfig(this.#settings.number, { host: this.#env['BENCH_HOST'] ?? '0.0.0.0', port: Number(this.#env['BENCH_PORT'] ?? 7400), brokers: (this.#env['BENCH_KAFKA_BROKERS'] ?? `lab-${this.#settings.number}-kafka:${9100 + this.#settings.number}`).split(','), caFile: this.#env['KAFKA_CA_FILE'] ?? '/etc/lontra/kafka/ca.pem', consumerGroup: this.#group, allowedOrigins: (this.#env['SITE_ORIGIN'] ?? 'https://streamotter.app').split(',') }); }
+  #config() { const study = this.#study; if (!study) throw new Error('No study.'); return benchConfig(this.#settings.number, { generation: study.generation, host: this.#env['BENCH_HOST'] ?? '0.0.0.0', port: Number(this.#env['BENCH_PORT'] ?? 7400), brokers: (this.#env['BENCH_KAFKA_BROKERS'] ?? `lab-${this.#settings.number}-kafka:${9100 + this.#settings.number}`).split(','), caFile: this.#env['KAFKA_CA_FILE'] ?? '/etc/lontra/kafka/ca.pem', consumerGroup: study.consumerGroup, allowedOrigins: (this.#env['SITE_ORIGIN'] ?? 'https://streamotter.app').split(',') }); }
+  /** Runs `fn` only while `scope` is the open study; otherwise counts a late callback against that study. */
+  #within(scope: StudyScope, fn: () => void): void { if (scope.closed || scope !== this.#scope) { scope.counts.lateCallbacks++; return; } fn(); }
+  /** Starts the gateway for the current study. A source that isn't healthy afterwards is reported, not treated as failure. */
   async #startGateway(): Promise<void> {
-    const config = this.#config();
-    const handlers = benchHandlers(this.#settings.number, { authenticate: token => this.authenticate(token), serviceToken: this.#settings.serviceToken, snapshotOrigin: this.#settings.snapshotOrigin, calibration: () => this.#scenario.calibration === 'present', record: item => this.#feed.add(item) });
+    const config = this.#config(); const scope = this.#scope;
+    const handlers = benchHandlers(this.#settings.number, { authenticate: token => this.authenticate(token), serviceToken: this.#settings.serviceToken, snapshotOrigin: this.#settings.snapshotOrigin, calibration: () => this.#scenario.calibration === 'present',
+      record: item => this.#within(scope, () => { if (item.kind === 'record') scope.counts[item.outcome === 'failed' ? 'recordsFailed' : 'recordsProcessed']++; this.#feed.add(item); }) });
     const services = await this.#services(config, handlers, this.#managementToken, Number(this.#env['BENCH_MANAGEMENT_PORT'] ?? 7401)); this.#gateway = services.gateway; this.#management = services.management;
     const principals = await this.#managementCall<{ items: unknown[] }>('dev/principals'); this.#principalCount = principals.items.length;
     requireNoDevelopmentPrincipals(principals.items);
     this.#traceCursor = null; this.#scenario.gateway = 'running'; this.#pollFailingSince = null;
     await this.#poll(false);
-    if (this.#scenario.source.status !== 'healthy') throw new Error('Bench source did not become healthy.');
   }
   async #stopGateway(): Promise<void> { this.#scenario.gateway = 'restarting'; this.#satellite?.disconnect(); this.#satellite = undefined; this.#scenario.satellite = 'idle'; await this.#management?.close(); this.#management = undefined; await this.#gateway?.stop(); this.#gateway = undefined; }
-  async #deleteGroup(group: string): Promise<void> { const config = this.#config(); const connection = config.connections['field']!; const kafka = new Kafka({ brokers: [...connection.brokers], ssl: { ca: [readFileSync(this.#env['KAFKA_CA_FILE'] ?? '/etc/lontra/kafka/ca.pem', 'utf8')] }, sasl: { mechanism: 'scram-sha-512', username: this.#env['KAFKA_LAB_USERNAME']!, password: this.#env['KAFKA_LAB_PASSWORD']! }, logLevel: 0 }); const admin = kafka.admin(); try { await admin.connect(); await admin.deleteGroups([group]); } finally { await admin.disconnect(); } }
-  async start(): Promise<void> { await this.#relay(false); await this.#startGateway(); this.#state = 'ready'; this.#timer = setInterval(() => { void this.tick(); }, this.#tickMs); }
+  async #deleteGroup(group: string): Promise<void> { const connection = benchConfig(this.#settings.number, { brokers: (this.#env['BENCH_KAFKA_BROKERS'] ?? `lab-${this.#settings.number}-kafka:${9100 + this.#settings.number}`).split(',') }).connections['field']!; const kafka = new Kafka({ brokers: [...connection.brokers], ssl: { ca: [readFileSync(this.#env['KAFKA_CA_FILE'] ?? '/etc/lontra/kafka/ca.pem', 'utf8')] }, sasl: { mechanism: 'scram-sha-512', username: this.#env['KAFKA_LAB_USERNAME']!, password: this.#env['KAFKA_LAB_PASSWORD']! }, logLevel: 0 }); const admin = kafka.admin(); try { await admin.connect(); await admin.deleteGroups([group]); }
+    catch (error) { if (!((error as { groups?: { errorCode: number }[] }).groups ?? [{ errorCode: -1 }]).every(item => item.errorCode === GROUP_ID_NOT_FOUND)) throw error; }
+    finally { await admin.disconnect(); } }
+  /**
+   * Boots the bench. A persisted study that is clean, or open with a lease still
+   * running, is resumed: same group, generation, and journal directory, counted as a
+   * process restart. Anything else (no study, one mid-provisioning, an open study
+   * whose lease has ended, an unreadable descriptor) is discarded and a new study
+   * provisioned. A failure leaves the bench `failed` for the field station to reset;
+   * it never exits, so a held source can't cause a restart loop (LC11-A33).
+   */
+  async start(): Promise<void> {
+    await this.run(() => this.#boot()).catch(() => { this.#state = 'failed'; this.#cleanupOk = false; });
+    this.#timer = setInterval(() => { void this.tick(); }, this.#tickMs);
+  }
+  async #boot(): Promise<void> {
+    await this.#relay(false);
+    const loaded = await this.#store.load();
+    const study = loaded === 'corrupt' ? null : loaded;
+    const leaseLive = study?.lease ? Date.parse(study.lease.expiresAt) > this.#now() : false;
+    if (study && (study.phase === 'clean' || study.phase === 'open' && leaseLive)) {
+      study.restarts.process++; await this.#store.save(study);
+      this.#study = study; this.#scope = scopeFor(study.studyId); this.#scenario.calibration = study.calibration;
+      await this.#startGateway();
+      if (study.phase === 'open') { this.#lease = study.lease; this.#feed.reset(study.lease!.leaseId); this.#feed.add({ kind: 'bench', event: 'gap' }); this.#state = 'leased'; }
+      else { this.#cleanupOk = true; this.#state = 'ready'; }
+      return;
+    }
+    this.#study = study; this.#scope = scopeFor(study?.studyId ?? ''); this.#scope.closed = true;
+    await this.#discard(null, false);
+    await this.#provision();
+  }
   /**
    * One background step: reset after the lease's end, otherwise poll the gateway.
    * At most one tick waits in the queue, so a long reset or restart doesn't stack
@@ -110,28 +204,74 @@ export class BenchRuntime {
   async close(): Promise<void> { clearInterval(this.#timer); await this.run(() => this.#stopGateway()); }
   async #poll(record: boolean): Promise<void> {
     const sources = await this.#managementCall<{ items: SourceStatus[] }>('sources'); const source = sources.items.find(s => s.sourceId === 'field');
-    if (source) { const next = { status: source.status, ...(source.reason ? { reason: source.reason } : {}) }; if (record && JSON.stringify(next) !== JSON.stringify(this.#scenario.source)) this.#feed.add({ kind: 'source', sourceId: 'field', ...next }); this.#scenario.source = next; }
+    if (source) { const next = { status: source.status, ...(source.reason ? { reason: source.reason } : {}) }; this.#scope.lastSource = source.status; if (record && JSON.stringify(next) !== JSON.stringify(this.#scenario.source)) this.#feed.add({ kind: 'source', sourceId: 'field', ...next }); this.#scenario.source = next; }
     // Drain bounded management pages, retaining the last cursor even on an empty page.
     for (let i = 0; i < 20; i++) { const traces = await this.#managementCall<Page<Trace>>(`traces?limit=500${this.#traceCursor ? `&cursor=${encodeURIComponent(this.#traceCursor)}` : ''}`); for (const trace of traces.items) if (record && this.#lease) this.#feed.trace(trace, this.#satelliteIds); if (traces.nextCursor) this.#traceCursor = traces.nextCursor; if (traces.items.length < 500) break; }
   }
-  async lease(leaseId: string, expiresAt: string): Promise<void> { if (this.#state !== 'ready') throw new LabError('not-applicable', 409); if (!/^[\w-]{1,80}$/.test(leaseId) || !(Date.parse(expiresAt) > this.#now()) || Date.parse(expiresAt) > this.#now() + MAX_LEASE_MS) throw new LabError('invalid-request', 400); await this.#poll(false); this.#lease = { leaseId, expiresAt }; this.#feed.reset(leaseId); this.#satelliteIds.clear(); this.#state = 'leased'; this.#nextAction = 0; this.#feed.add({ kind: 'bench', event: 'lease-started' }); }
+  /** Binds a lease to the clean study, which is open from now until a reset discards it. The lease is persisted with the study; its tokens are not. */
+  async lease(leaseId: string, expiresAt: string): Promise<void> {
+    const study = this.#study;
+    if (this.#state !== 'ready' || !this.readiness().cleanLease || !study) throw new LabError('not-applicable', 409); if (!/^[\w-]{1,80}$/.test(leaseId) || !(Date.parse(expiresAt) > this.#now()) || Date.parse(expiresAt) > this.#now() + MAX_LEASE_MS) throw new LabError('invalid-request', 400);
+    await this.#poll(false);
+    study.phase = 'open'; study.lease = { leaseId, expiresAt }; await this.#store.save(study);
+    this.#lease = { leaseId, expiresAt }; this.#feed.reset(leaseId); this.#satelliteIds.clear(); this.#state = 'leased'; this.#nextAction = 0; this.#feed.add({ kind: 'bench', event: 'lease-started' }); }
   #check(leaseId: unknown): void { if (!this.#lease || leaseId !== this.#lease.leaseId || Date.parse(this.#lease.expiresAt) <= this.#now()) throw new LabError('no-lease', 409); }
   token(leaseId: unknown): { token: string; expiresAt: string } { this.#check(leaseId); const token = `lab${this.#settings.number}_${randomBytes(32).toString('base64url')}`; if (this.#tokens.size >= 128) return { token: [...this.#tokens][0]!, expiresAt: this.#lease!.expiresAt }; this.#tokens.add(token); return { token, expiresAt: this.#lease!.expiresAt }; }
   feed(leaseId: unknown, after?: string, limit?: number) { this.#check(leaseId); return this.#feed.page(after, limit); }
+  /** LC11-ADR-02 step 1, synchronously: the lease, its tokens, and the study's callbacks stop now. */
+  #invalidate(): void { if (this.#lease) this.#ended = this.#lease; this.#lease = null; this.#tokens.clear(); this.#state = 'resetting'; this.#scope.closed = true; }
+  /**
+   * Reset is study discard (LC11-ADR-02), in order: invalidate the lease and tokens;
+   * revoke its subject; shut the field station's publisher gate for the study;
+   * quiesce pending work with a bounded wait; write the study's bounded summary;
+   * stop the gateway, delete its group, remove its journal directory, and have the
+   * field station summarize and remove its ledger; then provision a new study. Any
+   * failure leaves the bench `failed` and not clean-lease eligible; the field
+   * station retries on its 30-second schedule.
+   */
   async reset(): Promise<void> {
-    const lease = this.#lease; this.#lease = null; this.#tokens.clear(); this.#state = 'resetting';
-    if (lease) await this.#gateway?.revoke({ kind: 'subject', tenantId: TENANT_ID, subject: `lab-${lease.leaseId}` });
-    this.#satellite?.disconnect(); this.#scenario.calibration = 'present'; await this.#relay(false); await this.#stopGateway();
-    const previous = this.#group; this.#group = `lab-${this.#settings.number}-${randomUUID()}`;
-    try { await this.#startGateway(); await this.#deleteGroup(previous); this.#feed.reset(); this.#state = 'ready'; } catch { this.#state = 'failed'; throw new Error('Bench reset failed.'); }
+    this.#invalidate();
+    const lease = this.#ended; this.#ended = null;
+    try {
+      const study = this.#study;
+      if (study && study.lease) { study.lease = null; await this.#store.save(study); }
+      if (lease) await this.#gateway?.revoke({ kind: 'subject', tenantId: TENANT_ID, subject: `lab-${lease.leaseId}` });
+      await this.#discard(lease, true);
+      await this.#provision();
+    } catch { this.#state = 'failed'; this.#cleanupOk = false; throw new Error('Bench reset failed.'); }
+  }
+  /** Steps 3 to 6 for the current study, if any. Idempotent, so a retried reset finishes what a failed one began. */
+  async #discard(lease: { leaseId: string } | null, quiesce: boolean): Promise<void> {
+    this.#cleanupOk = false;
+    const study = this.#study; const scope = this.#scope;
+    if (study) await this.#gate.close(study.studyId);
+    this.#satellite?.disconnect(); this.#satellite = undefined; this.#scenario.satellite = 'idle';
+    const quiesced = !quiesce || await Promise.race([Promise.allSettled([...scope.pending]).then(() => true), sleep(this.#quiesceMs, false, { ref: false })]);
+    if (study) await this.#store.summarize({ bench: this.#settings.number as StudySummary['bench'], studyId: study.studyId, generation: study.generation, consumerGroup: study.consumerGroup, createdAt: study.createdAt, closedAt: new Date(this.#now()).toISOString(), phase: study.phase, leaseId: lease?.leaseId ?? null, restarts: { ...study.restarts }, counts: { ...scope.counts }, lastSource: scope.lastSource, quiesced });
+    await this.#stopGateway();
+    if (study) { await this.#deleteGroupFn(study.consumerGroup); await this.#store.remove(study.studyId); await this.#gate.discard(study.studyId); }
+    // Directories a crash left behind belong to no live study.
+    for (const stray of await this.#store.studies()) await this.#store.remove(stray);
+    this.#study = null; this.#feed.reset();
+  }
+  /** Step 7: a new identity, generation, group, and journal directory, then its gateway. A new study's source must consume. */
+  async #provision(): Promise<void> {
+    const study = newStudy(this.#settings.number, this.#now());
+    await this.#store.save(study);
+    this.#study = study; this.#scope = scopeFor(study.studyId);
+    this.#scenario.calibration = 'present'; await this.#relay(false);
+    await this.#startGateway();
+    if (this.#scenario.source.status !== 'healthy') throw new Error('A new study\'s source did not become healthy.');
+    study.phase = 'clean'; await this.#store.save(study);
+    this.#feed.reset(); this.#cleanupOk = true; this.#state = 'ready';
   }
   async action(leaseId: unknown, action: LabAction): Promise<{ at: string; scenario: LabBenchState }> {
     this.#check(leaseId); if (this.#now() < this.#nextAction) throw new LabError('too-many-actions', 429);
     const s = this.#scenario;
     const allowed = action === 'sensor.foul' ? s.calibration === 'present' : action === 'sensor.restore' ? s.calibration === 'removed' : action === 'source.resume' ? s.source.status === 'paused' : action === 'relay.cut' ? s.relay === 'up' && s.gateway === 'running' : action === 'relay.restore' ? s.relay === 'cut' : action === 'satellite.start' ? s.satellite === 'idle' && s.source.status === 'healthy' && s.gateway === 'running' : action === 'gateway.restart' && s.gateway === 'running' && s.relay === 'up';
     if (!allowed || s.gateway !== 'running') throw new LabError('not-applicable', 409);
-    if (action === 'sensor.foul') s.calibration = 'removed';
-    if (action === 'sensor.restore') s.calibration = 'present';
+    const scope = this.#scope; const study = this.#study!;
+    if (action === 'sensor.foul' || action === 'sensor.restore') { s.calibration = action === 'sensor.foul' ? 'removed' : 'present'; study.calibration = s.calibration; await this.#store.save(study); }
     // StreamOtter answers 409 when the source left `paused` since the last poll: the action no longer applies.
     if (action === 'source.resume') await this.#gateway!.resumeSource('field').catch((error: unknown) => { throw (error as { details?: { status?: unknown } }).details?.status === 409 ? new LabError('not-applicable', 409) : error; });
     if (action === 'relay.cut' || action === 'relay.restore') await this.#relay(action === 'relay.cut');
@@ -140,22 +280,27 @@ export class BenchRuntime {
       // 30 seconds; keeping that outside the public lease coordinator's lock
       // prevents a restart from starving other visitors' heartbeats.
       s.gateway = 'restarting';
+      // Same study: same group and generation. A source that comes back held or
+      // paused keeps the lease; only a gateway that can't start fails the bench.
       void this.run(async () => {
+        if (scope.closed) return;
         await this.#poll(true); await this.#stopGateway(); this.#feed.add({ kind: 'bench', event: 'gateway-stopped' });
+        study.restarts.gateway++; await this.#store.save(study);
         await this.#startGateway(); this.#feed.add({ kind: 'bench', event: 'gateway-started' }); this.#feed.add({ kind: 'bench', event: 'gap' });
-      }).catch(() => { this.#state = 'failed'; });
+      }).catch(() => { if (!scope.closed) this.#state = 'failed'; });
     }
     if (action === 'satellite.start') {
       const config = this.#config(); const token = this.token(leaseId).token;
       const socket = io(`http://127.0.0.1:${config.gateway.port}`, { path: config.gateway.path, transports: ['websocket'], auth: { token, protocolVersion: 1 }, extraHeaders: { Origin: config.gateway.allowedOrigins[0]! }, reconnection: false }); this.#satellite = socket; s.satellite = 'connected';
-      socket.on('so:hello', () => { this.#feed.add({ kind: 'bench', event: 'satellite-connected' }); socket.emit('so:subscribe', { requestId: randomUUID(), subscriptionId: randomUUID(), channel: 'station', channelVersion: 1, params: { stationId: 'LC-02' } }, (result: { ok: boolean; data?: { subscriptionId: string } }) => { if (result.ok && result.data) this.#satelliteIds.add(result.data.subscriptionId); }); });
-      socket.on('so:state', (state: { subscriptionId: string }) => this.#satelliteIds.add(state.subscriptionId));
-      socket.on('disconnect', () => { s.satellite = 'idle'; this.#feed.add({ kind: 'bench', event: 'satellite-disconnected' }); });
-      socket.on('connect_error', () => { s.satellite = 'idle'; socket.disconnect(); });
+      // Every callback is confined to the study it started in.
+      socket.on('so:hello', () => this.#within(scope, () => { this.#feed.add({ kind: 'bench', event: 'satellite-connected' }); socket.emit('so:subscribe', { requestId: randomUUID(), subscriptionId: randomUUID(), channel: 'station', channelVersion: 1, params: { stationId: 'LC-02' } }, (result: { ok: boolean; data?: { subscriptionId: string } }) => this.#within(scope, () => { if (result.ok && result.data) this.#satelliteIds.add(result.data.subscriptionId); })); }));
+      socket.on('so:state', (state: { subscriptionId: string }) => this.#within(scope, () => this.#satelliteIds.add(state.subscriptionId)));
+      socket.on('disconnect', () => this.#within(scope, () => { s.satellite = 'idle'; this.#feed.add({ kind: 'bench', event: 'satellite-disconnected' }); }));
+      socket.on('connect_error', () => { socket.disconnect(); this.#within(scope, () => { s.satellite = 'idle'; }); });
       // Deliberately no so:receipt handler: the gateway disconnects this one client.
     }
     // A failed action doesn't spend the visitor's one-a-second budget.
-    this.#nextAction = this.#now() + 1000;
+    this.#nextAction = this.#now() + 1000; scope.counts.actions++;
     this.#feed.add({ kind: 'action', action }); return { at: new Date(this.#now()).toISOString(), scenario: structuredClone(s) };
   }
   api(): Server {
@@ -163,7 +308,8 @@ export class BenchRuntime {
     return createServer(async (request, response) => {
       const send = (status: number, value: unknown) => { response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); response.end(JSON.stringify(value)); };
       const url = new URL(request.url ?? '/', 'http://bench.invalid');
-      if (url.pathname === '/healthz') return send(this.#state === 'ready' || this.#state === 'leased' ? 200 : 503, { state: this.#state });
+      // Control availability, not source readiness: a held source stays healthy here (LC11-A33).
+      if (url.pathname === '/healthz') { const readiness = this.readiness(); return send(readiness.control ? 200 : 503, { state: this.#state, readiness }); }
       const provided = Buffer.from(request.headers.authorization ?? '');
       if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return send(401, { error: 'Unauthorized.' });
       if (request.method === 'GET' && url.pathname === '/bench/v1/status') return send(200, this.status());
@@ -175,11 +321,12 @@ export class BenchRuntime {
         if (request.method === 'POST' && url.pathname === '/bench/v1/reset') {
           if (body['leaseId'] !== null) this.#check(body['leaseId']);
           if (this.#state !== 'resetting') {
-            const previous = this.#lease;
-            this.#lease = null; this.#tokens.clear(); this.#state = 'resetting';
+            const previous = this.#lease; const scope = this.#scope;
+            this.#invalidate();
             // Invalidate immediately, even when the gateway lifecycle queue is
-            // busy restarting. Teardown itself remains serialized.
-            if (previous) void this.#gateway?.revoke({ kind: 'subject', tenantId: TENANT_ID, subject: `lab-${previous.leaseId}` }).catch(() => undefined);
+            // busy restarting. Teardown itself remains serialized; the reset's
+            // quiesce step waits (bounded) for this revocation.
+            if (previous && this.#gateway) { const revoking = this.#gateway.revoke({ kind: 'subject', tenantId: TENANT_ID, subject: `lab-${previous.leaseId}` }).catch(() => undefined); scope.pending.add(revoking); void revoking.finally(() => scope.pending.delete(revoking)); }
             void this.run(() => this.reset()).catch(() => { this.#state = 'failed'; });
           }
           return send(202, this.status());

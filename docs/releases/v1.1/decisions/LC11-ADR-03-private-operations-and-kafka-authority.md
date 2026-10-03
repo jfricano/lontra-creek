@@ -17,17 +17,17 @@ V1.1 benches need two new authorities: calling native operator operations (retry
 
 ### Kafka authorization: least privilege per principal
 
-Enable the KRaft `StandardAuthorizer` with `allow.everyone.if.no.acl.found=false`, the broker's inter-broker and admin principals as super users, and these ACLs (prefixed resource patterns):
+Enable the KRaft `StandardAuthorizer` with `allow.everyone.if.no.acl.found=false`, the broker's inter-broker and admin principals as super users, and these ACLs:
 
 | Principal | Allowed |
 | --- | --- |
-| `gateway` (production) | Read and Describe `field.` topics except notebooks it does not consume; Read its own `streamotter-` consumer groups |
-| `field-station` | Write `field.` and `lab-` topics (it is the only application writer and the scenario publisher); Read what its own consumers read; its own groups |
-| `lab-N` | Read and Describe `lab-N.` source topics; Write, Read, and Describe `lab-N.quarantine`; Read and Delete groups prefixed `streamotter-lab-N-` |
+| `gateway` (production) | Read and Describe `field.` and `creek.` topics (including `field.notebooks` and `field.holts`, which it consumes); Read its `streamotter-lontra-creek-` groups |
+| `field-station` | Create, Write, and Describe `field.` and `creek.` topics and each bench's `lab-N.field.` and `lab-N.creek.` copies (it is the only application writer); Read `field.notebooks` only; Read and Delete its `lontra-field-station-read-` groups |
+| `lab-N` | Read and Describe `lab-N.` topics (its sources and quarantine); Write `lab-N.quarantine` only; Read and Delete groups prefixed `streamotter-lab-N-` |
 
-A bench principal has no access to `field.`, holts, notebooks, another bench's prefix, or topic creation. Quarantine topics are created by the stack's bootstrap with bounded retention, not by benches.
+A bench principal has no access to `field.`, `creek.`, holts, notebooks, another bench's prefix, its own source topics for writing, or topic creation. The field station cannot write a quarantine topic. Quarantine topics are created by the broker's bootstrap with bounded retention, not by benches. `User:ANONYMOUS`, the broker's own loopback listeners, is the only super user.
 
-The exact topic names are confirmed against the current topic map in W7, and the table above is corrected in the same PR if they differ.
+W7 confirmed the names against the code and corrected this table (October 3, 2026): the overview topic is `creek.overview`, the gateway excludes nothing, the field station's grants are narrower and include `Create`, and bench groups did not yet share the `streamotter-lab-N-` prefix (the code now builds them from `Bench.consumerGroupPrefix`). The authoritative grants, modes (`acl`, `migrate`, `none`), and evidence are in [lab-api.md §10.9](../../../contracts/lab-api.md).
 
 ### Where it applies
 

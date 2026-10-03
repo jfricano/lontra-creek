@@ -62,7 +62,7 @@ const panels=[
   <section class="in-your-app" aria-labelledby="in-your-app-heading">
     <h3 id="in-your-app-heading">In your app</h3>
     <p>The creek and the scaffold are the same shape. Swap the creek's words for your own:</p>
-    <div class="table-scroll"><table><thead><tr><th scope="col">Lontra Creek</th><th scope="col">Your app (the init example)</th><th scope="col">What it is</th></tr></thead>
+    <div class="table-scroll" tabindex="0" aria-label="Lontra Creek and your app"><table><thead><tr><th scope="col">Lontra Creek</th><th scope="col">Your app (the init example)</th><th scope="col">What it is</th></tr></thead>
     <tbody>{IN_YOUR_APP.map(row=><tr><td><code>{row.creek}</code></td><td><code>{row.app}</code></td><td>{row.meaning}</td></tr>)}</tbody></table></div>
   </section>
 </section>

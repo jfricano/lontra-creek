@@ -12,6 +12,7 @@ import type { Client, Unlisten, WaitOptions } from "streamotter/client";
 import { channelVersions, type AppChannels } from "../generated/streamotter.generated.ts";
 import { fetchConfig, requestBadge, type BadgeResponse, type FieldConfig, type Role } from "./field-api.ts";
 import { observe, type ChannelName, type ChannelParams, type View } from "./field-views.ts";
+import { SignInRetry } from "./sign-in-retry.ts";
 import { installTabletNetwork, isOnline, onNetworkChange, setOnline } from "./tablet-network.ts";
 
 // Reuse the head bootstrap; also supports isolated tests without Base.astro.
@@ -75,6 +76,8 @@ export class PageFieldClient implements FieldClient {
   readonly client: Client<AppChannels>;
   readonly #badgeListeners = new Set<(badge: Badge) => void>();
   readonly #unreachableListeners = new Set<() => void>();
+  /** Reconnects after a transient badge failure; the SDK alone would stay in auth-required. */
+  readonly #signIn = new SignInRetry();
   #unreachableTimer: ReturnType<typeof setTimeout> | null = null;
   #watchStarted = false;
   #role: Role;
@@ -87,7 +90,7 @@ export class PageFieldClient implements FieldClient {
     this.client = createClient<AppChannels>({
       origin: config.gatewayOrigin,
       path: config.gatewayPath,
-      getToken: async ({ signal }) => {
+      getToken: ({ signal }) => this.#signIn.token(async () => {
         const response = await requestBadge(this.#role, signal);
         this.#badge = response.badge;
         for (const listener of [...this.#badgeListeners]) {
@@ -98,8 +101,9 @@ export class PageFieldClient implements FieldClient {
           }
         }
         return response.token;
-      }
+      })
     });
+    this.#signIn.attach(this.client);
     this.client.on("state", ({ state }) => {
       if (state === "connected") {
         this.#everConnected = true;
@@ -152,6 +156,7 @@ export class PageFieldClient implements FieldClient {
   }
 
   switchRole(role: Role, options?: WaitOptions): Promise<void> {
+    this.#signIn.cancel();
     this.#role = role;
     return this.client.reconnect(options);
   }
@@ -162,6 +167,7 @@ export class PageFieldClient implements FieldClient {
 
   restoreConnection(options: WaitOptions = { timeoutMs: RECONNECT_TIMEOUT_MS }): Promise<void> {
     setOnline(true);
+    this.#signIn.cancel();
     return this.client.reconnect(options);
   }
 
@@ -179,6 +185,7 @@ export class PageFieldClient implements FieldClient {
 
   close(): Promise<void> {
     this.#clearUnreachableTimer();
+    this.#signIn.stop();
     return this.client.close();
   }
 }

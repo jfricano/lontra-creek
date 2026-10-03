@@ -3,8 +3,8 @@ import type { SessionClaims } from '../sessions.ts';
 import type { BenchId, BenchStatus, LabAction, LabActionResult, LabEndReason, LabFeedPage, LabLease, LabStatus, LabToken } from './contract.ts';
 import { LabError, MAX_LEASE_MS } from './errors.ts';
 export interface BenchClient { call<T>(bench: BenchId, path: string, method?: string, body?: unknown): Promise<T>; }
-/** The publisher gate (studies.ts): opened when a lease is granted on a study, closed before any reset is asked for. */
-export interface StudyGate { open(bench: BenchId, studyId: string): void; close(bench: BenchId, studyId: string): Promise<unknown>; }
+/** The publisher gate (studies.ts): opened when a lease is granted on a study, closed before any reset is asked for. `current` is the study it holds open. */
+export interface StudyGate { open(bench: BenchId, studyId: string): void; close(bench: BenchId, studyId: string): Promise<unknown>; current(bench: BenchId): string | null; }
 interface Place { session: SessionClaims; address: string; joined: number; heartbeat: number; lease?: { id: string; bench: BenchId; granted: number; expires: number; claimed: boolean; nextAction: number }; }
 interface Slot { state: LabStatus['benches'][number]['state']; status?: BenchStatus; resetAt: number; retryAt: number; lastSeen: number; nextPoll: number; }
 const iso = (n: number): string => new Date(n).toISOString();
@@ -30,9 +30,10 @@ export class LeasePool {
   async initialize(): Promise<void> { await this.run(async () => { for (const bench of this.#slots.keys()) await this.#reset(bench); }); }
   async #reset(bench: BenchId): Promise<void> {
     const slot = this.#slots.get(bench)!; slot.state = 'resetting'; slot.resetAt = this.#now(); slot.nextPoll = 0;
-    // Shut the publisher gate on the bench's study before the bench is asked to discard it (LC11-ADR-02 step 3).
-    const study = slot.status?.study?.studyId;
-    if (study) await this.#studies?.close(bench, study).catch(() => undefined);
+    // Shut the publisher gate on the study the field station opened, before the bench is asked to discard it (LC11-ADR-02
+    // step 3). Never one named only by a polled status: that may be a study the bench is still provisioning.
+    const study = this.#studies?.current(bench);
+    if (study) await this.#studies!.close(bench, study).catch(() => undefined);
     try { await this.#client.call(bench, '/bench/v1/reset', 'POST', { leaseId: null }); }
     catch { slot.state = 'unavailable'; slot.retryAt = this.#now() + 30_000; }
   }
@@ -72,13 +73,16 @@ export class LeasePool {
       if (!place) break;
       const lease = { id: randomUUID(), bench, granted: now, expires: Math.min(now + this.#leaseMs, place.session.exp), claimed: false, nextAction: now };
       try {
-        slot.status = await this.#client.call<BenchStatus>(bench, '/bench/v1/lease', 'PUT', { leaseId: lease.id, expiresAt: iso(lease.expires) }); place.lease = lease; slot.state = 'leased';
-        // The leased study is now open for scenario publication. A bench that names no study gets none.
-        if (slot.status.study) { try { this.#studies?.open(bench, slot.status.study.studyId); } catch { /* a closed study stays closed: publication is refused */ } }
+        slot.status = await this.#client.call<BenchStatus>(bench, '/bench/v1/lease', 'PUT', { leaseId: lease.id, expiresAt: iso(lease.expires) });
+        // The leased study is now open for scenario publication. One the gate refuses (closed before, or none named) is
+        // never handed to a visitor: the bench is reset instead, and the visitor keeps their place.
+        if (this.#studies && !this.#open(bench, slot.status.study?.studyId)) { await this.#reset(bench); continue; }
+        place.lease = lease; slot.state = 'leased';
       }
       catch { slot.state = 'unavailable'; slot.retryAt = now + 30_000; }
     }
   }
+  #open(bench: BenchId, studyId: string | undefined): boolean { if (!studyId) return false; try { this.#studies!.open(bench, studyId); return true; } catch { return false; } }
   heartbeat(session: SessionClaims): void { const place = this.#places.get(session.subject); if (place && this.#now() - place.heartbeat < (place.lease ? 30_000 : 90_000)) place.heartbeat = this.#now(); }
   status(): LabStatus {
     const leases = [...this.#places.values()].flatMap(p => p.lease ? [p.lease] : []);

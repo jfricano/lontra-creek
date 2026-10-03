@@ -13,19 +13,26 @@ import type { Trace } from 'streamotter/contracts';
 function fixture(count = 3, leaseMs = 300_000) {
   let now = Date.parse('2026-09-27T00:00:00Z');
   const slots = new Map<BenchId, BenchStatus>();
-  for (let i = 1; i <= count; i++) slots.set(i as BenchId, { bench: i as BenchId, state: 'ready', lease: null, scenario: { gateway: 'running', source: { status: 'healthy' }, relay: 'up', calibration: 'present', satellite: 'idle', receiptTimeoutMs: 5000 }, checks: { developmentPrincipals: 0, fixtureSources: 0, managementHost: '127.0.0.1' }, readiness: { control: true, source: true, cleanLease: true }, study: { studyId: `study${i}AAAAAAAAAAA`, generation: `lab-${i}-study${i}AAAAAAAAAAA`, consumerGroup: `streamotter-lab-${i}-study${i}AAAAAAAAAAA`, createdAt: new Date(now).toISOString(), phase: 'clean', restarts: { gateway: 0, process: 0 } } });
+  // Every study is new: a reset never brings an earlier study ID back.
+  let seq = 0; const fresh = (bench: number) => `b${bench}study${String(++seq).padStart(9, '0')}`;
+  for (let i = 1; i <= count; i++) slots.set(i as BenchId, { bench: i as BenchId, state: 'ready', lease: null, scenario: { gateway: 'running', source: { status: 'healthy' }, relay: 'up', calibration: 'present', satellite: 'idle', receiptTimeoutMs: 5000 }, checks: { developmentPrincipals: 0, fixtureSources: 0, managementHost: '127.0.0.1' }, readiness: { control: true, source: true, cleanLease: true }, study: { ...((id: string) => ({ studyId: id, generation: `lab-${i}-${id}`, consumerGroup: `streamotter-lab-${i}-${id}` }))(fresh(i)), createdAt: new Date(now).toISOString(), phase: 'clean', restarts: { gateway: 0, process: 0 } } });
   const calls: { bench: BenchId; path: string; body: unknown }[] = [];
   const client: BenchClient = { async call<T>(bench: BenchId, path: string, _method?: string, body?: unknown): Promise<T> {
     calls.push({ bench, path, body }); const slot = slots.get(bench)!; const input = body as { leaseId: string; expiresAt: string };
-    if (path === '/bench/v1/reset') { slot.state = 'ready'; slot.lease = null; slot.readiness = { ...slot.readiness, cleanLease: true }; slot.study = { ...slot.study!, studyId: `next${slot.study!.studyId.slice(4)}`, phase: 'clean' }; }
+    if (path === '/bench/v1/reset') { slot.state = 'ready'; slot.lease = null; slot.readiness = { ...slot.readiness, cleanLease: true }; const id = fresh(bench); slot.study = { ...slot.study!, studyId: id, generation: `lab-${bench}-${id}`, consumerGroup: `streamotter-lab-${bench}-${id}`, phase: 'clean' }; }
     if (path === '/bench/v1/lease') { slot.state = 'leased'; slot.lease = input; slot.readiness = { ...slot.readiness, cleanLease: false }; slot.study = { ...slot.study!, phase: 'open' }; }
     if (path === '/bench/v1/tokens') return { token: `token-${bench}`, expiresAt: slot.lease!.expiresAt } as T;
     if (path === '/bench/v1/actions') return { at: new Date(now).toISOString(), scenario: slot.scenario } as T;
     return structuredClone(slot) as T;
   } };
-  const gate: string[] = [];
-  const studies = { open: (bench: BenchId, studyId: string) => { gate.push(`open ${bench} ${studyId}`); }, close: async (bench: BenchId, studyId: string) => { gate.push(`close ${bench} ${studyId}`); calls.push({ bench, path: 'gate.close', body: studyId }); } };
-  return { pool: new LeasePool({ client, benches: [...slots.keys()], gatewayOrigin: 'https://demo.test', now: () => now, leaseMs, studies }), calls, slots, gate, advance: (ms: number) => { now += ms; }, session: (id: string, ttl = 1_800_000) => ({ subject: id, role: 'volunteer' as const, exp: now + ttl }) };
+  // The field station's publisher gate, as studies.ts keeps it: the study it opened per bench, and every one it closed, which never reopens.
+  const gate: string[] = []; const opened = new Map<BenchId, string>(); const closed = new Set<string>();
+  const studies = {
+    open: (bench: BenchId, studyId: string) => { if (closed.has(studyId)) throw new Error('The study is not open.'); gate.push(`open ${bench} ${studyId}`); opened.set(bench, studyId); },
+    close: async (bench: BenchId, studyId: string) => { gate.push(`close ${bench} ${studyId}`); calls.push({ bench, path: 'gate.close', body: studyId }); closed.add(studyId); if (opened.get(bench) === studyId) opened.delete(bench); },
+    current: (bench: BenchId) => opened.get(bench) ?? null
+  };
+  return { pool: new LeasePool({ client, benches: [...slots.keys()], gatewayOrigin: 'https://demo.test', now: () => now, leaseMs, studies }), calls, slots, gate, studies, advance: (ms: number) => { now += ms; }, session: (id: string, ttl = 1_800_000) => ({ subject: id, role: 'volunteer' as const, exp: now + ttl }) };
 }
 const code = (name: string) => (error: unknown) => error instanceof LabError && error.code === name;
 test('concurrent joins grant each bench once; FIFO advances after return; requests cannot choose another bench', async () => {
@@ -159,6 +166,45 @@ test('only a clean-lease-eligible bench is granted; a held source keeps its leas
   const after = f.calls.slice(before).map(call => call.path);
   assert.ok(after.indexOf('gate.close') >= 0 && after.indexOf('gate.close') < after.indexOf('/bench/v1/reset'), 'the gate closes before the reset is asked for');
   assert.ok(f.gate.includes(`close 2 ${study}`));
+});
+
+test('the gate closes the study the field station opened, never one taken from a polled status', async () => {
+  const f = fixture(1); await f.pool.initialize(); await f.pool.sweep();
+  const a = f.session('a'); await f.pool.join(a, 'a'); await f.pool.token(a);
+  const opened = f.slots.get(1)!.study!.studyId;
+  // The bench rebooted with an unreadable study.json: it now runs, and reports, a different study.
+  Object.assign(f.slots.get(1)!, { state: 'ready', lease: null, study: { ...f.slots.get(1)!.study!, studyId: 'b1rebootedstudy0', phase: 'clean' } });
+  f.advance(5000); f.pool.heartbeat(a); await f.pool.sweep();
+  assert.equal((f.pool.view(a) as { reason: string }).reason, 'bench-failed');
+  assert.deepEqual(f.gate.filter(line => line.startsWith('close')), [`close 1 ${opened}`], 'the opened study is closed, not the polled one');
+});
+
+test('a reset retried while the bench provisions never closes the study it is provisioning', async () => {
+  const f = fixture(1); await f.pool.initialize();
+  // The bench is slow: still resetting, provisioning a new study, when the pool gives up and retries.
+  Object.assign(f.slots.get(1)!, { state: 'resetting', readiness: { control: false, source: false, cleanLease: false }, study: { ...f.slots.get(1)!.study!, studyId: 'b1provisioning00', phase: 'provisioning' } });
+  for (let i = 0; i < 20; i++) { f.advance(5000); await f.pool.sweep(); f.slots.get(1)!.state = 'resetting'; }
+  assert.deepEqual(f.gate.filter(line => line.startsWith('close')), [], 'nothing was opened, so nothing is closed');
+  // The bench ignored the retried reset (it was already resetting) and finishes provisioning the same study.
+  Object.assign(f.slots.get(1)!, { state: 'ready', readiness: { control: true, source: true, cleanLease: true }, study: { ...f.slots.get(1)!.study!, studyId: 'b1provisioning00', phase: 'clean' } });
+  f.advance(30_000); await f.pool.sweep(); f.advance(5000); await f.pool.sweep();
+  const a = f.session('a'); assert.equal((await f.pool.join(a, 'a')).status, 'ready');
+  assert.deepEqual(f.gate, ['open 1 b1provisioning00'], 'the leased study is open for publication');
+});
+
+test('a study the gate refuses to open is never granted: the bench is reset and the visitor keeps their place', async () => {
+  const f = fixture(1); await f.pool.initialize(); await f.pool.sweep();
+  const refused = f.slots.get(1)!.study!.studyId;
+  // The bench's own reset step 3 closed this study earlier; a closed study never reopens.
+  await f.studies.close(1, refused);
+  const before = f.calls.filter(call => call.path === '/bench/v1/reset').length;
+  const a = f.session('a'); const view = await f.pool.join(a, 'a');
+  assert.equal(view.status, 'queued', 'no lease on a study the gate refused');
+  assert.equal(f.calls.filter(call => call.path === '/bench/v1/reset').length, before + 1, 'the bench is reset instead');
+  f.advance(5000); f.pool.heartbeat(a); await f.pool.sweep();
+  const granted = f.pool.view(a);
+  assert.equal(granted.status, 'ready', 'granted on the next clean study');
+  assert.ok(f.gate.includes(`open 1 ${f.slots.get(1)!.study!.studyId}`)); assert.notEqual(f.slots.get(1)!.study!.studyId, refused);
 });
 
 test('a leased bench that reports starting while its process restarts keeps the lease for at most 15 seconds', async () => {

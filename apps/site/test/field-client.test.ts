@@ -52,9 +52,15 @@ class FakeClient implements Client<ChannelMap> {
 
   reconnects = 0;
   getToken: ClientOptions["getToken"] | undefined;
+  /** Set to make the next reconnect() sign in for real and reject when that fails, as the SDK does. */
+  signInOnReconnect = false;
 
   async reconnect(): Promise<void> {
     this.reconnects += 1;
+    if (!this.signInOnReconnect) return;
+    this.signInOnReconnect = false;
+    await this.signIn();
+    if (this.state !== "connected") throw new Error("auth-required");
   }
   async close(): Promise<void> {}
 
@@ -207,6 +213,44 @@ describe("field client sign-in recovery (review finding S1)", () => {
     await field.close();
     t.mock.timers.tick(SIGN_IN_RETRY_CAP_MS);
     assert.equal(client.reconnects, 0);
+  });
+
+  test("a role switch whose badge request fails keeps the earlier role, so the retry signs the same volunteer back in", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const roles: string[] = [];
+    let statuses = [503];
+    t.mock.method(globalThis, "fetch", async (_url: string, init: RequestInit) => {
+      roles.push((JSON.parse(String(init.body)) as { role: string }).role);
+      const status = statuses.shift() ?? 200;
+      return new Response(JSON.stringify(status === 200 ? badge : { error: "no" }), { status, headers: { "content-type": "application/json" } });
+    });
+    const { client, field } = setup();
+    client.signInOnReconnect = true;
+    await assert.rejects(field.switchRole("researcher"));
+    assert.equal(field.role, "volunteer", "the page reports the switch failed, and it did");
+    statuses = [];
+    t.mock.timers.tick(SIGN_IN_RETRY_BASE_MS);
+    client.signInOnReconnect = false;
+    await client.signIn();
+    assert.deepEqual(roles, ["researcher", "volunteer"]);
+    assert.equal(client.state, "connected");
+  });
+
+  test("only the newest token request decides whether a failure is retried", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { SignInRetry } = await import("../src/scripts/sign-in-retry.ts");
+    const retry = new SignInRetry();
+    const client = new FakeClient();
+    retry.attach(client);
+    let finishOld!: (value: string) => void;
+    const old = retry.token(() => new Promise<string>(resolve => { finishOld = resolve; }));
+    const newer = retry.token(() => Promise.reject(new TypeError("Failed to fetch")));
+    await assert.rejects(newer);
+    finishOld("late token");
+    await old;
+    client.emitState("auth-required");
+    t.mock.timers.tick(SIGN_IN_RETRY_BASE_MS);
+    assert.equal(client.reconnects, 1, "a late answer to an older request doesn't make the newer failure final");
   });
 
   test("network failures, timeouts, 429, and 5xx are transient; other answers are refusals", () => {

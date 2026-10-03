@@ -64,3 +64,16 @@ test("the page keeps a bounded feed and clears it per lease", () => {
   assert.deepEqual(model.lines(true), []);
   assert.equal(model.satellite, null);
 });
+
+test("a busy feed drops routine lines first, so the scenario view keeps its steps", async () => {
+  const { FEED_KEEP } = await import("../src/scripts/lab-feed.ts");
+  const model = new LabFeedModel();
+  model.add([item(1, { kind: "action", action: "sensor.foul" }), record(2, "failed"), item(3, { kind: "source", sourceId: "field", status: "paused" })]);
+  model.add(Array.from({ length: FEED_KEEP + 50 }, () => trace(4)));
+  assert.deepEqual(model.lines(false).map(line => line.text), [
+    "You: Foul sensor",
+    "LC-03 record lab-1.field.gauges · partition 0 · offset 246: map failed",
+    "Source field: paused"
+  ]);
+  assert.equal(model.lines(true).length, FEED_SHOW);
+});

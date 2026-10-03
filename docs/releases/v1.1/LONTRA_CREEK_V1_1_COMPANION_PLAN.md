@@ -1,35 +1,46 @@
-# Lontra Creek V1.5
+# Lontra Creek V1.1
 ## See the failure. Preserve the evidence. Verify the recovery.
+**Owner amendment - October 1, 2026:** The next planned milestone is V1.1. Lontra Creek will replace the existing `/workbench/` page with an interactive workbench sandbox, without adding a page or navigation item. This planning amendment does not change the installed npm version or establish implementation, test, or deployment completion.
 
-**Companion product, demo, and delivery plan**  
-Prepared for Jason Fricano / Orca Solutions · September 28, 2026  
-Revision 0.1 · Proposed plan; not implemented, tested, or approved for public deployment
 
-**Site baseline:** `jfricano/lontra-creek@2397e2cbdfa3a32dda69920583ed9d18881ab863`.  
-**Library installed by that site:** `streamotter@0.1.0-rc.3`.  
-**Target behavior:** the supplied *StreamOtter V1.5 — Contain, explain, recover*, specification revision 0.1. The V1.5 milestone is not an assertion that an npm package named `1.5.0` exists. [LC12, SO15]
+**Companion product, demo, and delivery plan**\
+Prepared for Jason Fricano / Orca Solutions · September 28, 2026\
+Revision 0.4 · Proposed plan; not implemented, tested, or approved for public deployment
 
-> Keep the existing site and its eight principal routes. Make source-failure handling a first-class, linkable track inside the Failure Lab. Update the surrounding explanations, configuration examples, and recorded workbench tour. Do not create a second live demo application or a public production-remediation console.
+**Site baseline:** `jfricano/lontra-creek@2397e2cbdfa3a32dda69920583ed9d18881ab863`.\
+**Library installed by that site:** `streamotter@0.1.0-rc.3`.\
+**Target behavior:** the supplied *StreamOtter V1.1 — Contain, explain, recover*, approved specification revision 1.0 plus ADR-15A/B/C and the owner amendment. The V1.1 milestone is not an assertion that an npm package named `1.1.0` exists. [LC12, SO11]
+
+> Keep the existing site and its eight principal routes. Make source-failure handling a first-class, linkable track inside the Failure Lab. Update the surrounding explanations and configuration examples, and replace the existing `/workbench/` tour with the actual workbench sandbox. Do not create a second live demo application or a public production-remediation console.
+
+### Native decisions retained from main
+
+The [approved native specification](https://github.com/jfricano/StreamOtter/tree/3c0443efcab3053111e997e4aeb7c12ede02edaf/docs/releases/v1.1) and ADR-15A/B/C remain authoritative. The October 2 reconciliation preserves main's later decisions instead of reverting to the original September 28 draft. ADR IDs retain their names; historical LC15-A01–A40 families map one-to-one to LC11-A01–A40, with sandbox families A41–A46 added.
+
+- Stored redrive re-evaluates the original and admits it at a record boundary through the normal revision filter. It does not force all live views to resynchronize (ADR-15C §5); guarded continuation still obeys recovery barriers.
+- Recovery boundaries retire per source by `generation` (default), `application`, or `operator` (ADR-15B §4). The Lab coverage ledger maps to `application`; the demo cannot silently retire a boundary or expose an unsafe override.
+- Health, state-directory, and operator-socket settings are gateway/start options, not editable project configuration (ADR-15C §2). The public editor cannot change private deployment settings.
+- Preserve the approved journal engine decision: usable Node 24 `node:sqlite`, otherwise `better-sqlite3` (ADR-15A §2). Native quarantine identity, byte format, durable handoff, and offset advancement remain library responsibilities.
 
 ## 1. Decision and product boundary
 
-**A new top-level page is not needed for V1.5.** The existing `/lab/` already answers “What happens when it breaks?”, allocates isolated benches, and demonstrates a mapper failure at LC-03. That is the correct starting point. Add a prominent **Source failures** track at `/lab/#source-failures`, with an optional scenario query parameter for direct links. Preserve `/lab/` and the existing navigation. [LC02–LC04]
+**A new top-level page is not needed for V1.1.** The existing `/lab/` already answers “What happens when it breaks?”, allocates isolated benches, and demonstrates a mapper failure at LC-03. That is the correct starting point. Add a prominent **Source failures** track at `/lab/#source-failures`, with an optional scenario query parameter for direct links. Preserve `/lab/` and the existing navigation. [LC02–LC04]
 
-The extension should teach five distinctions: a processing defect versus a transport failure; preserving evidence versus advancing a source; advancing a source versus recovering a view; evaluating a record versus reprocessing it; and retrying an old state versus creating a new business event. These are the substance of the new library specification. [SO15 §§3–8]
+The extension should teach five distinctions: a processing defect versus a transport failure; preserving evidence versus advancing a source; advancing a source versus recovering a view; evaluating a record versus reprocessing it; and retrying an old state versus creating a new business event. These are the substance of the new library specification. [SO11 §§3–8]
 
 Selecting a pause, hold, or guarded-recovery exercise chooses a server-owned policy preset at study initialization. A policy change that requires new configuration uses the documented stop/reconfigure/start lifecycle, not an invented hot-edit API. The playground cannot change that policy.
 
 The visitor outcome is: **“I saw why the stream stopped, what was saved, why continuation was allowed or refused, and what the browser actually received.”** Developers should leave with a reproducible integration pattern, not merely a successful animation.
 
-Use **Source failure handling**, **Quarantine**, and **Controlled reprocessing** in the interface. Kafka-Penguin can be acknowledged as inspiration in an engineering note, but the site must not imply that it is installed, endorsed, or providing StreamOtter's implementation. [SO15 §18]
+Use **Source failure handling**, **Quarantine**, and **Controlled reprocessing** in the interface. Kafka-Penguin can be acknowledged as inspiration in an engineering note, but the site must not imply that it is installed, endorsed, or providing StreamOtter's implementation. [SO11 §18]
 
 ### Proposed scope
 
-| Area | V1.5 decision |
+| Area | V1.1 decision |
 | --- | --- |
 | Main live creek and six-chapter walkthrough | Preserve; add an optional next-step link to the new Lab track. Do not introduce destructive failures into the shared creek. |
 | Failure Lab | Add a guided source-failure track, an incident detail panel, and bounded advanced exercises. Preserve the four existing scenarios. |
-| Workbench tour | Add real, version-labeled captures of the new Failures view and recorded operator workflow. |
+| Workbench sandbox | Replace the existing `/workbench/` page content with the published workbench UI, isolated synthetic sessions, and Connect/Define/Preview/Inspect/Export plus supported Failures workflows. |
 | Failure reference | Explain the new policy and incident lifecycle separately from existing browser subscription states. |
 | Playground | Add release-validated policy presets; configuration editing still does not operate the hosted demo. |
 | Home, docs, releases | Add focused discovery links and accurate capability/operating-boundary information. |
@@ -38,13 +49,13 @@ Use **Source failure handling**, **Quarantine**, and **Controlled reprocessing**
 
 ### Out of scope
 
-No new top-level “Kafka-Penguin” product page; no arbitrary record editor, topic selector, uploaded handler, or broker connection form; no browser access to the real workbench or operator socket; no bulk/scheduled redrive; no V2 browser replay/checkpoints or multi-gateway product demo; no V3 business commands, shared administration, or new transport demonstration. Do not change the approved visual direction or expand the simulation into a new game.
+No new top-level “Kafka-Penguin” product page; no arbitrary record editor, topic selector, uploaded handler, or broker connection form; no browser access to production management/operator services; no bulk/scheduled redrive; no V2 browser replay/checkpoints or multi-gateway product demo; no V3 business commands, shared administration, or new transport demonstration. Do not change the approved visual direction or expand the simulation into a new game.
 
 ## 2. What was actually reviewed
 
-This plan is based on the checked-in page implementations, current Lab API contract, bench runtime and handlers, local-run instructions, site metadata, project plan, and implementation record at the commit above. The supplied library V1.5 specification, acceptance plan, and handoff were read in full. Source references appear in §15.
+This plan is based on the checked-in page implementations, current Lab API contract, bench runtime and handlers, local-run instructions, site metadata, project plan, and implementation record at the commit above. The supplied library V1.1 specification, acceptance plan, and handoff were read in full. Source references appear in §15.
 
-**Review limits:** The owner's Mac and its running dev server were not accessed. A container checkout attempt failed because GitHub DNS was unavailable in the execution environment; the GitHub connector supplied the source review instead. No site build, browser session, Kafka stack, or new acceptance test was executed for this plan. Unpushed local changes are not covered. Repository-reported verification remains reported evidence, not independently reproduced results.
+**Review limits:** In the September 28 review, the owner's Mac and its running dev server were not accessed. A container checkout attempt failed because GitHub DNS was unavailable in the execution environment; the GitHub connector supplied the source review instead. No site build, browser session, Kafka stack, or new acceptance test was executed for this plan. Unpushed local changes are not covered. Repository-reported verification remains reported evidence, not independently reproduced results.
 
 ### Existing behavior relevant to this release
 
@@ -56,7 +67,7 @@ The four existing stories are **Fouled sensor**, **Flash flood takes the relay**
 | --- | --- | --- |
 | `npm run dev` | Fixture-driven field station and Astro site; no Kafka Lab benches. | Useful for layout, copy, reference pages, and clearly labeled fixture behavior. It cannot demonstrate durable Kafka quarantine. |
 | `npm run dev:kafka` | Local Kafka walkthrough with persistent notebooks; no Failure Lab. | Keep its current purpose; do not describe it as the new Lab launcher. |
-| `docs/LOCAL_LAB.md` recipe | Source-built, three-bench Kafka/Compose stack behind local HTTPS. | Extend this as the real local V1.5 demonstration path. |
+| `docs/LOCAL_LAB.md` recipe | Source-built, three-bench Kafka/Compose stack behind local HTTPS. | Extend this as the real local V1.1 demonstration path. |
 
 The records say hosting is pending and identify unresolved public-exposure conditions. Some historical checkpoints refer to earlier commits or pending PRs. Reconcile them at implementation; do not overwrite their evidence or treat their old status prose as the current branch state. [LC01, LC07, LC08]
 
@@ -75,15 +86,31 @@ Only one scenario is active on a bench at a time. A scenario link selects explan
 
 The main guided path should fit comfortably into one existing five-minute lease. Target approximately two to three minutes for the ordinary path, then measure it. Each advanced exercise is separately runnable; completing the whole catalog in one lease is not a requirement. Do not silently extend leases or increase the pool to accommodate a longer script.
 
+### Workbench sandbox on the existing route
+
+Replace the screenshot/recording-led experience at **`/workbench/`** with the actual workbench UI from the exact published StreamOtter release. Keep the route, navigation item, and page's explanatory context. There is no separate sandbox page. `/playground/` remains the quick browser-local configuration validator.
+
+Seed the initial experience with the creek's `station` channel alongside the `jobProgress` example generated by `streamotter init` in the pinned published release. Show a bounded, server-owned synthetic Kafka record beside the full state that the real handler produces, and add an **In your app** note mapping creek identifiers/readings to the developer's job identifiers/progress. Keep both examples within the visitor's session; the record/state relationship must come from the supported runtime or be explicitly labeled as a design fixture, never invented as live evidence.
+
+The visitor can **Connect, Define, Preview, Inspect, and Export** against an isolated synthetic creek fixture: connect to their allocated demo runtime, edit allowlisted candidate configuration, validate it, preview synthetic updates, inspect subscriptions/traces, and download sanitized configuration or reproduction material. Configuration editing and validation do not mutate the running gateway; applying a supported preset uses an explicit, validated demo lifecycle. Include the new Failures view and guided hold/evaluate/recover story when the pinned published release supplies those capabilities. Preserve native guard, approval, and refusal semantics.
+
+Reuse the published workbench frontend and a documented integration seam; do not recreate a lookalike UI or expose the native management server as a generic proxy. The current loopback server's origin/token/frame restrictions are intentional. Determine a supported way to serve the actual UI at the sandbox origin and map its allowed operations to a visitor-scoped demo adapter. A browser holds only its sandbox session credential, never the native management/operator token. Missing upstream support is an explicit dependency with an unavailable state, not permission to patch library internals or relax production controls.
+
+The server assigns synthetic sources, topics, handlers, identities, and credentials. No production broker connections, uploaded code, arbitrary handler execution, arbitrary record/topic/offset edits, host filesystem writes, shell operations, or production operator sockets are available. The configuration editor accepts only documented sandbox fields under the published validator plus server-side allowlists and size limits; it cannot replace server-owned bindings. Export is a bounded download, not a write into the hosted project. Reuse the bounded lease infrastructure where appropriate, with one explicit owner of lifecycle, capacity, and resource budgets. Do not reserve a bench merely by opening the page or silently increase the pool.
+
+Allocate a short-lived session on explicit visitor action. Scope candidate edits, subscriptions, traces, incident plans, and downloads to that session/run. Reset returns only this synthetic study to a clean state; return/expiry revokes authority and quiesces pending work before reuse. Failed cleanup keeps the resource unavailable. Define and test memory/storage/request limits, fair queuing, timeout/expiry, and cohost impact alongside the existing Lab and shared creek. Same-study restart preserves failure obligations; reset remains visibly disposable-study discard.
+
+Display the exact package version and **synthetic fixture** or **real-Kafka synthetic demo** mode. A fixture can demonstrate configuration and UI workflows but cannot prove Kafka quarantine or durability. Never represent the sandbox as production administration. If the service is unavailable or the pool is full, show an honest unavailable/queue state; version-labeled recordings may remain a clearly identified fallback, never the primary V1.1 experience or a substitute for sandbox acceptance.
+
 ### Change matrix
 
 | Route | Required change | Keep unchanged |
 | --- | --- | --- |
-| `/` | Add one V1.5 feature panel and **Try source failures** link. Explain preservation, controlled continuation, and visible outcomes. | Shared live hero, installation flow, tagline/design decisions, and recorded/unavailable labeling. |
+| `/` | Add one V1.1 feature panel and **Try source failures** link. Explain preservation, controlled continuation, and visible outcomes. | Shared live hero, installation flow, tagline/design decisions, and recorded/unavailable labeling. |
 | `/field-station/` | Add an optional “Next: handle a bad reading” link after the walkthrough; show the installed demo version where appropriate. | Six chapters, researcher/volunteer boundary, notebook behavior, and shared world. No forced seventh chapter or poison injection. |
 | `/lab/` | New track, scenario guidance, incident panel, guarded actions, and evidence summary. | Queue/lease fairness, direct SDK subscriptions, source-scoped failures, and other visitors' isolation. |
 | `/when-it-breaks/` | Add a failure-policy matrix and record-disposition lifecycle; update state/error examples against the installed release. | Existing SDK state explanation; detailed internal causes are not invented browser states. |
-| `/workbench/` | Add Failures captures, evaluation/approval sequence, metadata export, and a private CLI explanation. | Recorded tour rather than a remotely exposed workbench. |
+| `/workbench/` | Replace the recorded tour with the actual published workbench sandbox; add isolated synthetic configuration, preview, inspection, export, and supported Failures workflows. | Existing route/navigation; private production operator boundary and accurate version/mode labels. |
 | `/playground/` | Add legacy-pause, quarantine-hold, guarded-resync, and bounded-retry examples using the published validator. | Browser-local validation; no secrets, handler execution, Kafka connections, or live configuration changes. |
 | `/docs/` | Link to exact-release source-failure guide, recovery-guard recipe, local Lab instructions, and operational runbook when those exist. | Documentation map rather than duplicated mutable library manuals. |
 | `/releases/` | Separate site release, actual library package, demo availability, and verified operating boundary. | Accurate limitations, changelog links, and explicitly unverified combinations. |
@@ -96,17 +123,17 @@ Also update the page summaries in `apps/site/src/site.ts`, the homepage's scenar
 
 | ID | Story | Delivery | What it establishes |
 | --- | --- | --- | --- |
-| LC15-S01 | **Fouled sensor: fix and retry** | Existing public scenario, updated | Default pause remains available; restore calibration, retry the exact held position, then observe fresh synchronization. |
-| LC15-S02 | **Garbled reading: preserve and hold** | New public exercise | Real invalid JSON is captured in quarantine; source does not advance; malformed bytes do not become repairable merely because they were saved. |
-| LC15-S03 | **Bad projection: recover from authoritative state** | New public headline path | Valid source JSON produces an invalid public payload; quarantine succeeds, a guard initially refuses continuation, and verified snapshot coverage later permits it. |
-| LC15-S04 | **Inspect the old reading: evaluate, then reprocess** | New public continuation/standalone exercise | Dry-run has no delivery effect; exact approval permits gateway-local reprocessing; a newer snapshot can correctly supersede the old state. |
-| LC15-S05 | **Conflicting readings: stopping is correct** | New public advanced exercise | Equal revision with conflicting state remains held. There is no force-skip path. |
-| LC15-S06 | **Calibration lookup blip** | New public advanced exercise | Only a trusted, explicitly transient mapper error gets bounded retry. Success and exhausted retry are different outcomes. |
-| LC15-S07 | **Too many bad readings** | Local/CI plus concise reference explanation | Five distinct permitted automatic continuations in the configured window; the next incident holds. Duplicate evidence does not count as extra incidents. |
-| LC15-S08 | **Recovery across restart and a new subscription** | Extend Relay restart; local/CI assertions | Same journal/group/generation preserve recovery obligations; a new view cannot evade the barrier. |
-| LC15-S09 | **Unavailable evidence or quarantine** | Local/CI plus recorded example when captured | No advancement on an unacknowledged write; missing/expired evidence refuses stored reprocessing. |
+| LC11-S01 | **Fouled sensor: fix and retry** | Existing public scenario, updated | Default pause remains available; restore calibration, retry the exact held position, then observe fresh synchronization. |
+| LC11-S02 | **Garbled reading: preserve and hold** | New public exercise | Real invalid JSON is captured in quarantine; source does not advance; malformed bytes do not become repairable merely because they were saved. |
+| LC11-S03 | **Bad projection: recover from authoritative state** | New public headline path | Valid source JSON produces an invalid public payload; quarantine succeeds, a guard initially refuses continuation, and verified snapshot coverage later permits it. |
+| LC11-S04 | **Inspect the old reading: evaluate, then reprocess** | New public continuation/standalone exercise | Dry-run has no delivery effect; exact approval permits gateway-local reprocessing; a newer snapshot can correctly supersede the old state. |
+| LC11-S05 | **Conflicting readings: stopping is correct** | New public advanced exercise | Equal revision with conflicting state remains held. There is no force-skip path. |
+| LC11-S06 | **Calibration lookup blip** | New public advanced exercise | Only a trusted, explicitly transient mapper error gets bounded retry. Success and exhausted retry are different outcomes. |
+| LC11-S07 | **Too many bad readings** | Local/CI plus concise reference explanation | Five distinct permitted automatic continuations in the configured window; the next incident holds. Duplicate evidence does not count as extra incidents. |
+| LC11-S08 | **Recovery across restart and a new subscription** | Extend Relay restart; local/CI assertions | Same journal/group/generation preserve recovery obligations; a new view cannot evade the barrier. |
+| LC11-S09 | **Unavailable evidence or quarantine** | Local/CI plus recorded example when captured | No advancement on an unacknowledged write; missing/expired evidence refuses stored reprocessing. |
 
-Existing relay cut, slow-client, and ordinary restart remain required regressions. Source outage, access denial, and browser overload are not relabeled as quarantine-eligible data failures. [SO15 §4; LC04]
+Existing relay cut, slow-client, and ordinary restart remain required regressions. Source outage, access denial, and browser overload are not relabeled as quarantine-eligible data failures. [SO11 §4; LC04]
 
 The native library's complete F01–F48 acceptance plan remains authoritative for its own guarantees. Lontra Creek demonstrates a selected workflow and verifies its application integration; it does not replace that fault suite or claim to prove universal durability.
 
@@ -116,7 +143,7 @@ The native library's complete F01–F48 acceptance plan remains authoritative fo
 
 Use **LC-03 Slate Canyon**, already the Lab's failing sensor, rather than adding a new instrument. The scenario publisher produces one predetermined, valid JSON record whose routing identity and domain revision are valid, but whose selected mapper returns a public field with the wrong schema type. For example, a numeric gauge value can be emitted as a string by a deliberately broken projection. The precise field comes from the actual checked-in schema; do not change the public schema to make the test pass.
 
-This must fail the library's **invalid public payload** stage. Invalid tenant/parameters/revision or a thrown arbitrary exception would be a different class and must not be used to demonstrate automatic continuation. Stage and failure class are observed from the real library, not inferred from the button the visitor clicked. [SO15 §4]
+This must fail the library's **invalid public payload** stage. Invalid tenant/parameters/revision or a thrown arbitrary exception would be a different class and must not be used to demonstrate automatic continuation. Stage and failure class are observed from the real library, not inferred from the button the visitor clicked. [SO11 §4]
 
 ### 5.2 Sequence
 
@@ -136,7 +163,7 @@ This must fail the library's **invalid public payload** stage. Invalid tenant/pa
 
 ### 5.3 Why the raw-JSON example is separate
 
-S02 really contains undecodable bytes. It demonstrates quarantine-and-hold. Its stored evaluation must still fail decoding; there is no “fix these bytes” editor. A button that makes malformed bytes evaluate successfully would contradict V1.5's immutable-original rule. The main redrive lesson therefore uses S03's valid source JSON and repairable mapping behavior instead. [SO15 §§8.1–8.3]
+S02 really contains undecodable bytes. It demonstrates quarantine-and-hold. Its stored evaluation must still fail decoding; there is no “fix these bytes” editor. A button that makes malformed bytes evaluate successfully would contradict V1.1's immutable-original rule. The main redrive lesson therefore uses S03's valid source JSON and repairable mapping behavior instead. [SO11 §§8.1–8.3]
 
 ### 5.4 Evaluate and approve one old state
 
@@ -144,7 +171,7 @@ The controller selects a prepackaged corrected mapper variant and records its ef
 
 The review card states: **This evaluation changed no source offset, sent no state, and published no business event.** Show the intended gateway-local action and the possibility that the original state is now obsolete. Approval is bound to the exact plan, incident revision, evidence hash, source generation, and effective handler/configuration identity.
 
-Re-evaluate on execution as required by the library. If the result or fingerprints change, refuse and require another review. A legitimate **Superseded by a newer snapshot** result is presented as a successful safety outcome, not an error to work around. Never manufacture a higher revision to make redrive look productive. A lost action response prompts result lookup, not an automatic second redrive. [SO15 §8]
+Re-evaluate on execution as required by the library. If the result or fingerprints change, refuse and require another review. A legitimate **Superseded by a newer snapshot** result is presented as a successful safety outcome, not an error to work around. Never manufacture a higher revision to make redrive look productive. A lost action response prompts result lookup, not an automatic second redrive. [SO11 §8]
 
 ## 6. Incident interface and evidence language
 
@@ -160,7 +187,7 @@ Retain the creek reading and existing trace feed. Add a focused incident panel b
 
 Use progressive disclosure for source coordinates and fingerprints. The main story should be understandable without studying a hash. Display an opaque incident label and a human-readable reason first. Detailed internal state belongs to the server; the browser receives a purpose-built, lease-scoped projection.
 
-Do not derive the incident's current state solely from the rolling trace buffer. The existing feed can drop old items; expose a bounded current-incident summary separately. A trace gap means some steps are missing, not that the system can reconstruct them or that delivery history exists. [LC04; SO15 §10]
+Do not derive the incident's current state solely from the rolling trace buffer. The existing feed can drop old items; expose a bounded current-incident summary separately. A trace gap means some steps are missing, not that the system can reconstruct them or that delivery history exists. [LC04; SO11 §10]
 
 ### Precise labels
 
@@ -174,7 +201,7 @@ Do not derive the incident's current state solely from the rolling trace buffer.
 | Reprocessed / superseded / failed / unknown | Business action completed or every browser rendered the result. |
 | Study discarded and reset | The held incident was fixed. |
 
-The current bench handler emits its own `processed` record annotation before downstream library validation and commit complete. V1.5 must not treat that annotation as proof of acceptance, quarantine disposition, or offset advancement. Preserve its historical meaning with a clearer label such as **mapper returned**, and derive stronger observations from supported library/operator results. [LC06]
+The current bench handler emits its own `processed` record annotation before downstream library validation and commit complete. V1.1 must not treat that annotation as proof of acceptance, quarantine disposition, or offset advancement. Preserve its historical meaning with a clearer label such as **mapper returned**, and derive stronger observations from supported library/operator results. [LC06]
 
 ### Accessibility and visual continuity
 
@@ -184,7 +211,7 @@ All actions must work by keyboard. Announce meaningful state changes politely, w
 
 ## 7. Integration architecture: reuse the bench, do not clone the library
 
-The demo remains an ordinary consumer of the exact published StreamOtter package. No monorepo links, imports from unexported internals, reimplemented quarantine engine, or monkey-patched synchronization to make a scenario pass. When the package lacks a needed observation, file a narrow upstream issue; use a published fix or accurately limit the demonstration. [LC01–LC02; SO15 §15]
+The demo remains an ordinary consumer of the exact published StreamOtter package. No monorepo links, imports from unexported internals, reimplemented quarantine engine, or monkey-patched synchronization to make a scenario pass. When the package lacks a needed observation, file a narrow upstream issue; use a published fix or accurately limit the demonstration. [LC01–LC02; SO11 §15]
 
 ### Existing ownership, extended
 
@@ -200,13 +227,13 @@ The demo remains an ordinary consumer of the exact published StreamOtter package
 
 ### Capability and package boundary
 
-Before enabling the track, pin the actual published V1.5-capable package in both application and site, including the lockfile. Map the final library APIs to the demo contract only after their types exist. This plan uses operation names from the proposal; it is not a claim those functions can be called in `0.1.0-rc.3`.
+Before enabling the track, pin the actual published V1.1-capable package in both application and site, including the lockfile. Map the final library APIs to the demo contract only after their types exist. This plan uses operation names from the proposal; it is not a claim those functions can be called in `0.1.0-rc.3`.
 
 Add a safe app-owned capability summary to the existing Lab status or a small separate status route. It reports the observed demo/library build, available scenario IDs, backend mode, and availability reason. Avoid exposing service URLs, secrets, local socket paths, or arbitrary operator capabilities. A newer static site against an older backend must show **This backend does not support this scenario**; no mock success fallback.
 
 ## 8. The application recovery contract in the demo
 
-The existing simulation updates authoritative state before publishing and uses monotonically advancing revisions. That is a useful foundation, but it does not automatically implement V1.5's cumulative recovery barrier. Add and test that contract explicitly. [LC02; SO15 §7]
+The existing simulation updates authoritative state before publishing and uses monotonically advancing revisions. That is a useful foundation, but it does not automatically implement V1.1's cumulative recovery barrier. Add and test that contract explicitly. [LC02; SO11 §7]
 
 For each disposable study, keep a small persistent **application scenario ledger**, distinct from the library incident journal. Record the scenario run/generation, predetermined domain mutation, authoritative snapshot version or watermark, original publication coordinates once known, and intended audience coverage. The ledger establishes the relationship the malformed or misprojected payload cannot be trusted to assert.
 
@@ -218,7 +245,7 @@ The scenario may temporarily withhold its own application checkpoint advancement
 
 ## 9. API, lease, and operation changes
 
-Amend `docs/contracts/lab-api.md` and the matching TypeScript module together. Preserve session-derived bench selection, exact-origin checks, small request bodies, rate limits, and current lease timing. Add a closed set of scenario intents, not arbitrary runtime operation names. [LC04]
+Amend `docs/contracts/lab-api.md` and the matching TypeScript module together. Document the separate sandbox session/operation contract in the same release; the Lab intent restrictions below remain in force. The workbench candidate editor uses the restricted configuration boundary in §3, not the Lab scenario-intent body. Preserve session-derived bench selection, exact-origin checks, small request bodies, rate limits, and current lease timing. Add a closed set of scenario intents, not arbitrary runtime operation names. [LC04]
 
 Suggested app-level intents include `scenario.start`, `scenario.restore-calibration`, `scenario.prepare-coverage`, `incident.retry-current`, `incident.reassess`, `incident.evaluate`, and `incident.approve-reprocess`. These are **proposed demo intents**, not new public StreamOtter API names. Each resolves to a fixed server-selected incident and action for the current run. Existing relay/satellite/restart actions remain available only in compatible states.
 
@@ -232,7 +259,7 @@ A plan's effective approval lifetime is no longer than the library plan lifetime
 
 ## 10. Restart, scenario reset, and bench reuse
 
-This is a required architecture change, not cosmetic polish. The present reset creates a fresh consumer group with `startFrom: latest`; the bench's source generation is otherwise fixed. That deliberately disposes of a V1 exercise, but it must not be presented as recovery of a V1.5 quarantine incident. [LC04–LC06]
+This is a required architecture change, not cosmetic polish. The present reset creates a fresh consumer group with `startFrom: latest`; the bench's source generation is otherwise fixed. That deliberately disposes of a V1 exercise, but it must not be presented as recovery of a V1.1 quarantine incident. [LC04–LC06]
 
 ### A. Restart within the same study
 
@@ -262,11 +289,11 @@ The short-lived demo may discard synthetic studies earlier than the library's de
 
 ### Kafka authorization is a specific release risk
 
-The existing Lab contract records **R2: separate SCRAM identities without broker topic ACLs**. The working record leaves public exposure subject to its disposition. V1.5 adds quarantine write authority, so it cannot inherit a claim that separate users alone isolate topics. [LC04, LC08]
+The existing Lab contract records **R2: separate SCRAM identities without broker topic ACLs**. The working record leaves public exposure subject to its disposition. V1.1 adds quarantine write authority, so it cannot inherit a claim that separate users alone isolate topics. [LC04, LC08]
 
-**Proposed hosted-V1.5 gate:** enable and verify least-privilege topic/group access for each bench and the scenario publisher, or keep the new quarantine actions local/private until an explicitly reviewed equivalent containment design is approved. A bench needs only its own source reads, quarantine reads/writes, and scoped group operations. It must not write the shared creek, another bench, holts, or notebooks. Any required broker change is an explicit deployment-plan amendment, not a silent library change.
+**Proposed hosted-V1.1 gate:** enable and verify least-privilege topic/group access for each bench and the scenario publisher, or keep the new quarantine actions local/private until an explicitly reviewed equivalent containment design is approved. A bench needs only its own source reads, quarantine reads/writes, and scoped group operations. It must not write the shared creek, another bench, holts, or notebooks. Any required broker change is an explicit deployment-plan amendment, not a silent library change.
 
-The browser never receives management/operator credentials or a raw-topic read capability. The existing private management arrangement may continue only after review against the new installed release; the old rc.3 development-mode analysis is not automatically valid for V1.5. Use supported private in-process operations when available; no import from library internals. [LC04; SO15 §12]
+The browser never receives management/operator credentials or a raw-topic read capability. The existing private management arrangement may continue only after review against the new installed release; the old rc.3 development-mode analysis is not automatically valid for V1.1. Use supported private in-process operations when available; no import from library internals. [LC04; SO11 §12]
 
 ### Synthetic evidence and exports
 
@@ -278,15 +305,15 @@ A downloadable reproduction bundle contains the scenario ID/seed, package/build 
 
 ### Health is a supporting lesson, not another dashboard
 
-Show a small **Process / Source / View** explanation in the Lab's under-the-hood area. A deliberate source hold should leave the control plane available while data readiness is false. A retained historical incident should not keep readiness false after safe recovery. [SO15 §11]
+Show a small **Process / Source / View** explanation in the Lab's under-the-hood area. A deliberate source hold should leave the control plane available while data readiness is false. A retained historical incident should not keep readiness false after safe recovery. [SO11 §11]
 
 Use library health probes privately and expose only a safe demo summary. Do not route them publicly to obtain observability. Keep bench-pool readiness and data readiness separate so intentional scenario failures do not trigger a restart loop or prematurely recycle a leased bench. The specification's example health port is not a mandated port; avoid colliding with Lontra Creek's existing `7402` API in local setups. [LC01]
 
-### Workbench and recordings
+### Workbench sandbox and fallback recordings
 
-Recapture Connect/Inspect where their content changed, and add a Failures sequence: hold, saved evidence, guarded recovery, evaluate, approve, superseded result, and redacted export. Record CLI-only production operations separately from the development UI. Do not claim the local production operator service is available to a browser visitor.
+Deliver the interactive sandbox described in §3 as the primary `/workbench/` experience. Exercise the real Connect/Define/Preview/Inspect/Export workflow and add supported Failures sequences: hold, saved evidence, guarded recovery, evaluate, approve, superseded result, and redacted export. Retain or recapture version-labeled recordings only as an explicit unavailable fallback or explanatory material. Record CLI-only production operations separately. Do not claim the local production operator service is available to a browser visitor.
 
-Store package version, fixture/Kafka mode, date, capture script, environment, and transcript per asset. The current tour interpolates the page's global `RELEASE` into older recording descriptions; updating the package must not relabel an rc.3 capture as a V1.5 capture. Either regenerate it or retain its original explicit version. The same rule applies to hardcoded CLI transcripts and fingerprints in the playground. [LC10–LC12]
+Store package version, fixture/Kafka mode, date, capture script, environment, and transcript per asset. The current tour interpolates the page's global `RELEASE` into older recording descriptions; updating the package must not relabel an rc.3 capture as a V1.1 capture. Either regenerate it or retain its original explicit version. The same rule applies to hardcoded CLI transcripts and fingerprints in the playground. [LC10–LC12]
 
 ### Configuration and claim checks
 
@@ -294,13 +321,26 @@ The browser playground imports the real published validator. Provide presets and
 
 Keep type generation unavailable in the browser until a published release actually supplies the needed generation interface. The existing generator/file-I/O separation request is not an excuse to reimplement the generator in Lontra Creek.
 
-Update `/when-it-breaks/` from exact-release facts: public SDK states, operator causes, retry eligibility, and record disposition. `captured`, `quarantined`, or `advance-confirmed` are not invented subscription states. Retain the explanation of state listeners versus error listeners. [LC09, SO15 §§7,11]
+Update `/when-it-breaks/` from exact-release facts: public SDK states, operator causes, retry eligibility, and record disposition. `captured`, `quarantined`, or `advance-confirmed` are not invented subscription states. Retain the explanation of state listeners versus error listeners. [LC09, SO11 §§7,11]
 
 ## 13. Local development and dependency sequencing
 
-1. **Before the native package exists:** Build static explanations and layout with explicitly labeled design fixtures. Keep interactive V1.5 actions unavailable. Do not import the sibling library checkout or emulate success as a live demo.
-2. **After a suitable published candidate exists:** Pin that exact package, review changed public surfaces, regenerate types/examples, and enable real-Kafka local integration.
-3. **After local/container verification:** Complete recordings and release facts. Keep public deployment gated separately.
+### Independent milestones; specific capability prerequisites
+
+Lontra Creek V1.1 and StreamOtter V1.1 are separate product milestones with independent scope, schedules, version numbers, reviews, and release decisions. Neither requires the other to ship under a matching V1.1 label. The dependencies below concern exact published capabilities, not an entire milestone or an npm version named `1.1.0`.
+
+| Site work | Prerequisite | Can proceed independently? |
+| --- | --- | --- |
+| Copy, generalization examples, layout, navigation, session/adapter design, and explicitly labeled design fixtures | Existing supported package behavior and site contracts | Yes; these do not require new source-failure APIs. They cannot establish completed interactive sandbox acceptance. |
+| Actual Workbench sandbox | A published frontend/integration seam supporting the sandbox origin and constrained visitor adapter | Site preparation can proceed now; public interaction waits for that capability. A compatible earlier library release is sufficient. |
+| Source-failure Lab track and Workbench Failures exercises | Published native policies, private supported operations, quarantine, and recovery behavior needed by each exercise | Existing site features remain available; enable each new exercise only after its own capability/integration gates pass. |
+| StreamOtter package publication | Native library acceptance, including its own frontend-seam fixture and packaged-install checks | It does not wait for Lontra Creek's hosted sandbox, LC11 results, or deployment. |
+
+The upstream frontend/integration seam is explicitly required by the reviewed StreamOtter plan (§10, slice D, F44/F46). Record the exact package version and capability contract before enabling the sandbox. Preserve existing loopback/token restrictions for native management; an unavailable state or recording does not satisfy completed sandbox acceptance. Do not declare the entire site V1.1 complete while mandatory sandbox or failure-track families remain blocked; a smaller site delivery can ship with an accurate scope and status without implying completion of those features.
+
+1. **Before a required capability is published:** Continue independent site work against the current exact package and labeled design fixtures. Keep only the affected new actions unavailable. Do not import the sibling library checkout or emulate native success.
+2. **After a compatible published candidate exists:** Pin that exact package, review its frontend/API contract and changed public surfaces, regenerate types/examples, and test the relevant synthetic/Kafka integration. Its package version and release milestone need not match the site's label.
+3. **After local/container verification:** Enable the verified workflow, fallback recordings, and release facts. Site deployment has its own hosted acceptance gate and need not coincide with library publication.
 
 Add a proposed `npm run dev:lab` convenience script wrapping the existing `docs/LOCAL_LAB.md` source-build recipe. It checks prerequisites, creates only an explicit git-ignored local project, uses loopback HTTPS and documented test-certificate handling, and prints site/health/status URLs. It must not deploy cloud resources, grant system trust silently, or delete volumes as its default stop behavior.
 
@@ -310,23 +350,23 @@ Normal stop preserves current-study state. A separately confirmed **discard loca
 
 | Slice | Deliverable | Exit condition |
 | --- | --- | --- |
-| A — Baseline and boundary | Confirm current branch, native API availability, route/contract inventory, and three bounded design decisions below. | Written compatibility and exposure delta; no fabricated live behavior. |
+| A — Baseline and boundary | Confirm current branch, native API availability, route/contract inventory, sandbox frontend integration and session boundary, and three bounded design decisions below. | Written compatibility and exposure delta; no fabricated live behavior. |
 | B — First vertical slice | Real Kafka S02 quarantine-and-hold, private library operations, incident projection, and one upgraded bench. | Correct observed evidence/hold state; old Lab scenarios still work. |
 | C — Honest continuation | Persistent application coverage ledger, S03 guard/refusal/recovery, restart separation, and current/future-view tests. | No false live state under the declared app contract. |
 | D — Operator story | S04 evaluation/approval/superseded; S05 integrity hold; S06 retry; bounded trace/export and lease-safe actions. | Verified outcomes, cancellation, cross-lease isolation, and resource bounds. |
-| E — Whole site and release | Page updates, real captures, presets, local launcher, three-engine UI checks, scoped Kafka authorization, deployment evidence. | Companion acceptance matrix and owner release review. |
+| E — Whole site and release | Actual workbench sandbox on `/workbench/`, isolated sessions and cleanup, page updates, labeled fallback captures, presets, local launcher, three-engine UI checks, scoped Kafka authorization, deployment evidence. | Companion acceptance matrix and owner release review. |
 
 Resolve three focused decisions at the beginning: **demo coverage ledger and guard**, **persistent study/restart versus disposable reset**, and **private operations plus scoped Kafka write authority**. These adapt Lontra Creek; they must not redefine the native library's safety contract.
 
-The accompanying acceptance plan defines LC15-A01–A40. Reuse existing test infrastructure and add evidence, rather than replacing tests with new counts. A library capability being implemented or passing its own tests is not proof that this demo integrates it correctly.
+The accompanying acceptance plan defines LC11-A01–A46. Reuse existing test infrastructure and add evidence, rather than replacing tests with new counts. A library capability being implemented or passing its own tests is not proof that this demo integrates it correctly.
 
-**Local companion completion:** All required public-track scenarios work on a pinned real-Kafka local stack, and UI/reference/fixture modes are labeled correctly. **Hosted companion readiness:** additionally prove deployed ingress isolation, topic permissions, persistent volumes, quotas, lease cleanup, backup/disposal boundaries, rollback, and behavior on the actual host. **Public launch:** requires the existing site's launch approval plus the V1.5-specific gate; it is not implied by this document.
+**Local companion completion:** All required public-track scenarios work on a pinned real-Kafka local stack, the actual published workbench sandbox works on the existing route with isolated synthetic sessions, and UI/reference/fixture modes are labeled correctly. **Hosted companion readiness:** additionally prove deployed ingress isolation, topic permissions, persistent volumes, quotas, lease cleanup, backup/disposal boundaries, rollback, and behavior on the actual host. **Public launch:** requires the existing site's launch approval plus the V1.1-specific gate; it is not implied by this document.
 
 For rollback, preserve journals and barriers. Do not downgrade the core or delete a volume to make a failing demo green. The public story can be disabled while the compatible runtime is kept for reconciliation. Discarding a synthetic study is permitted only through its explicit lifecycle and must never be described as a production incident remedy.
 
 ## 15. Sources, traceability, and placement
 
-**Authority:** Lontra Creek's `docs/PLAN.md` owns its experience and launch criteria. `docs/contracts/lab-api.md` owns existing demo interfaces. The supplied StreamOtter V1.5 specification owns the proposed native behavior. This companion is an additive proposal; exact library declarations supersede interface sketches. Preserve the founding direction, the final Future Strategy package, and the native V1.5 package.
+**Authority:** Lontra Creek's `docs/PLAN.md` owns its experience and launch criteria. `docs/contracts/lab-api.md` owns existing demo interfaces. The supplied StreamOtter V1.1 specification owns the proposed native behavior. This companion is an additive proposal; exact library declarations supersede interface sketches. Preserve the founding direction, the final Future Strategy package, and the native V1.1 package.
 
 All LC links below use the immutable inspected site commit. No external-market or cloud-price assumptions were revalidated for this plan.
 
@@ -342,8 +382,8 @@ All LC links below use the immutable inspected site commit. No external-market o
 - **LC10 — Recorded workbench tour:** [apps/site/src/pages/workbench.astro](https://github.com/jfricano/lontra-creek/blob/2397e2cbdfa3a32dda69920583ed9d18881ab863/apps/site/src/pages/workbench.astro).
 - **LC11 — Playground implementation:** [apps/site/src/pages/playground.astro](https://github.com/jfricano/lontra-creek/blob/2397e2cbdfa3a32dda69920583ed9d18881ab863/apps/site/src/pages/playground.astro).
 - **LC12 — Page registry, package provenance, and scripts:** [apps/site/src/site.ts](https://github.com/jfricano/lontra-creek/blob/2397e2cbdfa3a32dda69920583ed9d18881ab863/apps/site/src/site.ts), [apps/site/package.json](https://github.com/jfricano/lontra-creek/blob/2397e2cbdfa3a32dda69920583ed9d18881ab863/apps/site/package.json), [package.json](https://github.com/jfricano/lontra-creek/blob/2397e2cbdfa3a32dda69920583ed9d18881ab863/package.json).
-- **SO15 — Native feature contract:** supplied `V1_5_SOURCE_FAILURE_SPEC.md`, revision 0.1, September 28, 2026; accompanying `V1_5_ACCEPTANCE_PLAN.md` and `V1_5_IMPLEMENTATION_HANDOFF.md`. These are proposed documents, not an installed release. Their SHA-256 fingerprints are recorded in this package's `PACKAGE_README.md`.
+- **SO11 — Native feature contract:** [reviewed library planning revision](https://github.com/jfricano/StreamOtter/tree/3c0443efcab3053111e997e4aeb7c12ede02edaf/docs/releases/v1.1), originally supplied `V1_1_SOURCE_FAILURE_SPEC.md`, approved revision 1.0 with ADR-15A/B/C, relabeled V1.1 and amended for the published frontend integration; accompanying `V1_1_ACCEPTANCE_PLAN.md` and `V1_1_IMPLEMENTATION_HANDOFF.md`. The current approved native revision and ADRs govern over the original supplied draft; they are planned behavior, not an installed release.
 
-Suggested location: `docs/releases/v1.5/` in **Lontra Creek**, with a link from its plan and Lab contract. Do not overwrite the library's V1.5 documents. No GitHub or laptop-repository changes were made in preparing this package.
+Suggested location: `docs/releases/v1.1/` in **Lontra Creek**, with a link from its plan and Lab contract. Do not overwrite the library's V1.1 documents. The September 28 research review made no repository changes. This October 2 reconciliation records the owner amendment and preserves the approved native decisions; it does not implement or publish the release.
 
 **Release identity:** the next Lontra Creek experience should make the native feature tangible without enlarging its claims: **a bad record has an observable fate, and a recovered view has evidence behind it.**

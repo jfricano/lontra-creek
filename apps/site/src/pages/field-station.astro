@@ -1,6 +1,7 @@
 ---
 import ContentPage from "../components/ContentPage.astro";
 import { REACHES, STATIONS } from "@lontra-creek/sim";
+import { RELEASE } from "../site.ts";
 const chapters = ["Dawn survey", "The creek rises", "Into Slate Canyon", "The protected holt", "Hand over the tablet", "Log a sighting"];
 ---
 <ContentPage title="A field trip through live state" eyebrow="Lontra Creek · guided demo" description="Follow one real subscription from its first snapshot through a lost connection, an access check, and a new identity.">
@@ -37,6 +38,12 @@ const chapters = ["Dawn survey", "The creek rises", "Into Slate Canyon", "The pr
     </div>
     <details class="content-card walkthrough-code" open><summary>Under the hood · walkthrough code</summary><pre tabindex="0"><code data-chapter-code></code></pre></details>
   </div>
+  <aside class="content-card walk-next" aria-labelledby="walk-next-title" data-walk-next>
+    <h2 id="walk-next-title">After the walkthrough</h2>
+    <p>The walkthrough never breaks the shared creek. To see what a bad reading does, borrow your own bench in the Failure Lab: Fouled sensor pauses LC-03 at the record, and the gateway retries that same record after a repair.</p>
+    <p><a class="btn primary" href="/lab/?scenario=fouled-sensor#source-failures">Next: handle a bad reading</a></p>
+    <p class="muted">This demo runs <code>streamotter@{RELEASE}</code>. Quarantine and guarded continuation are planned for StreamOtter V1.1 and aren't in this release.</p>
+  </aside>
 </ContentPage>
 <script>import "../scripts/walkthrough.ts";</script>
 <style>
@@ -44,6 +51,7 @@ const chapters = ["Dawn survey", "The creek rises", "Into Slate Canyon", "The pr
 .panel-grid { align-items:start; }
 .chapter-events { margin-top:28px; padding-top:20px; border-top:1px solid var(--line); }
 .walkthrough-code { margin-top:24px; }
+.walk-next { margin-top:24px; } .walk-next .btn { text-decoration:none; }
 .chapters { display:flex; flex-wrap:wrap; gap:8px 20px; margin-block:24px; } .chapters a[aria-current] { font-weight:800; text-decoration-thickness:3px; }
 .chapter-controls { display:flex; gap:12px; justify-content:space-between; align-items:center; margin-top:28px; }
 .gauge-values { display:grid; grid-template-columns:1fr 1fr; gap:20px; } .gauge-values dd { margin:4px 0; font-family:var(--mono); overflow-wrap:anywhere; }

@@ -19,6 +19,13 @@ const quickstart = [
   "  --config streamotter.json --handlers server/handlers.mjs"
 ].join("\n");
 
+/** The V1.1 panel: planned behavior from StreamOtter's approved specification, never presented as running here. */
+const v11Points = [
+  { title: "Preserve the record", text: "A policy can save the original record to a quarantine topic. Only a write Kafka acknowledged counts as saved; until then the source holds." },
+  { title: "Continue only under control", text: "Moving past the record needs your application's recovery guard to vouch for its snapshots. Otherwise the source stays held. There is no skip or ignore option." },
+  { title: "See each outcome", text: "Whether evidence was saved, whether the source advanced, and whether views resynchronized are reported separately. None stands in for another." }
+];
+
 const explorePages = LISTED_PAGES.filter(page => page.href !== "/docs/" && page.href !== "/releases/");
 
 const states = [
@@ -145,6 +152,36 @@ const states = [
             <p>{item.text}</p>
           </div>
         ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="next-release" aria-labelledby="next-release-title" data-v11-panel>
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Planned for StreamOtter V1.1 · not in <span class="version">{RELEASE}</span></p>
+        <h2 id="next-release-title">Next: give a bad record a visible fate</h2>
+        <p class="lede">
+          StreamOtter V1.1 is specified, not released. It plans failure policies that keep a bad Kafka record as evidence
+          and let the stream move on only when your application can show its snapshots cover what that record would have changed.
+        </p>
+      </div>
+      <ul class="v11-points">
+        {v11Points.map(point => (
+          <li><h3>{point.title}</h3><p>{point.text}</p></li>
+        ))}
+      </ul>
+      <div class="v11-today">
+        <p>
+          <strong>What runs today.</strong> In <code>streamotter@{RELEASE}</code>, which this site runs, a bad record pauses its
+          source: it is never committed or skipped, views go stale, and <code>resumeSource()</code> retries the same record after a fix.
+          The Failure Lab's Fouled sensor shows that on a real bench. Its other source-failure exercises are listed with the reason each
+          one can't run yet.
+        </p>
+        <p class="v11-links">
+          <a class="button button-primary" href="/lab/#source-failures">Try source failures</a>
+          <a href="/when-it-breaks/#source-failure-policies">How V1.1 plans to handle each failure →</a>
+        </p>
       </div>
     </div>
   </section>
@@ -436,6 +473,38 @@ const states = [
     content: ""; position: absolute; inset: 1px 1px 1px auto; width: 12px;
     border-radius: 0 var(--radius) var(--radius) 0; pointer-events: none;
     background: linear-gradient(90deg, transparent, var(--code-bg));
+  }
+  .v11-points {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .v11-points li {
+    display: grid;
+    gap: 8px;
+    align-content: start;
+    padding: 20px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  .v11-points p { color: var(--ink-2); font-size: 0.96rem; }
+  .v11-today {
+    display: grid;
+    gap: 14px;
+    margin-top: 18px;
+    padding: 20px;
+    border-left: 3px solid var(--accent);
+    background: var(--surface-2);
+    border-radius: 0 var(--radius) var(--radius) 0;
+  }
+  .v11-today p { max-width: 90ch; color: var(--ink-2); }
+  .v11-links { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; }
+  @media (max-width: 900px) {
+    .v11-points { grid-template-columns: minmax(0, 1fr); }
   }
   .workbench-shot { width:100%;height:auto;display:block;border:1px solid var(--line);border-radius:var(--radius); }
   .version { text-transform: none; }

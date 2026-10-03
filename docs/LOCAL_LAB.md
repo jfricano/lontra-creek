@@ -53,6 +53,18 @@ LAB_SERVES_SITE=1 LAB_API_ORIGIN=https://localhost:8443 LAB_SITE_ORIGIN=https://
 production's separate demo-only host returns 404 for that path. All private
 backend and Origin assertions still run.
 
+The local overlay runs Kafka with least-privilege ACLs (`KAFKA_AUTHORIZATION`
+defaults to `acl` there; see `deploy/kafka/start.sh` and the Lab contract,
+section 10.9): each bench's Kafka user reaches only its own `lab-N.*` topics
+and `streamotter-lab-N-` groups. To check every principal's grants and refusals:
+
+```sh
+STACK_KAFKA_EXEC="docker compose -p lontra-local-lab -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.local-lab.yaml --env-file $LOCAL_LAB_DIR/.env exec -T" STACK_KAFKA_BENCHES="1 2 3" node --test --test-force-exit deploy/test/kafka-acls.test.ts
+```
+
+An existing local Kafka volume picks the ACLs up on its next start; no
+migration is needed for local data.
+
 Stop without deleting Kafka data:
 
 ```sh

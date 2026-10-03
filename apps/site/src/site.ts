@@ -16,7 +16,12 @@ export const SITE = {
    * included, so reviewers can reach them; once true, only pages whose real content
    * exists appear in the navigation, the footer, and the 404 page.
    */
-  launched: false
+  launched: false,
+  /**
+   * The site's own milestone and where it stands. It is independent of StreamOtter's
+   * milestones and npm versions: site V1.1 is not StreamOtter V1.1 or package 1.1.0.
+   */
+  milestone: { name: "V1.1", state: "in development" }
 };
 
 /** The StreamOtter repository tag for this release, so library links survive its later commits. */
@@ -53,7 +58,7 @@ export const PAGES: readonly Page[] = [
     href: "/lab/",
     label: "Failure Lab",
     question: "What happens when it breaks?",
-    summary: "Borrow an isolated bench for five minutes. Foul a sensor, cut the relay, stall a laptop, restart the gateway, and follow each record through the gateway.",
+    summary: "Borrow an isolated bench for five minutes. Cut the relay, stall a laptop, restart the gateway, or foul a sensor, and follow each record through the gateway. The Source failures track also lists the quarantine exercises that wait for StreamOtter V1.1.",
     ready: true
   },
   {
@@ -74,7 +79,7 @@ export const PAGES: readonly Page[] = [
     href: "/when-it-breaks/",
     label: "When it breaks",
     question: "How does it fail, exactly?",
-    summary: "Every failure mode: the state it produces, the error your code receives, whether it retries, and how to handle it.",
+    summary: "Every failure mode in this release: the state it produces, the error your code receives, whether it retries, and how to handle it. Plus the source-failure policies planned for V1.1, marked as planned.",
     ready: true
   },
   {
@@ -88,7 +93,7 @@ export const PAGES: readonly Page[] = [
     href: "/releases/",
     label: "Releases",
     question: "What works in this version?",
-    summary: "The release this site runs, its verified support matrix, and its limits.",
+    summary: "The site release, the exact StreamOtter package it installs, what the demo can run today, and the verified boundary, each stated separately.",
     ready: true
   }
 ];

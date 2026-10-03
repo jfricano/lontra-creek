@@ -40,10 +40,12 @@ staging verification, actual host capacity/load/limits, and owner release
 acceptance. Kafka SCRAM identities are separate but topic ACLs remain the
 contract's explicit R2 residual risk; credentials do not imply topic isolation.
 
-A source-build local browser recipe is in [LOCAL_LAB.md](LOCAL_LAB.md). Its
-loopback-only Compose overlay has not run locally; the installed Caddy binary
-successfully adapted its config. CI additionally checks the live container
-environments, private API credentials, and management network boundary.
+A source-build local browser recipe is in [LOCAL_LAB.md](LOCAL_LAB.md), with
+`npm run dev:lab` as its launcher. Its loopback-only Compose overlay has since
+run end to end in a Linux container (October 3, 2026; see LOCAL_LAB.md,
+Status), including `deploy/test/lab.test.ts`. CI additionally checks the live
+container environments, private API credentials, and management network
+boundary.
 
 No npm publication, push, merge, public deployment, or cloud resources were
 performed by this implementation lane.

@@ -116,6 +116,44 @@ GitHub Actions: builds arm64 images and deploys over SSH; no Docker needed on a 
 
 ## Data flow and consistency
 
+### Kafka data path
+
+This diagram shows the main demo's Kafka-backed data path. HTTPS proxy layers are simplified; it does not describe the separate Failure Lab benches or the planned Workbench sandbox. The local `npm run dev` fixture mode bypasses Kafka.
+
+```mermaid
+flowchart LR
+    Site["Astro website<br/>HTML, CSS, JavaScript"] -->|Page loads| Browser["Browser<br/>StreamOtter SDK + UI"]
+
+    subgraph Backend["Demo backend"]
+        Field["Field station app<br/>Creek simulation + current state"]
+        Kafka["Kafka topics<br/>Gauges, otters, cameras, notebooks"]
+        Gateway["StreamOtter gateway<br/>App handlers + subscriptions"]
+
+        Field -->|Publish changed state| Kafka
+        Kafka -->|Consume records| Gateway
+        Field -->|"Initial / reconnect snapshot<br/>via private HTTP API"| Gateway
+    end
+
+    Gateway -->|Snapshots + ordered updates| Edge["HTTPS ingress / Caddy"]
+    Edge -->|Socket.IO / WebSocket| Browser
+    Browser -.->|"HTTP: sign in, config,<br/>write a notebook sighting"| Edge
+    Edge -.->|/api requests| Field
+```
+
+Solid arrows show page or state delivery; dotted arrows show browser HTTP requests. The snapshot arrow carries the response to a request initiated by the gateway; the Kafka consumer runs inside that gateway.
+
+1. **Generate and publish.** The simulated field station is part of Lontra Creek's backend. It prepares each channel's current state before publishing a record containing that full state and its revision. Its producer connects directly to Kafka using broker configuration and credentials; an HTTP API call does not establish the Kafka connection.
+2. **Map and deliver.** The gateway consumes Kafka records. Application handlers select the appropriate channel and return its state, parameters, and revision; StreamOtter validates it and delivers ordered updates to authorized subscriptions. The gateway does not reconstruct creek state from raw sensor events in this demo.
+3. **Subscribe and recover.** On initial subscription or reconnect, the gateway's snapshot handler requests the current view from the field station's private HTTP API using a service token. StreamOtter synchronizes the subscription with that snapshot and continuing updates.
+4. **Render in the browser.** The SDK runs inside the browser alongside our frontend code. It receives snapshots and updates over Socket.IO/WebSocket, and the UI updates its cards. The browser never connects to Kafka.
+5. **Write a sighting.** The browser sends a separate authenticated HTTP request through Caddy to the field station. The app updates the visitor's notebook, then publishes its state to Kafka; the gateway delivers it back to the notebook's authorized subscriber.
+
+The demo's Compose topology places the field station, Kafka, and gateway in separate services on one server. Sharing that host is a deployment choice, not a requirement to colocate a data source with StreamOtter. Several browser clients can subscribe to the same gateway; application code owns the UI, accepted identities, and allowed origins. Lontra Creek is one application built with the published package, not a frontend other applications must use.
+
+Implementation: the [station runner](../apps/field-station/src/server/station.ts) writes current views before publishing; the [Kafka producer](../apps/field-station/src/server/kafka.ts) sends records; the [gateway handlers](../apps/field-station/src/kafka-handlers.ts) map records and fetch snapshots; the [browser client](../apps/site/src/scripts/field-client.ts) creates subscriptions; and the [site API](../apps/field-station/src/server/http.ts) handles notebook writes.
+
+### Consistency rules
+
 The simulation (`packages/creek-sim`) is deterministic: the world is a pure function of its seed and tick. The field station app is the only writer. There is no separate database.
 
 - **Ticks and time.** One tick is five simulated minutes. In the hosted demo a tick happens every two real seconds, so a simulated day lasts 9.6 minutes. The target tick comes from the wall clock, so a restarted app computes the same world and continues where it should be.

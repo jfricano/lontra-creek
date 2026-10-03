@@ -27,6 +27,8 @@ Milestone A (the stack proven in CI) is reached: workstreams 1–4 are merged in
 
 ## Target shape
 
+For the application data paths, including Kafka updates, private snapshots, and notebook writes, see [PLAN.md's data-flow diagram](PLAN.md#kafka-data-path). The topology below describes the hosting and ingress boundaries.
+
 ```
 visitor ─▶ https://streamotter.app          Cloudflare: the static site (Astro build), DNS
        └─▶ https://demo.streamotter.app      Cloudflare proxy (WebSockets on) ─▶ Oracle A1 VM, Ubuntu 24.04 arm64

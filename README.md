@@ -11,6 +11,8 @@ StreamOtter's home site and live demo. Lontra Creek is a fictional river-otter s
 
 This project uses StreamOtter the way any application does: the published [`streamotter`](https://www.npmjs.com/package/streamotter) package from npm, at an exact version. It has no other connection to the [StreamOtter repository](https://github.com/jfricano/StreamOtter).
 
+The Kafka-backed path is **field station → Kafka → StreamOtter gateway → Socket.IO/WebSocket → browser SDK and UI**. The gateway also fetches current snapshots from the field station's private HTTP API. See the [data-flow diagram and walkthrough](docs/PLAN.md#kafka-data-path) for those paths and the notebook write cycle.
+
 > **Status: the production stack is proven in CI; not yet hosted.** The simulation, the field station, and the home page with a live panel run locally (`npm run dev`). The production stack (Kafka over TLS with SCRAM, the gateway, the field station, and Caddy, in containers) passes a full-stack test on every pull request. The site now includes the guided field station, playground, workbench tour, reference pages, and a labeled recorded fallback. The Failure Lab and deployment candidate are undergoing integration checks; public hosting remains pending. See [docs/PLAN.md](docs/PLAN.md), [docs/DEPLOYMENT_PLAN.md](docs/DEPLOYMENT_PLAN.md), and [docs/HOSTING.md](docs/HOSTING.md).
 
 ## Layout

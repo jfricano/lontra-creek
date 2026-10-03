@@ -8,6 +8,7 @@ import { io, type Socket } from 'socket.io-client';
 import { Kafka } from 'kafkajs';
 import { readFileSync } from 'node:fs';
 import { benchConfig, benchHandlers, benchEnvironment } from './bench.ts';
+import { bench } from './benches.ts';
 import type { BenchStatus, LabAction, LabBenchState } from './contract.ts';
 import { LabFeed } from './feed.ts';
 import { ACTIONS, LabError } from './errors.ts';
@@ -27,13 +28,16 @@ export class BenchRuntime {
   #management: Awaited<ReturnType<typeof startManagementServer>> | undefined;
   #managementToken = randomBytes(32).toString('base64url');
   #traceCursor: string | null = null;
-  #group = `lab-${randomUUID()}`;
+  /** The gateway's consumer group: set on first use, replaced on each reset. */
+  #group: string | undefined;
   #satellite: Socket | undefined;
   #nextAction = 0;
   #tail: Promise<unknown> = Promise.resolve();
   #timer?: NodeJS.Timeout;
   #principalCount = -1;
   constructor(env: NodeJS.ProcessEnv) { this.#env = env; this.#settings = benchEnvironment(env); }
+  /** A fresh consumer group, inside the prefix the bench's Kafka ACLs allow (streamotter-lab-N-). */
+  #newGroup(): string { return `${bench(this.#settings.number).consumerGroupPrefix}${randomUUID()}`; }
   run<T>(fn: () => Promise<T>): Promise<T> { const p = this.#tail.then(fn); this.#tail = p.catch(() => undefined); return p; }
   status(): BenchStatus { return { bench: this.#settings.number, state: this.#state, lease: this.#lease, scenario: structuredClone(this.#scenario), checks: { developmentPrincipals: this.#principalCount, fixtureSources: 0, managementHost: '127.0.0.1' } }; }
   authenticate(token: string): Principal | null { const lease = this.#lease; if (!lease || Date.parse(lease.expiresAt) <= Date.now() || !this.#tokens.has(token)) return null; return { tenantId: TENANT_ID, subject: `lab-${lease.leaseId}`, sessionId: lease.leaseId, expiresAt: lease.expiresAt, claims: { role: 'volunteer', bench: this.#settings.number } }; }
@@ -54,7 +58,7 @@ export class BenchRuntime {
     return envelope.data;
   }
   async #relay(cut: boolean): Promise<void> { const origin = this.#env['LAB_RELAY_ORIGIN'] ?? `http://lab-${this.#settings.number}-kafka:9180`; const response = await fetch(`${origin}/${cut ? 'cut' : 'restore'}`, { method: 'POST', headers: { authorization: `Bearer ${this.#settings.relayToken}` }, signal: AbortSignal.timeout(3000) }); if (!response.ok) throw new Error('Relay unavailable.'); this.#scenario.relay = cut ? 'cut' : 'up'; }
-  #config() { return benchConfig(this.#settings.number, { host: this.#env['BENCH_HOST'] ?? '0.0.0.0', port: Number(this.#env['BENCH_PORT'] ?? 7400), brokers: (this.#env['BENCH_KAFKA_BROKERS'] ?? `lab-${this.#settings.number}-kafka:${9100 + this.#settings.number}`).split(','), caFile: this.#env['KAFKA_CA_FILE'] ?? '/etc/lontra/kafka/ca.pem', consumerGroup: this.#group, allowedOrigins: (this.#env['SITE_ORIGIN'] ?? 'https://streamotter.app').split(',') }); }
+  #config() { return benchConfig(this.#settings.number, { host: this.#env['BENCH_HOST'] ?? '0.0.0.0', port: Number(this.#env['BENCH_PORT'] ?? 7400), brokers: (this.#env['BENCH_KAFKA_BROKERS'] ?? `lab-${this.#settings.number}-kafka:${9100 + this.#settings.number}`).split(','), caFile: this.#env['KAFKA_CA_FILE'] ?? '/etc/lontra/kafka/ca.pem', consumerGroup: this.#group ??= this.#newGroup(), allowedOrigins: (this.#env['SITE_ORIGIN'] ?? 'https://streamotter.app').split(',') }); }
   async #startGateway(): Promise<void> {
     const config = this.#config();
     const handlers = benchHandlers(this.#settings.number, { authenticate: token => this.authenticate(token), serviceToken: this.#settings.serviceToken, snapshotOrigin: this.#settings.snapshotOrigin, calibration: () => this.#scenario.calibration === 'present', record: item => this.#feed.add(item) });
@@ -87,8 +91,8 @@ export class BenchRuntime {
     const lease = this.#lease; this.#lease = null; this.#tokens.clear(); this.#state = 'resetting';
     if (lease) await this.#gateway?.revoke({ kind: 'subject', tenantId: TENANT_ID, subject: `lab-${lease.leaseId}` });
     this.#satellite?.disconnect(); this.#scenario.calibration = 'present'; await this.#relay(false); await this.#stopGateway();
-    const previous = this.#group; this.#group = `lab-${this.#settings.number}-${randomUUID()}`;
-    try { await this.#startGateway(); await this.#deleteGroup(previous); this.#feed.reset(); this.#state = 'ready'; } catch { this.#state = 'failed'; throw new Error('Bench reset failed.'); }
+    const previous = this.#group; this.#group = this.#newGroup();
+    try { await this.#startGateway(); if (previous !== undefined) await this.#deleteGroup(previous); this.#feed.reset(); this.#state = 'ready'; } catch { this.#state = 'failed'; throw new Error('Bench reset failed.'); }
   }
   async action(leaseId: unknown, action: LabAction): Promise<{ at: string; scenario: LabBenchState }> {
     this.#check(leaseId); if (Date.now() < this.#nextAction) throw new LabError('too-many-actions', 429);

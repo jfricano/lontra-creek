@@ -23,7 +23,8 @@ describe("bench names", () => {
       projectId: "lontra-creek-lab-2",
       topicPrefix: "lab-2.",
       topics: CREEK_TOPICS.map(topic => `lab-2.${topic}`),
-      consumerGroup: "lontra-creek-lab-2-field",
+      consumerGroupPrefix: "streamotter-lab-2-",
+      consumerGroup: "streamotter-lab-2-field",
       proxyHost: "lab-2-kafka",
       proxyPort: 9102,
       gatewayPath: "/lab/2/socket.io"
@@ -80,7 +81,7 @@ describe("a bench's project", () => {
     assert.equal(source?.kind, "kafka");
     if (source?.kind === "kafka") {
       assert.deepEqual(source.topics, bench(1).topics);
-      assert.equal(source.consumerGroup, "lontra-creek-lab-1-field");
+      assert.equal(source.consumerGroup, "streamotter-lab-1-field");
     }
     assert.deepEqual(Object.keys(config.channels).sort(), ["creekOverview", "otter", "reach", "station"]);
     assert.deepEqual(benchConfig(1, { brokers: ["localhost:8443"], port: 7500 }).connections["field"]?.brokers, ["localhost:8443"]);

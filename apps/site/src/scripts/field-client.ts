@@ -157,8 +157,14 @@ export class PageFieldClient implements FieldClient {
 
   switchRole(role: Role, options?: WaitOptions): Promise<void> {
     this.#signIn.cancel();
+    const previous = this.#role;
     this.#role = role;
-    return this.client.reconnect(options);
+    // A failed switch keeps the earlier volunteer, so a sign-in retry already scheduled
+    // reconnects as the same identity and the page's views stay open.
+    return this.client.reconnect(options).catch((error: unknown) => {
+      this.#role = previous;
+      throw error;
+    });
   }
 
   dropConnection(): void {

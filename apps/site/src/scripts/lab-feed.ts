@@ -94,7 +94,11 @@ export class LabFeedModel {
     let index = this.#lines.length;
     while (index > 0 && this.#lines[index - 1]!.at > line.at) index--;
     this.#lines.splice(index, 0, line);
-    if (this.#lines.length > FEED_KEEP) this.#lines.shift();
+    if (this.#lines.length <= FEED_KEEP) return;
+    // Busy traffic is mostly routine lines; drop the oldest of those so the scenario
+    // view keeps its steps. Only a feed of nothing but scenario lines loses one.
+    const routine = this.#lines.findIndex(kept => !kept.scenario);
+    this.#lines.splice(routine === -1 ? 0 : routine, 1);
   }
 
   #line(item: LabFeedItem): FeedLine {

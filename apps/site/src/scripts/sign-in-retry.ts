@@ -43,6 +43,7 @@ export interface ReconnectingClient {
 export class SignInRetry {
   readonly #onFinal: (() => void) | undefined;
   #transient = false;
+  #request = 0;
   #delay = SIGN_IN_RETRY_BASE_MS;
   #timer: ReturnType<typeof setTimeout> | null = null;
   #unlisten: Unlisten | null = null;
@@ -61,13 +62,16 @@ export class SignInRetry {
   async token<T>(request: () => Promise<T>): Promise<T> {
     // Pending counts as transient: the SDK gives up on a getToken after ten seconds
     // and reports auth-required before this request's own rejection arrives.
+    // Only the newest request decides: the SDK doesn't abort one still in flight when it
+    // reconnects, and that older answer can arrive after the newer request started.
+    const id = ++this.#request;
     this.#transient = true;
     try {
       const value = await request();
-      this.#transient = false;
+      if (id === this.#request) this.#transient = false;
       return value;
     } catch (error) {
-      this.#transient = isTransientFailure(error);
+      if (id === this.#request) this.#transient = isTransientFailure(error);
       throw error;
     }
   }

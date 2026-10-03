@@ -110,6 +110,14 @@ export class FieldStation {
     return this.#ready ? this.#views.get(key) : undefined;
   }
 
+  /**
+   * A copy of the world, for deriving a Lab scenario's affected views with the
+   * simulation's own derivation (lab/coverage.ts). Null until started.
+   */
+  world(): WorldState | null {
+    return this.#ready && this.#world !== null ? structuredClone(this.#world) : null;
+  }
+
   status(): { tick: number; studyDay: number; studyTime: string; generation: number; kafka: "connected" | "unavailable"; pending: number } {
     const time = studyTime(this.tick);
     return { tick: this.tick, studyDay: time.day, studyTime: time.clock, generation: this.generation, kafka: this.kafkaHealthy ? "connected" : "unavailable", pending: this.pendingCount };

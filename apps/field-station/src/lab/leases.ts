@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { SessionClaims } from '../sessions.ts';
 import type { BenchId, BenchStatus, LabAction, LabActionResult, LabEndReason, LabFeedPage, LabLease, LabStatus, LabToken } from './contract.ts';
-import { LabError } from './errors.ts';
+import { LabError, MAX_LEASE_MS } from './errors.ts';
 export interface BenchClient { call<T>(bench: BenchId, path: string, method?: string, body?: unknown): Promise<T>; }
 interface Place { session: SessionClaims; address: string; joined: number; heartbeat: number; lease?: { id: string; bench: BenchId; granted: number; expires: number; claimed: boolean; nextAction: number }; }
 interface Slot { state: LabStatus['benches'][number]['state']; status?: BenchStatus; resetAt: number; retryAt: number; lastSeen: number; nextPoll: number; }
@@ -18,7 +18,8 @@ export class LeasePool {
   readonly #origin: string;
   #tail: Promise<unknown> = Promise.resolve();
   constructor(options: { client: BenchClient; benches: BenchId[]; gatewayOrigin: string; now?: () => number; leaseMs?: number; queueMax?: number }) {
-    this.#client = options.client; this.#now = options.now ?? Date.now; this.#leaseMs = options.leaseMs ?? 300_000; this.#queueMax = options.queueMax ?? 50; this.#origin = options.gatewayOrigin;
+    this.#client = options.client; this.#now = options.now ?? Date.now; this.#leaseMs = options.leaseMs ?? MAX_LEASE_MS; this.#queueMax = options.queueMax ?? 50; this.#origin = options.gatewayOrigin;
+    if (this.#leaseMs > MAX_LEASE_MS) throw new RangeError(`A lease can last at most ${MAX_LEASE_MS / 1000} seconds; benches refuse longer ones.`);
     for (const bench of options.benches) this.#slots.set(bench, { state: 'unavailable', resetAt: 0, retryAt: 0, lastSeen: this.#now(), nextPoll: 0 });
   }
   get enabled(): boolean { return this.#slots.size > 0; }
@@ -90,11 +91,25 @@ export class LeasePool {
   async action(session: SessionClaims, action: LabAction): Promise<LabActionResult> { const lease = this.#lease(session, true); if (this.#now() < lease.nextAction) throw new LabError('too-many-actions', 429); const result = await this.#call<{ at: string; scenario: BenchStatus['scenario'] }>(session, '/bench/v1/actions', { leaseId: lease.id, action }); lease.nextAction = this.#now() + 1000; this.#slots.get(lease.bench)!.status!.scenario = result.scenario; return { action, at: result.at, nextActionAt: iso(lease.nextAction), benchState: result.scenario }; }
   async feed(session: SessionClaims, after?: string): Promise<LabFeedPage> { const lease = this.#lease(session, true); return this.#call(session, `/bench/v1/feed?leaseId=${encodeURIComponent(lease.id)}&after=${encodeURIComponent(after ?? '')}`); }
 }
+/**
+ * A bench's error answer as the field station's. The bench's own code passes through
+ * where its status allows it, so a bench's `no-lease` reaches the visitor as `no-lease`
+ * rather than `not-applicable`. Any other answer is the bench failing: 503
+ * bench-unavailable, which ends the lease.
+ */
+export function benchError(status: number, code: unknown): LabError {
+  if (status === 409) return new LabError(code === 'no-lease' ? 'no-lease' : 'not-applicable', 409);
+  if (status === 429) return new LabError('too-many-actions', 429);
+  if (status === 400) return new LabError('invalid-request', 400);
+  return new LabError('bench-unavailable', 503);
+}
 export function configuredLab(env: NodeJS.ProcessEnv, gatewayOrigin: string): { pool: LeasePool; tokens: string[] } {
   const urls = (env['LAB_BENCH_API_URLS'] ?? '').split(',').filter(Boolean).map(value => new URL(value).origin);
   if (urls.length > 3) throw new Error('At most three Lab benches are supported.');
   const tokens = urls.map((_, i) => { const token = env[`LAB_BENCH_${i + 1}_SERVICE_TOKEN`]; if (!token || token.length < 32) throw new Error('Each Lab service token needs 32 characters.'); return token; });
   const positive = (key: string, fallback: number): number => { const n = Number(env[key] ?? fallback); if (!Number.isSafeInteger(n) || n < 1) throw new Error(`${key} must be a positive integer.`); return n; };
-  const client: BenchClient = { async call<T>(bench: BenchId, path: string, method = 'GET', body?: unknown): Promise<T> { const response = await fetch(`${urls[bench - 1]}${path}`, { method, headers: { authorization: `Bearer ${tokens[bench - 1]}`, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(5000) }); if (!response.ok) throw new LabError(response.status === 429 ? 'too-many-actions' : response.status === 409 ? 'not-applicable' : response.status === 400 ? 'invalid-request' : 'bench-unavailable', response.status); return await response.json() as T; } };
-  return { pool: new LeasePool({ client, benches: urls.map((_, i) => i + 1 as BenchId), gatewayOrigin, leaseMs: positive('LAB_LEASE_SECONDS', 300) * 1000, queueMax: positive('LAB_QUEUE_MAX', 50) }), tokens };
+  const client: BenchClient = { async call<T>(bench: BenchId, path: string, method = 'GET', body?: unknown): Promise<T> { const response = await fetch(`${urls[bench - 1]}${path}`, { method, headers: { authorization: `Bearer ${tokens[bench - 1]}`, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(5000) }); if (!response.ok) throw benchError(response.status, (await response.json().catch(() => ({})) as { code?: unknown }).code); return await response.json() as T; } };
+  const leaseSeconds = positive('LAB_LEASE_SECONDS', MAX_LEASE_MS / 1000);
+  if (leaseSeconds * 1000 > MAX_LEASE_MS) throw new Error(`LAB_LEASE_SECONDS must be at most ${MAX_LEASE_MS / 1000}: each bench refuses longer leases.`);
+  return { pool: new LeasePool({ client, benches: urls.map((_, i) => i + 1 as BenchId), gatewayOrigin, leaseMs: leaseSeconds * 1000, queueMax: positive('LAB_QUEUE_MAX', 50) }), tokens };
 }

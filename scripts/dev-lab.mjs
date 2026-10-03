@@ -241,6 +241,19 @@ export function probe(url, ca, timeoutMs = 5000) {
   });
 }
 
+/** Polls Lab status until a bench is ready: benches start after Compose reports them healthy. */
+export async function waitForReadyBench(ca, { timeoutMs = 120_000, intervalMs = 2000, check = probe } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const result = await check(urls().labStatus, ca);
+    try {
+      if (result.status === 200 && JSON.parse(result.body).benches?.some(bench => bench.state === "ready")) return true;
+    } catch { /* not JSON yet */ }
+    if (Date.now() >= deadline) return false;
+    await new Promise(done => setTimeout(done, intervalMs));
+  }
+}
+
 export function urls() {
   return {
     site: `${ORIGIN}/`,
@@ -388,8 +401,12 @@ async function up(options) {
     throw new Error(`The stack did not become healthy. It was left running for inspection:\n  npm run dev:lab -- status\n  npm run dev:lab -- logs\nStop it with \`npm run dev:lab -- stop\` (keeps data).`);
   }
 
-  step("Local Failure Lab is running");
-  await report(readFileSync(join(path, "secrets/origin/ca.pem")));
+  const ca = readFileSync(join(path, "secrets/origin/ca.pem"));
+  step("Waiting for a Lab bench to report ready");
+  const ready = await waitForReadyBench(ca);
+  step(ready ? "Local Failure Lab is running" : "Local stack is running, but no Lab bench is ready yet");
+  await report(ca);
+  if (!ready) console.log("\nBenches can take longer on a slow machine. Check again with `npm run dev:lab -- status`, or read `npm run dev:lab -- logs lab-1`.");
   trustAdvice(path);
   console.log(`
 Open ${urls().lab} . Only 127.0.0.1:${PORT} is published; Kafka, bench APIs, relay

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { describe, test } from "node:test";
 import {
   DEFAULT_DIR, DEFAULT_PROJECT, ROOT, UsageError,
-  checkPrerequisites, compareVersions, confirmDiscard, extraCaDockerfile, localDirectory, parseArgs, readEnv, urls
+  checkPrerequisites, compareVersions, confirmDiscard, extraCaDockerfile, localDirectory, parseArgs, readEnv, urls, waitForReadyBench
 } from "../dev-lab.mjs";
 
 describe("parseArgs", () => {
@@ -187,5 +187,23 @@ describe("readEnv and urls", () => {
 
   test("every printed URL is on the loopback HTTPS origin", () => {
     for (const url of Object.values(urls())) assert.match(url, /^https:\/\/localhost:8443\//);
+  });
+});
+
+describe("waitForReadyBench", () => {
+  const reply = body => ({ status: 200, body: JSON.stringify(body) });
+
+  test("waits until a bench is ready, polling only the Lab status URL", async () => {
+    const seen = [];
+    const answers = [{ status: null, error: "ECONNREFUSED" }, { status: 502, body: "" }, reply({ benches: [{ bench: 1, state: "unavailable" }] }), reply({ benches: [{ bench: 1, state: "unavailable" }, { bench: 2, state: "ready" }] })];
+    const check = async url => { seen.push(url); return answers.shift(); };
+    assert.equal(await waitForReadyBench("ca", { check, intervalMs: 1, timeoutMs: 5000 }), true);
+    assert.equal(seen.length, 4);
+    assert.ok(seen.every(url => url === urls().labStatus));
+  });
+
+  test("gives up after the timeout", async () => {
+    const check = async () => reply({ enabled: false, benches: [] });
+    assert.equal(await waitForReadyBench("ca", { check, intervalMs: 1, timeoutMs: 20 }), false);
   });
 });

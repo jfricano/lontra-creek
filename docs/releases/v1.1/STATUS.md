@@ -25,7 +25,7 @@ Updated October 3, 2026 · The live tracker for [IMPLEMENTATION_PLAN.md](IMPLEME
 
 | Gate | State |
 | --- | --- |
-| Published workbench seam (R1–R6) | Requested from StreamOtter V1.1, October 3 |
+| Published workbench seam (R1–R6) | Defined by StreamOtter as WHC-1 rev 0.1 (StreamOtter PR #12), not yet implemented; R11 and R12 sent back |
 | Published native failure APIs (R7–R9) | Planned in StreamOtter V1.1 |
 | Hosted Kafka authorization | Waits for Jason's approval (LC11-ADR-03) |
 | Sandbox host capacity | Waits for local measurement, then Jason (LC11-ADR-04) |

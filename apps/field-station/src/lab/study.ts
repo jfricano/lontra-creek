@@ -16,7 +16,7 @@
  * nothing here emulates native recovery state.
  */
 import { randomBytes } from 'node:crypto';
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { BenchStudy, StudySummary } from './contract.ts';
 
@@ -78,10 +78,12 @@ export class StudyStore {
   async remove(studyId: string): Promise<void> { await rm(this.directory(studyId), { recursive: true, force: true }); }
   /** Studies with a directory on the volume, for sweeping strays left by a crash mid-reset. */
   async studies(): Promise<string[]> { try { return (await readdir(join(this.#root, 'studies'))).filter(name => STUDY_ID.test(name)); } catch { return []; } }
+  /** Writes a discarded study's summary once: a retried discard never replaces the first, fuller record. */
   async summarize(summary: StudySummary): Promise<void> {
-    const dir = join(this.#root, 'summaries');
+    const dir = join(this.#root, 'summaries'); const path = join(dir, `${summary.studyId}.json`);
     await mkdir(dir, { recursive: true });
-    await this.#write(join(dir, `${summary.studyId}.json`), summary);
+    try { await stat(path); return; } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    await this.#write(path, summary);
     const files = (await readdir(dir)).filter(name => name.endsWith('.json'));
     if (files.length <= SUMMARIES_KEPT) return;
     const dated = await Promise.all(files.map(async name => { try { return { name, at: (JSON.parse(await readFile(join(dir, name), 'utf8')) as StudySummary).closedAt }; } catch { return { name, at: '' }; } }));

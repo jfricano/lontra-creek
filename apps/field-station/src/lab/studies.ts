@@ -104,16 +104,20 @@ export class LabStudies {
     const path = join(this.#dir(bench, studyId), 'ledger.json');
     const ledger = study?.ledger ? await study.ledger : await FileCoverageLedger.open(path, bench, studyId, this.#now).catch(() => null);
     await ledger?.discard();
-    const entries = ledger?.entries() ?? [];
-    const summary: LedgerSummary = { bench, studyId, closedAt: new Date(this.#now()).toISOString(), entries: entries.map(entry => ({ scenarioId: entry.scenarioId, runId: entry.runId, status: entry.status, affected: [...entry.affected], published: entry.publication !== null })), obligations: ledger?.obligations().length ?? 0, barriers: ledger?.barriers().length ?? 0 };
-    const dir = join(this.#root, `lab-${bench}`, 'summaries');
-    await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, `${studyId}.json.tmp`), JSON.stringify(summary)); await rename(join(dir, `${studyId}.json.tmp`), join(dir, `${studyId}.json`));
-    const files = (await readdir(dir)).filter(name => name.endsWith('.json'));
-    if (files.length > LEDGER_SUMMARIES_KEPT) {
-      const dated = await Promise.all(files.map(async name => { try { return { name, at: (JSON.parse(await readFile(join(dir, name), 'utf8')) as LedgerSummary).closedAt }; } catch { return { name, at: '' }; } }));
-      dated.sort((a, b) => a.at.localeCompare(b.at));
-      for (const { name } of dated.slice(0, dated.length - LEDGER_SUMMARIES_KEPT)) await rm(join(dir, name), { force: true });
+    const dir = join(this.#root, `lab-${bench}`, 'summaries'); const file = join(dir, `${studyId}.json`);
+    // Written once: a retried discard, when the ledger is already gone, never replaces the first record with an empty one.
+    let summary = await readFile(file, 'utf8').then(text => JSON.parse(text) as LedgerSummary, () => null);
+    if (!summary) {
+      const entries = ledger?.entries() ?? [];
+      summary = { bench, studyId, closedAt: new Date(this.#now()).toISOString(), entries: entries.map(entry => ({ scenarioId: entry.scenarioId, runId: entry.runId, status: entry.status, affected: [...entry.affected], published: entry.publication !== null })), obligations: ledger?.obligations().length ?? 0, barriers: ledger?.barriers().length ?? 0 };
+      await mkdir(dir, { recursive: true });
+      await writeFile(`${file}.tmp`, JSON.stringify(summary)); await rename(`${file}.tmp`, file);
+      const files = (await readdir(dir)).filter(name => name.endsWith('.json'));
+      if (files.length > LEDGER_SUMMARIES_KEPT) {
+        const dated = await Promise.all(files.map(async name => { try { return { name, at: (JSON.parse(await readFile(join(dir, name), 'utf8')) as LedgerSummary).closedAt }; } catch { return { name, at: '' }; } }));
+        dated.sort((a, b) => a.at.localeCompare(b.at));
+        for (const { name } of dated.slice(0, dated.length - LEDGER_SUMMARIES_KEPT)) await rm(join(dir, name), { force: true });
+      }
     }
     await rm(this.#dir(bench, studyId), { recursive: true, force: true });
     if (study) { study.views.clear(); study.prepared.clear(); this.#current.delete(bench); }

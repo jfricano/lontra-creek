@@ -51,11 +51,11 @@ async function volume(t: TestContext) {
   const steps: string[] = [];
   const configs: ProjectConfig<LabChannels>[] = []; const handlers: HandlerRegistry<LabChannels>[] = [];
   const groups = new Set<string>();
-  const faults = { deleteGroup: false, close: false };
+  const faults = { deleteGroup: false, close: false, discard: false };
   let holdClose: Promise<void> | null = null; let holdStart: Promise<void> | null = null; let releaseStart: (() => void) | null = null;
   const gate: StudyGateClient = {
     async close(studyId) { steps.push(`gate.close ${studyId}`); if (holdClose) await holdClose; if (faults.close) throw new Error('field station unavailable'); },
-    async discard(studyId) { steps.push(`gate.discard ${studyId}`); }
+    async discard(studyId) { steps.push(`gate.discard ${studyId}`); if (faults.discard) throw new Error('field station unavailable'); }
   };
   const gateway = (group: string) => ({ async start() {}, async stop() { steps.push(`gateway.stop ${group}`); }, async revoke(target: { subject: string }) { steps.push(`revoke ${target.subject}`); } }) as unknown as Gateway;
   /** A bench process on this volume, not yet booted. */
@@ -324,4 +324,21 @@ describe('reset discards the study (LC11-A25, A26)', () => {
     assert.equal(bench.status().state, 'ready'); assert.equal(bench.status().readiness.cleanLease, true);
     assert.ok(!v.groups.has(old.consumerGroup), 'the old group was deleted through the restored relay');
   });
+
+  for (const retry of ['in the same process', 'after a reboot'] as const) {
+    test(`a reset retried ${retry} keeps the first summary`, async t => {
+      const v = await volume(t); let bench = await v.runtime(); const old = studyOf(bench);
+      await lease(bench, v.at()); await bench.run(() => bench.action('lease-1', 'sensor.foul'));
+      v.faults.discard = true;
+      await assert.rejects(bench.run(() => bench.reset()));
+      const path = join(v.stateDir, 'lab-1', 'summaries', `${old.studyId}.json`);
+      const first = await readFile(path, 'utf8');
+      v.faults.discard = false;
+      if (retry === 'after a reboot') { await bench.close(); bench = await v.runtime(); } else await bench.run(() => bench.reset());
+      assert.equal(bench.status().state, 'ready'); assert.ok(v.steps.filter(step => step === `gate.discard ${old.studyId}`).length === 2);
+      assert.equal(await readFile(path, 'utf8'), first, 'the retry does not rewrite the summary');
+      const summary = JSON.parse(first) as StudySummary;
+      assert.deepEqual([summary.leaseId, summary.counts.actions, summary.lastSource], ['lease-1', 1, 'healthy']);
+    });
+  }
 });

@@ -252,8 +252,9 @@ describe('the publisher gate and study discard', () => {
     const text = await readFile(join(s.dataDir, 'lab', 'lab-1', 'summaries', `${S1}.json`), 'utf8');
     for (const forbidden of ['412', 'scenario":true', 'data', 'value']) assert.ok(!text.includes(forbidden), `no payload in the summary: ${forbidden}`);
     await assert.rejects(stat(join(s.dataDir, 'lab', 'lab-1', 'studies', S1)));
-    // Discarding again (a retried reset) is harmless.
-    assert.equal((await s.registry.discard(1, S1)).entries.length, 0);
+    // Discarding again (a retried reset, after the ledger is gone) is harmless and keeps the first record.
+    assert.deepEqual(await s.registry.discard(1, S1), summary);
+    assert.equal(await readFile(join(s.dataDir, 'lab', 'lab-1', 'summaries', `${S1}.json`), 'utf8'), text);
   });
 
   test('opening a new study sweeps strays a crash left on disk', async t => {

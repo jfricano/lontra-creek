@@ -49,6 +49,15 @@ Today `PUBLISHED_SEAM` is `null` (rc.3 ships no `workbench-host.json`), the prod
 
 W9a must: pin the release; serve its `dist/` files and set `PUBLISHED_SEAM` (version, script and style paths, integrity from the manifest); settle R11 (same-origin `apiBase`) and R12 (scoped styles); add the CSP from the manifest; and confirm how to remount after a reset (the page currently reloads `app.js` under a `?study=` query, which re-runs the module but does not tear down the old instance).
 
+**WHC-1 revision 0.3** (StreamOtter PR #14, October 3, unpublished) settles R11 and R12 and changes what W9a builds:
+
+- **Cross-origin API.** Write `apiOrigin: "https://demo.streamotter.app"` in the boot block, with `apiBase` staying the path `/api/sandbox/wb/v1`. Drop the same-origin condition from `mountDecision`. The workbench sends `mode: "cors"`, `credentials: "include"`, `redirect: "error"` and `X-StreamOtter-Workbench: 1`, never Authorization.
+- **Preflight.** The sandbox adapter answers the CORS preflight itself, before `createManagementHandler`, which adds no CORS headers and answers OPTIONS with 404. It allows exactly the page origin with `Access-Control-Allow-Credentials: true` and the `X-StreamOtter-Workbench` and `content-type` headers (WHC-1 §3.4). `lc_session` is SameSite=Strict, which works because streamotter.app and demo.streamotter.app are same-site.
+- **Styles.** Link the manifest's `entry.hostStyle` (`dist/workbench-host.css`, with its sha384), never `styles.css`. Every rule is scoped under `[data-streamotter-workbench]`, which the workbench sets on the mount. The manifest's `connect-src` gains an API-origin placeholder.
+- **Landmarks.** The workbench renders its own `<main>` inside the mount. Today the mount sits inside the layout's `<main id="main">` (`Base.astro`), so W9a must move it out or give this page a layout without the outer `<main>`.
+- **Session end.** In session mode any 401 or UNAUTHENTICATED shows "Session ended" with Reload, and the workbench stops polling.
+- **Failures tab** (StreamOtter draft PR #17). It appears when discovery lists `failures.list`. Allowlist `failures.list`, `failures.show` and `operator.status` to show it. The action operations are optional and show as not available. The routes exist only when the slot gateway has `failureHandling`, which fixture mode may not support (LC11-ADR-04 open question 1).
+
 ## How to test
 
 ```bash

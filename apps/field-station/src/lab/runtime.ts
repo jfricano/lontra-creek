@@ -3,14 +3,33 @@ import { createServer, type Server } from 'node:http';
 import { TENANT_ID } from '@lontra-creek/sim';
 import { createGateway } from 'streamotter/gateway';
 import { startManagementServer } from 'streamotter/gateway/management';
-import type { Gateway, Principal, SourceStatus, Trace, Page } from 'streamotter/contracts';
+import type { Gateway, Principal, ProjectConfig, SourceStatus, Trace, Page } from 'streamotter/contracts';
+import type { HandlerRegistry } from 'streamotter/gateway';
 import { io, type Socket } from 'socket.io-client';
 import { Kafka } from 'kafkajs';
 import { readFileSync } from 'node:fs';
-import { benchConfig, benchHandlers, benchEnvironment } from './bench.ts';
+import { benchConfig, benchHandlers, benchEnvironment, type LabChannels } from './bench.ts';
 import type { BenchStatus, LabAction, LabBenchState } from './contract.ts';
 import { LabFeed } from './feed.ts';
-import { ACTIONS, LabError } from './errors.ts';
+import { ACTIONS, LabError, MAX_LEASE_MS } from './errors.ts';
+/** How long background polls may keep failing before the bench reports `failed`: one slow answer must not end a visitor's lease. */
+export const POLL_GRACE_MS = 15_000;
+/** A running gateway and its loopback management API. */
+export interface BenchServices { gateway: Gateway; management: { origin: string; close(): Promise<void> } }
+export interface BenchRuntimeOptions {
+  now?: () => number;
+  /** Background tick interval; tests pass a long one and call tick() themselves. */
+  tickMs?: number;
+  /** Starts the gateway and management API; tests substitute stand-ins. */
+  services?: (config: ProjectConfig<LabChannels>, handlers: HandlerRegistry<LabChannels>, managementToken: string, port: number) => Promise<BenchServices>;
+}
+async function gatewayServices(config: ProjectConfig<LabChannels>, handlers: HandlerRegistry<LabChannels>, token: string, port: number): Promise<BenchServices> {
+  // Validate the exact same config under production rules before development enables traces.
+  createGateway({ config, handlers, mode: 'production' });
+  const gateway = createGateway({ config, handlers, mode: 'development' });
+  try { await gateway.start(); return { gateway, management: await startManagementServer({ gateway, host: '127.0.0.1', port, token, workbenchDir: null }) }; }
+  catch (error) { await gateway.stop().catch(() => undefined); throw error; }
+}
 export function requireNoDevelopmentPrincipals(items: readonly unknown[]): void {
   if (items.length !== 0) throw new Error('Development principals are forbidden.');
 }
@@ -24,7 +43,7 @@ export class BenchRuntime {
   #state: BenchStatus['state'] = 'starting';
   #scenario: LabBenchState = { gateway: 'restarting', source: { status: 'starting' }, relay: 'up', calibration: 'present', satellite: 'idle', receiptTimeoutMs: 5000 };
   #gateway: Gateway | undefined;
-  #management: Awaited<ReturnType<typeof startManagementServer>> | undefined;
+  #management: BenchServices['management'] | undefined;
   #managementToken = randomBytes(32).toString('base64url');
   #traceCursor: string | null = null;
   #group = `lab-${randomUUID()}`;
@@ -33,10 +52,15 @@ export class BenchRuntime {
   #tail: Promise<unknown> = Promise.resolve();
   #timer?: NodeJS.Timeout;
   #principalCount = -1;
-  constructor(env: NodeJS.ProcessEnv) { this.#env = env; this.#settings = benchEnvironment(env); }
+  #ticking: Promise<void> | undefined;
+  #pollFailingSince: number | null = null;
+  readonly #now: () => number;
+  readonly #tickMs: number;
+  readonly #services: NonNullable<BenchRuntimeOptions['services']>;
+  constructor(env: NodeJS.ProcessEnv, options: BenchRuntimeOptions = {}) { this.#env = env; this.#settings = benchEnvironment(env); this.#now = options.now ?? Date.now; this.#tickMs = options.tickMs ?? 1000; this.#services = options.services ?? gatewayServices; }
   run<T>(fn: () => Promise<T>): Promise<T> { const p = this.#tail.then(fn); this.#tail = p.catch(() => undefined); return p; }
   status(): BenchStatus { return { bench: this.#settings.number, state: this.#state, lease: this.#lease, scenario: structuredClone(this.#scenario), checks: { developmentPrincipals: this.#principalCount, fixtureSources: 0, managementHost: '127.0.0.1' } }; }
-  authenticate(token: string): Principal | null { const lease = this.#lease; if (!lease || Date.parse(lease.expiresAt) <= Date.now() || !this.#tokens.has(token)) return null; return { tenantId: TENANT_ID, subject: `lab-${lease.leaseId}`, sessionId: lease.leaseId, expiresAt: lease.expiresAt, claims: { role: 'volunteer', bench: this.#settings.number } }; }
+  authenticate(token: string): Principal | null { const lease = this.#lease; if (!lease || Date.parse(lease.expiresAt) <= this.#now() || !this.#tokens.has(token)) return null; return { tenantId: TENANT_ID, subject: `lab-${lease.leaseId}`, sessionId: lease.leaseId, expiresAt: lease.expiresAt, claims: { role: 'volunteer', bench: this.#settings.number } }; }
   async #managementCall<T>(path: string): Promise<T> {
     if (!this.#management) throw new Error('Management unavailable.');
     const response = await fetch(`${this.#management.origin}/management/v1/${path}`, {
@@ -58,20 +82,31 @@ export class BenchRuntime {
   async #startGateway(): Promise<void> {
     const config = this.#config();
     const handlers = benchHandlers(this.#settings.number, { authenticate: token => this.authenticate(token), serviceToken: this.#settings.serviceToken, snapshotOrigin: this.#settings.snapshotOrigin, calibration: () => this.#scenario.calibration === 'present', record: item => this.#feed.add(item) });
-    // Validate the exact same config under production rules before development enables traces.
-    createGateway({ config, handlers, mode: 'production' });
-    const gateway = createGateway({ config, handlers, mode: 'development' }); this.#gateway = gateway;
-    await gateway.start();
-    this.#management = await startManagementServer({ gateway, host: '127.0.0.1', port: Number(this.#env['BENCH_MANAGEMENT_PORT'] ?? 7401), token: this.#managementToken, workbenchDir: null });
+    const services = await this.#services(config, handlers, this.#managementToken, Number(this.#env['BENCH_MANAGEMENT_PORT'] ?? 7401)); this.#gateway = services.gateway; this.#management = services.management;
     const principals = await this.#managementCall<{ items: unknown[] }>('dev/principals'); this.#principalCount = principals.items.length;
     requireNoDevelopmentPrincipals(principals.items);
-    this.#traceCursor = null; this.#scenario.gateway = 'running';
+    this.#traceCursor = null; this.#scenario.gateway = 'running'; this.#pollFailingSince = null;
     await this.#poll(false);
     if (this.#scenario.source.status !== 'healthy') throw new Error('Bench source did not become healthy.');
   }
   async #stopGateway(): Promise<void> { this.#scenario.gateway = 'restarting'; this.#satellite?.disconnect(); this.#satellite = undefined; this.#scenario.satellite = 'idle'; await this.#management?.close(); this.#management = undefined; await this.#gateway?.stop(); this.#gateway = undefined; }
   async #deleteGroup(group: string): Promise<void> { const config = this.#config(); const connection = config.connections['field']!; const kafka = new Kafka({ brokers: [...connection.brokers], ssl: { ca: [readFileSync(this.#env['KAFKA_CA_FILE'] ?? '/etc/lontra/kafka/ca.pem', 'utf8')] }, sasl: { mechanism: 'scram-sha-512', username: this.#env['KAFKA_LAB_USERNAME']!, password: this.#env['KAFKA_LAB_PASSWORD']! }, logLevel: 0 }); const admin = kafka.admin(); try { await admin.connect(); await admin.deleteGroups([group]); } finally { await admin.disconnect(); } }
-  async start(): Promise<void> { await this.#relay(false); await this.#startGateway(); this.#state = 'ready'; this.#timer = setInterval(() => { void this.run(async () => { if (this.#lease && Date.parse(this.#lease.expiresAt) <= Date.now()) await this.reset(); else await this.#poll(true); }).catch(() => { this.#state = 'failed'; }); }, 1000); }
+  async start(): Promise<void> { await this.#relay(false); await this.#startGateway(); this.#state = 'ready'; this.#timer = setInterval(() => { void this.tick(); }, this.#tickMs); }
+  /**
+   * One background step: reset after the lease's end, otherwise poll the gateway.
+   * At most one tick waits in the queue, so a long reset or restart doesn't stack
+   * polls ahead of visitors' calls. A failing poll fails the bench only once polls
+   * have kept failing for POLL_GRACE_MS; the field station then ends the lease.
+   */
+  tick(): Promise<void> {
+    if (this.#ticking) return this.#ticking;
+    const ticking = this.run(async () => {
+      if (this.#lease && Date.parse(this.#lease.expiresAt) <= this.#now()) return this.reset();
+      try { await this.#poll(true); this.#pollFailingSince = null; }
+      catch (error) { const since = this.#pollFailingSince ??= this.#now(); if (this.#now() - since >= POLL_GRACE_MS) throw error; }
+    }).catch(() => { this.#state = 'failed'; }).finally(() => { this.#ticking = undefined; });
+    this.#ticking = ticking; return ticking;
+  }
   async close(): Promise<void> { clearInterval(this.#timer); await this.run(() => this.#stopGateway()); }
   async #poll(record: boolean): Promise<void> {
     const sources = await this.#managementCall<{ items: SourceStatus[] }>('sources'); const source = sources.items.find(s => s.sourceId === 'field');
@@ -79,8 +114,8 @@ export class BenchRuntime {
     // Drain bounded management pages, retaining the last cursor even on an empty page.
     for (let i = 0; i < 20; i++) { const traces = await this.#managementCall<Page<Trace>>(`traces?limit=500${this.#traceCursor ? `&cursor=${encodeURIComponent(this.#traceCursor)}` : ''}`); for (const trace of traces.items) if (record && this.#lease) this.#feed.trace(trace, this.#satelliteIds); if (traces.nextCursor) this.#traceCursor = traces.nextCursor; if (traces.items.length < 500) break; }
   }
-  async lease(leaseId: string, expiresAt: string): Promise<void> { if (this.#state !== 'ready') throw new LabError('not-applicable', 409); if (!/^[\w-]{1,80}$/.test(leaseId) || !(Date.parse(expiresAt) > Date.now()) || Date.parse(expiresAt) > Date.now() + 300_000) throw new LabError('invalid-request', 400); await this.#poll(false); this.#lease = { leaseId, expiresAt }; this.#feed.reset(leaseId); this.#satelliteIds.clear(); this.#state = 'leased'; this.#nextAction = 0; this.#feed.add({ kind: 'bench', event: 'lease-started' }); }
-  #check(leaseId: unknown): void { if (!this.#lease || leaseId !== this.#lease.leaseId || Date.parse(this.#lease.expiresAt) <= Date.now()) throw new LabError('no-lease', 409); }
+  async lease(leaseId: string, expiresAt: string): Promise<void> { if (this.#state !== 'ready') throw new LabError('not-applicable', 409); if (!/^[\w-]{1,80}$/.test(leaseId) || !(Date.parse(expiresAt) > this.#now()) || Date.parse(expiresAt) > this.#now() + MAX_LEASE_MS) throw new LabError('invalid-request', 400); await this.#poll(false); this.#lease = { leaseId, expiresAt }; this.#feed.reset(leaseId); this.#satelliteIds.clear(); this.#state = 'leased'; this.#nextAction = 0; this.#feed.add({ kind: 'bench', event: 'lease-started' }); }
+  #check(leaseId: unknown): void { if (!this.#lease || leaseId !== this.#lease.leaseId || Date.parse(this.#lease.expiresAt) <= this.#now()) throw new LabError('no-lease', 409); }
   token(leaseId: unknown): { token: string; expiresAt: string } { this.#check(leaseId); const token = `lab${this.#settings.number}_${randomBytes(32).toString('base64url')}`; if (this.#tokens.size >= 128) return { token: [...this.#tokens][0]!, expiresAt: this.#lease!.expiresAt }; this.#tokens.add(token); return { token, expiresAt: this.#lease!.expiresAt }; }
   feed(leaseId: unknown, after?: string, limit?: number) { this.#check(leaseId); return this.#feed.page(after, limit); }
   async reset(): Promise<void> {
@@ -91,14 +126,14 @@ export class BenchRuntime {
     try { await this.#startGateway(); await this.#deleteGroup(previous); this.#feed.reset(); this.#state = 'ready'; } catch { this.#state = 'failed'; throw new Error('Bench reset failed.'); }
   }
   async action(leaseId: unknown, action: LabAction): Promise<{ at: string; scenario: LabBenchState }> {
-    this.#check(leaseId); if (Date.now() < this.#nextAction) throw new LabError('too-many-actions', 429);
+    this.#check(leaseId); if (this.#now() < this.#nextAction) throw new LabError('too-many-actions', 429);
     const s = this.#scenario;
     const allowed = action === 'sensor.foul' ? s.calibration === 'present' : action === 'sensor.restore' ? s.calibration === 'removed' : action === 'source.resume' ? s.source.status === 'paused' : action === 'relay.cut' ? s.relay === 'up' && s.gateway === 'running' : action === 'relay.restore' ? s.relay === 'cut' : action === 'satellite.start' ? s.satellite === 'idle' && s.source.status === 'healthy' && s.gateway === 'running' : action === 'gateway.restart' && s.gateway === 'running' && s.relay === 'up';
     if (!allowed || s.gateway !== 'running') throw new LabError('not-applicable', 409);
-    this.#nextAction = Date.now() + 1000;
     if (action === 'sensor.foul') s.calibration = 'removed';
     if (action === 'sensor.restore') s.calibration = 'present';
-    if (action === 'source.resume') await this.#gateway!.resumeSource('field');
+    // StreamOtter answers 409 when the source left `paused` since the last poll: the action no longer applies.
+    if (action === 'source.resume') await this.#gateway!.resumeSource('field').catch((error: unknown) => { throw (error as { details?: { status?: unknown } }).details?.status === 409 ? new LabError('not-applicable', 409) : error; });
     if (action === 'relay.cut' || action === 'relay.restore') await this.#relay(action === 'relay.cut');
     if (action === 'gateway.restart') {
       // Return the restarting state promptly. Starting a Kafka gateway can take
@@ -119,7 +154,9 @@ export class BenchRuntime {
       socket.on('connect_error', () => { s.satellite = 'idle'; socket.disconnect(); });
       // Deliberately no so:receipt handler: the gateway disconnects this one client.
     }
-    this.#feed.add({ kind: 'action', action }); return { at: new Date().toISOString(), scenario: structuredClone(s) };
+    // A failed action doesn't spend the visitor's one-a-second budget.
+    this.#nextAction = this.#now() + 1000;
+    this.#feed.add({ kind: 'action', action }); return { at: new Date(this.#now()).toISOString(), scenario: structuredClone(s) };
   }
   api(): Server {
     const expected = Buffer.from(`Bearer ${this.#settings.serviceToken}`);
@@ -132,7 +169,7 @@ export class BenchRuntime {
       if (request.method === 'GET' && url.pathname === '/bench/v1/status') return send(200, this.status());
       try {
         let text = ''; for await (const chunk of request) { text += chunk; if (Buffer.byteLength(text) > 4096) throw new LabError('invalid-request', 400); }
-        const body = text ? JSON.parse(text) as Record<string, unknown> : {};
+        let body: Record<string, unknown>; try { body = text ? JSON.parse(text) as Record<string, unknown> : {}; } catch { throw new LabError('invalid-request', 400); }
         if (!body || typeof body !== 'object' || Array.isArray(body)) throw new LabError('invalid-request', 400);
         if (request.method === 'POST' && url.pathname === '/bench/v1/actions' && this.#scenario.gateway === 'restarting') throw new LabError('not-applicable', 409);
         if (request.method === 'POST' && url.pathname === '/bench/v1/reset') {
@@ -165,7 +202,12 @@ export class BenchRuntime {
           if (request.method === 'POST' && url.pathname === '/bench/v1/reset') { if (body['leaseId'] !== null) this.#check(body['leaseId']); this.#state = 'resetting'; const reset = this.reset(); send(202, this.status()); void reset.catch(() => { this.#state = 'failed'; }); await reset; return; }
           send(404, { error: 'Not found.' });
         });
-      } catch (error) { if (!response.headersSent) send(error instanceof LabError ? error.status : 400, { error: error instanceof LabError ? error.code : 'Invalid request.', ...(error instanceof LabError ? { code: error.code } : {}) }); }
+      } catch (error) {
+        // Only a LabError is the caller's fault or a refusal. Anything else (the relay
+        // proxy down, the management API failing) is the bench's own failure: 500, which
+        // the field station reports as bench-unavailable.
+        if (!response.headersSent) send(error instanceof LabError ? error.status : 500, error instanceof LabError ? { error: error.code, code: error.code } : { error: 'Bench failure.', code: 'bench-unavailable' });
+      }
     });
   }
 }

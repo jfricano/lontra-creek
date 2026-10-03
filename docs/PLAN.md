@@ -152,6 +152,26 @@ The demo's Compose topology places the field station, Kafka, and gateway in sepa
 
 Implementation: the [station runner](../apps/field-station/src/server/station.ts) writes current views before publishing; the [Kafka producer](../apps/field-station/src/server/kafka.ts) sends records; the [gateway handlers](../apps/field-station/src/kafka-handlers.ts) map records and fetch snapshots; the [browser client](../apps/site/src/scripts/field-client.ts) creates subscriptions; and the [site API](../apps/field-station/src/server/http.ts) handles notebook writes.
 
+### Component responsibilities and runtime requirements
+
+StreamOtter provides the synchronization and delivery layer for application-owned state. The application defines channel schemas, authentication and authorization rules, record-to-state mapping, and authoritative snapshots. If raw events need aggregation into business state, that remains application logic. In Lontra Creek, the field station already prepares complete views before publishing them.
+
+| Component | Runs where | Responsibility |
+| --- | --- | --- |
+| [Gateway](https://www.npmjs.com/package/@streamotter/gateway) | Server-side Node.js | Consumes Kafka, runs application handlers, validates state, enforces access, coordinates snapshots and revision-ordered updates, bounds queues, and sends Socket.IO messages. |
+| [Browser SDK](https://www.npmjs.com/package/@streamotter/client) | Inside the browser | Implements the receiving protocol: subscriptions, frame receipts, connection recovery, resynchronization, and explicit live/stale states. Application code renders the data in its own UI. |
+| [CLI](https://www.npmjs.com/package/@streamotter/cli) | Developer or server environment | Scaffolds projects, validates configuration, generates types, and starts development or production gateways. Data delivery runs in the gateway it starts, rather than in a separate CLI processing stage. |
+| [Workbench](https://www.npmjs.com/package/@streamotter/workbench) | Local development | Provides configuration, preview, and inspection tooling. Production browser subscriptions do not require the development Workbench. |
+| [Contracts](https://www.npmjs.com/package/@streamotter/contracts) | Browsers, Node.js, or tooling | Supplies shared types, protocol constants, and validation. It can be used independently without a running gateway or Kafka connection. |
+
+**The SDK requires a compatible StreamOtter gateway running server-side for live subscriptions.** This is a deployment requirement across the network, not an npm dependency or peer dependency on the gateway package. The SDK implements StreamOtter's protocol; it does not connect directly to Kafka or work with an arbitrary WebSocket or Socket.IO server. A frontend can install `@streamotter/client` alone while the gateway runs in a separate backend project. The all-in-one `streamotter` package is an optional installation that includes both browser and server components.
+
+The SDK's package dependencies are `@streamotter/contracts` and `socket.io-client`; the gateway also depends on contracts, and the CLI already depends on the gateway. Contracts does not depend on either runtime. Installing the gateway package in a frontend project would not establish the network service the SDK needs.
+
+The gateway can run as its own service or inside an existing Node.js backend process through `createGateway`. StreamOtter V1 supports one gateway instance per project, serving multiple authorized clients; each frontend's origin must be explicitly allowed. This does not require a particular frontend framework, a single UI, or colocation with Kafka or the data source. See the library's [existing-application guide](https://github.com/jfricano/StreamOtter/blob/main/docs/guides/existing-app.md) and [deployment guide](https://github.com/jfricano/StreamOtter/blob/main/docs/DEPLOYMENT.md) for the supported integration and topology.
+
+Another application may consume an outside provider's Kafka feed and use its own gateway to deliver state to customer frontends: **outside Kafka provider → application-owned StreamOtter gateway → customer SDK and UI**. The gateway is itself the consumer; the application supplies mapping, access rules, and a current snapshot source. If the provider supplies only events, the application must maintain or obtain authoritative current state. StreamOtter does not automatically create that store. Consumers choosing other Kafka tools can read the feed independently using their own consumer groups; the SDK is required for StreamOtter's browser delivery, not for consuming Kafka generally.
+
 ### Consistency rules
 
 The simulation (`packages/creek-sim`) is deterministic: the world is a pure function of its seed and tick. The field station app is the only writer. There is no separate database.

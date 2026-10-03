@@ -27,7 +27,7 @@ Milestone A (the stack proven in CI) is reached: workstreams 1–4 are merged in
 
 ## Target shape
 
-For the application data paths, including Kafka updates, private snapshots, and notebook writes, see [PLAN.md's data-flow diagram](PLAN.md#kafka-data-path). The topology below describes the hosting and ingress boundaries.
+For the application data paths, including Kafka updates, private snapshots, and notebook writes, see [PLAN.md's data-flow diagram](PLAN.md#kafka-data-path). The [component requirements](PLAN.md#component-responsibilities-and-runtime-requirements) distinguish the SDK's server-side gateway requirement from npm package dependencies. The topology below describes the hosting and ingress boundaries.
 
 ```
 visitor ─▶ https://streamotter.app          Cloudflare: the static site (Astro build), DNS

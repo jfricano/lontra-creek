@@ -50,7 +50,9 @@ services:
       interval: 10s
       timeout: 20s
       retries: 12
-      start_period: 30s
+      # A new volume's ACL bootstrap runs a dozen tool JVMs: about 4 minutes at the shared
+      # host's 0.35 CPU (compose.shared.yaml). Checks still pass as soon as it is ready.
+      start_period: 300s
     restart: unless-stopped
     logging:
       driver: json-file

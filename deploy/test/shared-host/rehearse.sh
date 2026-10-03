@@ -14,6 +14,8 @@ deploy/make-certs.sh test-origin "$stack/secrets/origin" demo.streamotter.app
   echo "LONTRA_SECRETS=$stack/secrets"
   echo "FIELD_EPOCH=$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)"
   echo 'LONTRA_CGROUP_PARENT=lontra.slice'
+  # Least-privilege Kafka ACLs, bootstrapped within the shared host's Kafka limits.
+  echo 'KAFKA_AUTHORIZATION=acl'
 } >> "$stack/.env"
 base=(docker compose -p lontra-creek -f deploy/compose.yaml -f deploy/compose.shared.yaml --env-file "$stack/.env")
 full=(docker compose -p lontra-creek -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.shared.yaml -f deploy/compose.shared.lab.yaml --env-file "$stack/.env")
@@ -36,7 +38,8 @@ node deploy/test/shared-host/config.mjs "$stack/base.json"
 "${full[@]}" config --format json > "$stack/full.json"
 node deploy/test/shared-host/config.mjs "$stack/full.json"
 # Lab overlay is used only by this synthetic-data rehearsal; public Lab stays gated.
-"${full[@]}" up -d --wait --wait-timeout 420
+# A new Kafka volume's ACL bootstrap takes about 4 minutes at the shared limit.
+"${full[@]}" up -d --wait --wait-timeout 720
 "${full[@]}" ps -q | xargs docker inspect > "$stack/containers.json"
 sudo node deploy/test/shared-host/config.mjs "$stack/full.json" "$stack/containers.json"
 (
@@ -62,6 +65,7 @@ export LAB_SITE_ORIGIN=https://streamotter.app
 node --test --test-force-exit deploy/test/stack.test.ts
 node --test --test-force-exit deploy/test/lab.test.ts
 for bench in 1 2 3; do "${full[@]}" exec -T "lab-$bench" node --input-type=module - bench < deploy/test/lab-private-checks.mjs; done
+STACK_KAFKA_EXEC="${full[*]} exec -T" STACK_KAFKA_BENCHES="1 2 3" node --test --test-force-exit deploy/test/kafka-acls.test.ts
 "${full[@]}" exec -T field-station node --input-type=module - field < deploy/test/lab-private-checks.mjs
 # Install shared activation metadata only on this disposable runner.
 release="/srv/apps/lontra/releases/$GITHUB_SHA"

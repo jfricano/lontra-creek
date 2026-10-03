@@ -16,7 +16,7 @@ This document owns the site's scope, the demo's behavior and operating rules, an
 
 ## Future site releases
 
-The [site release index](releases/README.md) and [V1.1 plan](releases/v1.1/README.md) own future site/demo work. The former V1.5 milestone is now V1.1. It adds Source failures inside `/lab/` and replaces the existing `/workbench/` tour with the actual published workbench sandbox, without another route or navigation item. `/playground/` remains the quick validator. These are planned changes; the route table and operating rules below describe the baseline until implementation and launch checks pass.
+The [site release index](releases/README.md) and [V1.1 plan](releases/v1.1/README.md) own future site/demo work. The former V1.5 milestone is now V1.1. It adds Source failures inside `/lab/` and replaces the existing `/workbench/` tour with the actual published workbench sandbox, without another route or navigation item. `/playground/` remains the quick validator. These are planned changes; the route table and operating rules below describe the baseline until implementation and launch checks pass. Implementation progress is tracked in [V1.1 status](releases/v1.1/STATUS.md).
 
 Library policies, native acceptance, and package publication stay in StreamOtter's `docs/releases/v1.1/`; Lontra Creek owns visitor sessions, synthetic integration, site acceptance, and deployment. Their release decisions remain independent.
 

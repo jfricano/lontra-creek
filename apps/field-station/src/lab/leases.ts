@@ -148,7 +148,8 @@ export class LeasePool {
   intentPool(): IntentPool {
     const place = (subject: string): Place => { const found = this.#places.get(subject); if (!found?.lease?.claimed) throw new LabError('no-lease', 409); return found; };
     return {
-      lease: (subject): IntentLease => { const lease = place(subject).lease!; return { id: lease.id, bench: lease.bench, studyId: this.#slots.get(lease.bench)?.status?.study?.studyId ?? null, expires: lease.expires }; },
+      // The study the field station opened for this lease (the gate's), never one named only by a polled status: that is null while a restarted bench starts.
+      lease: (subject): IntentLease => { const lease = place(subject).lease!; return { id: lease.id, bench: lease.bench, studyId: this.#studies ? this.#studies.current(lease.bench) : this.#slots.get(lease.bench)?.status?.study?.studyId ?? null, expires: lease.expires }; },
       spend: subject => { const lease = place(subject).lease!; if (this.#now() < lease.nextAction) throw new LabError('too-many-actions', 429); lease.nextAction = this.#now() + 1000; },
       read: (subject, path) => this.#call(place(subject).session, path),
       bench: (bench, path, method, body) => this.#client.call(bench, path, method, body)

@@ -130,6 +130,16 @@ describe('the answers to an intent, in order (section 12.5)', () => {
     assert.equal(l.bench.sent.length, 1, 'the bench saw the intent once');
   });
 
+  test('the lease\'s study is the one the field station opened, not one a polled status names', async t => {
+    const l = await lab(t);
+    // A restarted bench reports no study until it has read its own back; the lease is unchanged meanwhile.
+    l.bench.status.study = null; l.advance(5000); await l.pool.run(() => l.pool.sweep());
+    const op = await l.submit({ intent: 'scenario.start', scenario: 'garbled-reading' });
+    l.advance(1000);
+    assert.equal((await l.settled(op.operationId)).status, 'succeeded');
+    assert.deepEqual((await l.studies.runs(1, STUDY)).map(run => run.scenarioId), ['garbled-reading']);
+  });
+
   test('one intent at a time: another is not-applicable while one is accepted or running', async t => {
     const l = await lab(t);
     l.bench.outcomes.set('scenario.start', 'hold');

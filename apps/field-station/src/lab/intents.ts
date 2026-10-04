@@ -222,6 +222,7 @@ export class LabIntents {
       state = { subject, leaseId: lease.id, bench: lease.bench, studyId: lease.studyId, scenario: null, revision: 1, digest: null, summary: null, reads: 0, projected: 0, targets: new Map(), byRequest: new Map(), byId: new Map(), steps: [], ended: null };
       this.#leases.set(lease.id, state);
     }
+    state.studyId ??= lease.studyId;
     return state;
   }
   #sweep(): void { for (const [subject, state] of this.#ended) if (this.#now() - state.ended! >= ENDED_KEPT_MS) this.#ended.delete(subject); }

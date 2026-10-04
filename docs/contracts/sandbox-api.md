@@ -161,7 +161,7 @@ A candidate is a full `ProjectConfig` JSON document. The sandbox service compare
 
 | Editable | Bounds |
 | --- | --- |
-| `/schemas/<existing id>` (the whole schema) | Must remain a schema the published validator accepts; total candidate 64 KB |
+| `/schemas/<existing id>` (the whole schema) | Must remain a schema the published validator accepts; total candidate 64 KB, nested at most 64 levels (objects and arrays, the document itself level 1) |
 | `/channels/<existing name>/version` | Integer 1–99 |
 | `/limits/receiptTimeoutMs`, `/limits/maxSubscriptionsPerConnection`, `/limits/maxPendingFramesPerSubscription` | Integer from 1 to the slot's server maximum. Removing one is checked as its StreamOtter default. |
 
@@ -172,6 +172,7 @@ How a refusal is reported:
 - `config.validate`: 200 `{ valid: false, issues: [{ path, code, message }] }` with code `FIELD_NOT_EDITABLE` (outside the allowlist) or `VALUE_OUT_OF_BOUNDS` (an editable field out of its bounds), so the workbench shows it beside the field like any other issue.
 - `config.export`: 400 `CONFIG_INVALID` with `details.code` `field-not-editable` (refused) or `invalid-request` (invalid), and `details.issues`, as the native export does for an invalid configuration. Details are at most 16 KB: a longer `details.issues` keeps the first issues that fit and sets `details.issuesTruncated: true` (`config.validate` returns them all).
 - Over 64 KB: 413 `INVALID_REQUEST`, `details.code` `candidate-too-large`.
+- Nested deeper than 64 levels: 400 `INVALID_REQUEST`, `details.code` `invalid-request`, from the field station and again from the service, before anything serializes it. A request the field station cannot encode for the service is refused the same way and never counts as a failed slot.
 
 ## 6. Operations: the WHC-1 host API
 
@@ -298,7 +299,7 @@ A design-fixture backend exists for tests only, under `apps/field-station/test/s
 
 ## Changes
 
-- **Draft 0.3, W9a review fixes (October 4, 2026).** §8: the field station no longer holds a lock across calls to the sandbox service (a hung service made every `/api/sandbox/*` request wait, and the maintenance timer queued a sweep every second behind it); it waits 3 s for a status poll or lifecycle call. §§8 and 9: a slot call the handler has not answered within 10 s is `TIMEOUT` (504) and keeps the lease; the field station waits 15 s for an operation or a bundle (was 10 s, the same as the service, so a slow call ended the lease as `slot-failed`), and the page 20 s for the bundle.
+- **Draft 0.3, W9a review fixes (October 4, 2026).** §5: a candidate nested deeper than 64 levels is 400 `invalid-request` (one about 14 KB deep made serialization fail, which ended the lease as `slot-failed`). §8: the field station no longer holds a lock across calls to the sandbox service (a hung service made every `/api/sandbox/*` request wait, and the maintenance timer queued a sweep every second behind it); it waits 3 s for a status poll or lifecycle call. §§8 and 9: a slot call the handler has not answered within 10 s is `TIMEOUT` (504) and keeps the lease; the field station waits 15 s for an operation or a bundle (was 10 s, the same as the service, so a slow call ended the lease as `slot-failed`), and the page 20 s for the bundle.
 - **Draft 0.3, W9a stack verification (October 4, 2026).** §4: a refused or unanswered discovery request is shown with its reason, and Open the workbench asks again; before, the page said only that the sandbox did not describe its host API and offered nothing to retry. §4: a heartbeat that finds the session ended asks for the status at once. §§2 and 8: the operation budget allows a burst of 8 before its 2 a second, because the published workbench reads `config`, `channels`, `sources`, `dev.principals` and `health` at once when it mounts and showed "Too many requests" under a strict 2 a second.
 - **Draft 0.3, W9a site mount (October 4, 2026).** §4: the page pins `@streamotter/workbench` 0.2.0-rc.1 from its manifest, serves `app.js`, `workbench-host.css` and the license file from the site origin with SRI, sets `apiOrigin` when the API is on another origin, applies the manifest's content security policy in production builds, and reloads the document to mount a second time (WHC-1 has no unmount). §11: R11 settled.
 - **Draft 0.3, W9a deployment (October 4, 2026).** Status and §1: `deploy/compose.sandbox.yaml` and the Caddy `/sandbox/N/socket.io/` routes exist and run under `npm run dev:lab`; nothing is deployed to a host.

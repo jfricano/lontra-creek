@@ -11,9 +11,9 @@ import { isErrorCode, isPlainObject, streamError, type Json, type StreamError } 
 import { AddressCap } from '../places.ts';
 import type { SessionClaims } from '../sessions.ts';
 import type { SandboxConnection, SandboxEndReason, SandboxErrorCode, SandboxLease, SandboxOperation, SandboxReproDownload, SandboxRuntime, SandboxServiceStatus, SandboxStatus, SlotId, WorkbenchDiscovery } from './contract.ts';
-import { CONFIG_BODY_BYTES, HOST_CONTRACT, SANDBOX_OPERATIONS, SandboxFault } from './operations.ts';
+import { CONFIG_BODY_BYTES, HOST_CONTRACT, invalid, SANDBOX_OPERATIONS, SandboxFault } from './operations.ts';
 
-/** The sandbox service's private API (service.ts); throws only when it cannot be reached. */
+/** The sandbox service's private API (service.ts); throws a SandboxFault for a request it cannot encode, and otherwise only when the service cannot be reached. */
 export interface SandboxClient { request(path: string, method?: string, body?: unknown): Promise<{ status: number; body: unknown }>; }
 export interface SandboxTimings {
   leaseMs: number; claimMs: number; idleMs: number; queueIdleMs: number; endedMs: number; queueMax: number; opsPerSecond: number; opsBurst: number;
@@ -215,7 +215,8 @@ export class SandboxPool {
    */
   async #call(session: SessionClaims, lease: Lease, studyId: string, path: string, body: unknown): Promise<{ status: number; body: unknown } | null> {
     let response: { status: number; body: unknown } | null = null;
-    try { response = await this.#client.request(`/sandbox/v1/slots/${lease.slot}/${path}`, 'POST', body); } catch { /* below */ }
+    // A request the field station itself cannot send (SandboxFault) is refused as such; it says nothing about the slot.
+    try { response = await this.#client.request(`/sandbox/v1/slots/${lease.slot}/${path}`, 'POST', body); } catch (error) { if (error instanceof SandboxFault) throw error; }
     // 5xx answers the slot gave on purpose (a native SOURCE_UNAVAILABLE, a withheld download) pass through; only an unreachable or failed slot ends the lease.
     const answer = response?.body; const error = isPlainObject(answer) && isPlainObject(answer['error']) ? answer['error'] : null;
     const details = error && isPlainObject(error['details']) ? error['details'] : null;
@@ -308,12 +309,18 @@ export function configuredSandbox(env: NodeJS.ProcessEnv, gatewayOrigin: string,
   if (!token || token.length < 32) throw new Error('SANDBOX_SERVICE_TOKEN needs 32 characters.');
   const positive = (key: string, fallback: number): number => { const n = Number(env[key] ?? fallback); if (!Number.isSafeInteger(n) || n < 1) throw new Error(`${key} must be a positive integer.`); return n; };
   const count = positive('SANDBOX_SLOTS', 3); if (count > 3) throw new Error('At most three sandbox slots are supported.');
-  const client: SandboxClient = {
+  return new SandboxPool({ client: sandboxClient(origin, token), slots: Array.from({ length: count }, (_, i) => i + 1 as SlotId), gatewayOrigin, ...(cap ? { cap } : {}), timings: { leaseMs: positive('SANDBOX_LEASE_SECONDS', 600) * 1000, queueMax: positive('SANDBOX_QUEUE_MAX', 30) } });
+}
+
+/** The HTTP client for the sandbox service's private API at `origin`, with the service token. */
+export function sandboxClient(origin: string, token: string): SandboxClient {
+  return {
     async request(path, method = 'GET', body) {
+      let payload: string | undefined;
+      try { payload = body === undefined ? undefined : JSON.stringify(body); } catch { throw invalid('The request could not be encoded.'); }
       const timeout = /\/(?:ops|repro)$/.test(path) ? SANDBOX_OPS_TIMEOUT_MS : SANDBOX_CALL_TIMEOUT_MS;
-      const response = await fetch(`${origin}${path}`, { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(timeout) });
+      const response = await fetch(`${origin}${path}`, { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(payload === undefined ? {} : { body: payload }), signal: AbortSignal.timeout(timeout) });
       return { status: response.status, body: await response.json() as unknown };
     }
   };
-  return new SandboxPool({ client, slots: Array.from({ length: count }, (_, i) => i + 1 as SlotId), gatewayOrigin, ...(cap ? { cap } : {}), timings: { leaseMs: positive('SANDBOX_LEASE_SECONDS', 600) * 1000, queueMax: positive('SANDBOX_QUEUE_MAX', 30) } });
 }

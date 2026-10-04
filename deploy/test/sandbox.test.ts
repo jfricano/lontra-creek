@@ -107,6 +107,16 @@ describe('the real workbench sandbox', { skip: !API && 'SANDBOX_API_ORIGIN not s
     assert.equal((await wb('/config/validate', JSON.stringify({ config: { ...candidate, pad: 'x'.repeat(70_000) } }))).status, 413, 'over 64 KB is refused');
   });
 
+  test('a candidate nested too deep is refused as invalid and the session keeps its slot', async () => {
+    const { config } = await ok<{ config: { schemas: Record<string, unknown> } }>('/config');
+    const body = `{"config":${JSON.stringify(config).replace(/^\{"/, () => `{"deepSchema":${'['.repeat(7000)}1${']'.repeat(7000)},"`)}}`;
+    assert.ok(body.length > 14_000 && body.length < 65_536, String(body.length));
+    const answer = await wb('/config/validate', body);
+    assert.equal(answer.status, 400, JSON.stringify(answer.body).slice(0, 300)); assert.equal(answer.body.error?.details?.code, 'invalid-request');
+    assert.equal((await life<SandboxLease>('session')).status, 'active');
+    assert.equal((await ok<{ ready: boolean }>('/health')).ready, true);
+  });
+
   test('previews reach live through /sandbox/N/socket.io; edge routes stay closed', async () => {
     const volunteer = await ok<{ token: string }>('/preview-sessions', { fixturePrincipalRef: 'creek-volunteer' });
     const station = preview(volunteer.token, 'station', { stationId: 'LC-03' }); await station.ready({ timeoutMs: 15_000 }); assert.equal(station.state, 'live');

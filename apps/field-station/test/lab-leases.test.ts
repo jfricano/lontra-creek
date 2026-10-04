@@ -17,8 +17,11 @@ function fixture(count = 3, leaseMs = 300_000) {
   let seq = 0; const fresh = (bench: number) => `b${bench}study${String(++seq).padStart(9, '0')}`;
   for (let i = 1; i <= count; i++) slots.set(i as BenchId, { bench: i as BenchId, state: 'ready', lease: null, scenario: { gateway: 'running', source: { status: 'healthy' }, relay: 'up', calibration: 'present', satellite: 'idle', receiptTimeoutMs: 5000 }, checks: { developmentPrincipals: 0, fixtureSources: 0, managementHost: '127.0.0.1' }, readiness: { control: true, source: true, cleanLease: true }, study: { ...((id: string) => ({ studyId: id, generation: `lab-${i}-${id}`, consumerGroup: `streamotter-lab-${i}-${id}` }))(fresh(i)), createdAt: new Date(now).toISOString(), phase: 'clean', restarts: { gateway: 0, process: 0 } } });
   const calls: { bench: BenchId; path: string; body: unknown }[] = [];
+  /** Benches whose status calls hang until the client's 5-second timeout. */
+  const hanging = new Set<BenchId>();
   const client: BenchClient = { async call<T>(bench: BenchId, path: string, _method?: string, body?: unknown): Promise<T> {
     calls.push({ bench, path, body }); const slot = slots.get(bench)!; const input = body as { leaseId: string; expiresAt: string };
+    if (path === '/bench/v1/status' && hanging.has(bench)) { now += 5000; throw new Error('The operation was aborted due to timeout.'); }
     if (path === '/bench/v1/reset') { slot.state = 'ready'; slot.lease = null; slot.readiness = { ...slot.readiness, cleanLease: true }; const id = fresh(bench); slot.study = { ...slot.study!, studyId: id, generation: `lab-${bench}-${id}`, consumerGroup: `streamotter-lab-${bench}-${id}`, phase: 'clean' }; }
     if (path === '/bench/v1/lease') { slot.state = 'leased'; slot.lease = input; slot.readiness = { ...slot.readiness, cleanLease: false }; slot.study = { ...slot.study!, phase: 'open' }; }
     if (path === '/bench/v1/tokens') return { token: `token-${bench}`, expiresAt: slot.lease!.expiresAt } as T;
@@ -32,7 +35,7 @@ function fixture(count = 3, leaseMs = 300_000) {
     close: async (bench: BenchId, studyId: string) => { gate.push(`close ${bench} ${studyId}`); calls.push({ bench, path: 'gate.close', body: studyId }); closed.add(studyId); if (opened.get(bench) === studyId) opened.delete(bench); },
     current: (bench: BenchId) => opened.get(bench) ?? null
   };
-  return { pool: new LeasePool({ client, benches: [...slots.keys()], gatewayOrigin: 'https://demo.test', now: () => now, leaseMs, studies }), calls, slots, gate, studies, advance: (ms: number) => { now += ms; }, session: (id: string, ttl = 1_800_000) => ({ subject: id, role: 'volunteer' as const, exp: now + ttl }) };
+  return { pool: new LeasePool({ client, benches: [...slots.keys()], gatewayOrigin: 'https://demo.test', now: () => now, leaseMs, studies }), calls, slots, gate, studies, hanging, advance: (ms: number) => { now += ms; }, session: (id: string, ttl = 1_800_000) => ({ subject: id, role: 'volunteer' as const, exp: now + ttl }) };
 }
 const code = (name: string) => (error: unknown) => error instanceof LabError && error.code === name;
 test('concurrent joins grant each bench once; FIFO advances after return; requests cannot choose another bench', async () => {
@@ -237,4 +240,18 @@ test('a place granted after a slow poll in line gets the whole 30-second claim w
   f.advance(20_000); f.pool.heartbeat(b); await f.pool.sweep();
   assert.equal(f.pool.view(b).status, 'ready');
   await f.pool.token(b); assert.equal(f.pool.view(b).status, 'active');
+});
+
+test('a grant made after a slow bench call in the same sweep starts when it is made, not at the sweep\'s start', async () => {
+  const f = fixture(2); await f.pool.initialize(); await f.pool.sweep();
+  const a = f.session('a'), b = f.session('b');
+  await f.pool.join(a, 'a'); await f.pool.token(a);
+  const joined = await f.pool.join(b, 'b'); assert.equal(joined.status === 'ready' && joined.bench, 2);
+  await f.pool.leave(b);
+  // Bench 1 stops answering; the next join's sweep waits out its timeout before granting bench 2.
+  f.hanging.add(1); f.advance(5000); f.pool.heartbeat(a);
+  const c = f.session('c'); const view = await f.pool.join(c, 'c');
+  const now = Date.parse(f.pool.view(c).now);
+  assert.ok(view.status === 'ready');
+  assert.deepEqual([Date.parse(view.grantedAt), Date.parse(view.claimBy!), Date.parse(view.expiresAt)], [now, now + 30_000, now + 300_000]);
 });

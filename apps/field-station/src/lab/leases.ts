@@ -61,22 +61,25 @@ export class LeasePool {
       slot.nextPoll = now + 5000;
       try {
         const status = await this.#client.call<BenchStatus>(bench, '/bench/v1/status');
+        // Each bench call can take seconds: time after one is read again, never taken from the sweep's start.
+        const at = this.#now();
         const place = [...this.#places.values()].find(p => p.lease?.bench === bench);
         // A leased bench whose process restarted reports `starting` until it has read its study back: as long as an unanswered one.
-        if (place && status.state === 'starting' && now - slot.lastSeen < 15_000) { slot.status = status; continue; }
-        slot.status = status; slot.lastSeen = now;
+        if (place && status.state === 'starting' && at - slot.lastSeen < 15_000) { slot.status = status; continue; }
+        slot.status = status; slot.lastSeen = at;
         if (place && (status.state !== 'leased' || status.lease?.leaseId !== place.lease!.id)) { await this.#end(place, 'bench-failed'); continue; }
         // Only a clean-lease-eligible bench is granted (LC11-ADR-02). A leased bench whose source is held stays leased.
         // A ready bench that isn't eligible (its last cleanup didn't finish) is reset again on the usual schedule.
-        if (!place && status.state === 'ready') { if (status.readiness?.cleanLease === true) slot.state = 'ready'; else { slot.state = 'unavailable'; slot.retryAt = now + 30_000; } }
-        else if (status.state === 'failed' || slot.state === 'resetting' && now - slot.resetAt >= 60_000) { slot.state = 'unavailable'; slot.retryAt = now + 30_000; }
-      } catch { if (now - slot.lastSeen < 15_000) continue; const place = [...this.#places.values()].find(p => p.lease?.bench === bench); if (place) await this.#end(place, 'bench-failed'); slot.state = 'unavailable'; slot.retryAt = now + 30_000; }
+        if (!place && status.state === 'ready') { if (status.readiness?.cleanLease === true) slot.state = 'ready'; else { slot.state = 'unavailable'; slot.retryAt = at + 30_000; } }
+        else if (status.state === 'failed' || slot.state === 'resetting' && at - slot.resetAt >= 60_000) { slot.state = 'unavailable'; slot.retryAt = at + 30_000; }
+      } catch { const at = this.#now(); if (at - slot.lastSeen < 15_000) continue; const place = [...this.#places.values()].find(p => p.lease?.bench === bench); if (place) await this.#end(place, 'bench-failed'); slot.state = 'unavailable'; slot.retryAt = this.#now() + 30_000; }
     }
     for (const [bench, slot] of this.#slots) {
       if (slot.state !== 'ready') continue;
       const place = [...this.#places.values()].find(p => !p.lease);
       if (!place) break;
-      const lease = { id: randomUUID(), bench, granted: now, expires: Math.min(now + this.#leaseMs, place.session.exp), claimed: false, nextAction: now };
+      const at = this.#now();
+      const lease = { id: randomUUID(), bench, granted: at, expires: Math.min(at + this.#leaseMs, place.session.exp), claimed: false, nextAction: at };
       try {
         slot.status = await this.#client.call<BenchStatus>(bench, '/bench/v1/lease', 'PUT', { leaseId: lease.id, expiresAt: iso(lease.expires) });
         // The leased study is now open for scenario publication. One the gate refuses (closed before, or none named) is
@@ -85,7 +88,7 @@ export class LeasePool {
         // A lease's 30-second idle limit counts from the grant, not from a poll made in line under the queue's 90-second limit.
         place.lease = lease; place.heartbeat = lease.granted; slot.state = 'leased';
       }
-      catch { slot.state = 'unavailable'; slot.retryAt = now + 30_000; }
+      catch { slot.state = 'unavailable'; slot.retryAt = this.#now() + 30_000; }
     }
   }
   #open(bench: BenchId, studyId: string | undefined): boolean { if (!studyId) return false; try { this.#studies!.open(bench, studyId); return true; } catch { return false; } }

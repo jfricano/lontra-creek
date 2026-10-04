@@ -183,6 +183,25 @@ SANDBOX_API_ORIGIN=https://localhost:8443 SANDBOX_SITE_ORIGIN=https://localhost:
   node --test --test-force-exit deploy/test/sandbox.test.ts
 ```
 
+The source-failures exercises (Lab contract 12.9) run as a visitor through
+Caddy and check the broker itself through `docker compose exec`: the
+quarantine topic's copies, committed offsets, and leftover groups. S08 also
+restarts a bench container, and S09 deletes a quarantine copy. A scenario is
+admitted to `VERIFIED_WITH` only after this suite passes for it:
+
+```sh
+C="docker compose -p lontra-local-lab -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.sandbox.yaml -f deploy/compose.local-lab.yaml --env-file .local/lab/.env"
+LAB_API_ORIGIN=https://localhost:8443 LAB_SITE_ORIGIN=https://localhost:8443 \
+  NODE_EXTRA_CA_CERTS="$PWD/.local/lab/secrets/origin/ca.pem" \
+  LAB_STACK_EXEC="$C exec -T" LAB_STACK_RESTART="$C restart" \
+  node --test --test-force-exit deploy/test/lab-source-failures.test.ts
+```
+
+Without `LAB_STACK_EXEC` the broker checks, and S09, are skipped; without
+`LAB_STACK_RESTART`, S08 runs only its gateway restart. S2's lease expiry in
+`deploy/test/lab.test.ts` waits out a whole lease (up to five minutes), so it
+runs only with `LAB_EXPIRY_TEST=1`.
+
 ## Behind a TLS-intercepting proxy
 
 If `npm ci` inside the image build fails with `SELF_SIGNED_CERT_IN_CHAIN` or a
@@ -227,6 +246,16 @@ again after `stop` and `up --no-build`; that restart, with
 `SANDBOX_SERVICE_TOKEN` removed from the env file first, appended a new token
 once. Only Caddy's port was published: the sandbox API, the slot gateways, and
 each slot's loopback management listener were not reachable from the host.
+
+On October 4, 2026, with the source-failures exercises (W9b, StreamOtter
+0.2.0-rc.1, quarantine profile, ACLs on), `deploy/test/lab-source-failures.test.ts`
+passed LC11-S01 to S09 and A32 against a cold `up` of the same kind (its own
+`--dir` and `--project`), as did `deploy/test/lab.test.ts` with
+`LAB_EXPIRY_TEST=1`, `lab-private-checks.mjs` on every bench and the field
+station, and `deploy/test/kafka-acls.test.ts`. A bench container restarted in
+place resumed its study; one recreated after being killed failed on its
+journal lock, which names the old container's host name, and the field
+station's reset replaced its study within a minute (Lab contract 8b).
 
 ## What the launcher runs (manual recipe)
 

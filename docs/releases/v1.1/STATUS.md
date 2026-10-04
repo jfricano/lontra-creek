@@ -18,7 +18,7 @@ Updated October 4, 2026 · The live tracker for [IMPLEMENTATION_PLAN.md](IMPLEME
 | W7 | Kafka authorization (local and CI) | Combined in #40 | `feat/v1.1-kafka-acls` · #33 (closed) | A29 at local and CI level; hosted broker unchanged |
 | W8 | Site content | Combined in #40; updated for 0.2.0-rc.1 on `w9/content` | `feat/v1.1-site-content` · #37 (closed); `w9/content` | A01, A02, A40: unit and fixture. On 0.2.0-rc.1 the source-failure copy describes the installed release (opt-in), tested against its validator, CLI and gateway; A34 playground presets: unit and Chromium fixture browser. Release-tag and npm links resolve only after the tag push and npm publish |
 | W9a | Actual sandbox | Blocked on upstream R1–R6 | | |
-| W9b | Source failure exercises | Blocked on upstream R7–R9 | | |
+| W9b | Source failure exercises | Proven on real Kafka (`npm run dev:lab`, 0.2.0-rc.1, quarantine profile, ACLs on); nothing deployed. The hosted default is `retry` (only S06 offered) and the hosted Lab stays off | `w9/slice-d` | LC11-S01–S09 and A32 by `deploy/test/lab-source-failures.test.ts`; S1–S6 rerun and section 10.2 redone for 0.2.0-rc.1 (Lab contract 10.7 R4); S12 with the two new grants per bench (10.9); every new scenario in `VERIFIED_WITH` |
 | W10 | Verification and release review | Independent review done; cross-browser and hosted checks remain | `review/v1.1` · #40 | [REVIEW_FINDINGS.md](REVIEW_FINDINGS.md) |
 
 ## Gates
@@ -37,4 +37,6 @@ LC11-A01–A46 are defined in the [acceptance plan](LONTRA_CREEK_V1_1_ACCEPTANCE
 
 | ID | Evidence level | Where |
 | --- | --- | --- |
-| — | — | — |
+| LC11-A12, A15 | Real Kafka, local (`npm run dev:lab`) | S08 in `deploy/test/lab-source-failures.test.ts`: the boundary and incident survive a gateway restart and a bench container restart with its volume; a new subscription goes live only through an acknowledging snapshot |
+| LC11-A29 | Real Kafka, local (CI runs the same test; hosted broker unchanged) | S12 (`deploy/test/kafka-acls.test.ts`) with the quarantine grants; lab-api.md 10.9 |
+| LC11-A32 | Real Kafka, local (`npm run dev:lab`) | A32 in `deploy/test/lab-source-failures.test.ts`: repeated resets leave no study or quarantine read groups, study directories, or socket files |

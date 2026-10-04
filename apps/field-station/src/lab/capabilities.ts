@@ -48,9 +48,10 @@ export const LOCAL_EXERCISES: ReadonlySet<LabScenarioId> = new Set(['too-many-ba
 /**
  * The scenarios this backend's Lab was verified against, per installed release. A
  * scenario is added only after its real-Kafka stack test passes on dev:lab; until then
- * it is `not-integrated` however the release is configured.
+ * it is `not-integrated` however the release is configured. 0.2.0-rc.1: every new
+ * scenario, by deploy/test/lab-source-failures.test.ts (lab-api.md section 12.9).
  */
-export const VERIFIED_WITH: ReadonlyMap<string, ReadonlySet<LabScenarioId>> = new Map([['0.2.0-rc.1', new Set<LabScenarioId>()]]);
+export const VERIFIED_WITH: ReadonlyMap<string, ReadonlySet<LabScenarioId>> = new Map([['0.2.0-rc.1', new Set<LabScenarioId>(['garbled-reading', 'bad-projection', 'inspect-old-reading', 'conflicting-readings', 'calibration-blip', 'too-many-bad-readings', 'restart-recovery', 'unavailable-evidence'])]]);
 export const INTENTS = ['scenario.start', 'scenario.restore-calibration', 'scenario.prepare-coverage', 'incident.retry-current', 'incident.reassess', 'incident.evaluate', 'incident.approve-reprocess'] as const satisfies readonly LabIntent[];
 
 /** The deployment facts the summary depends on, besides the library: read once at startup (leases.ts). */

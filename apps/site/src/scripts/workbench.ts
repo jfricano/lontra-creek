@@ -148,10 +148,18 @@ function mount(root: HTMLElement): void {
   }
 
   /** One lifecycle action from a button: disable the controls, send it, then show the field station's answer. */
-  async function act(action: () => Promise<void>): Promise<void> {
+  async function act(action: () => Promise<void>, from?: HTMLButtonElement): Promise<void> {
     if (busy) return;
+    const focused = from !== undefined && document.activeElement === from;
     busy = true; note = ""; render();
-    try { await action(); } finally { busy = false; render(); }
+    try { await action(); } finally { busy = false; render(); if (focused) refocus(from); }
+  }
+  /** The pressed button was disabled, and may now be hidden: give focus back to it, to the control that replaces it, or to the new state's headline. */
+  function refocus(from: HTMLButtonElement): void {
+    const active = document.activeElement;
+    if (active !== null && active !== document.body && active !== from) return; // the visitor has moved on
+    const usable = (button: HTMLButtonElement): boolean => !button.hidden && !button.disabled;
+    ([from, buttons.claim, buttons.start].find(usable) ?? el("[data-sandbox-headline]")).focus();
   }
   buttons.start.addEventListener("click", () => { void act(async () => {
     const g = generation; starting = true;
@@ -159,16 +167,16 @@ function mount(root: HTMLElement): void {
     if (!answer.ok) { note = problemText(answer.problem); if (answer.problem.kind === "refused" && answer.problem.code === "sandbox-unavailable") await refreshStatus(); return; }
     autoClaim = true; setLease(answer.data);
     if (lease?.status === "ready") await claim();
-  }); });
-  buttons.claim.addEventListener("click", () => { void act(claim); });
+  }, buttons.start); });
+  buttons.claim.addEventListener("click", () => { void act(claim, buttons.claim); });
   buttons.return.addEventListener("click", () => { void act(async () => {
     const g = generation; const answer = await call<SandboxLease>("session/return", "POST"); if (g !== generation) return;
     if (answer.ok) setLease(answer.data); else note = problemText(answer.problem);
-  }); });
+  }, buttons.return); });
   buttons.reset.addEventListener("click", () => { void act(async () => {
     const g = generation; const answer = await call<SandboxLease>("session/reset", "POST"); if (g !== generation) return;
     if (answer.ok) { autoClaim = true; setLease(answer.data); } else { note = problemText(answer.problem); await refreshLease(); }
-  }); });
+  }, buttons.reset); });
   buttons.repro.addEventListener("click", () => { void act(async () => {
     const answer = await call<SandboxReproDownload>("session/repro", "POST");
     if (!answer.ok) { note = problemText(answer.problem); return; }
@@ -176,7 +184,7 @@ function mount(root: HTMLElement): void {
     link.href = URL.createObjectURL(new Blob([answer.data.content], { type: "application/json" })); link.download = answer.data.filename;
     link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 0);
     note = `Saved ${answer.data.filename}: this study's synthetic scenario, packages, and traces only.`;
-  }); });
+  }, buttons.repro); });
   el("[data-sandbox-retry]").addEventListener("click", () => { void revalidate(); });
 
   async function tick(): Promise<void> {

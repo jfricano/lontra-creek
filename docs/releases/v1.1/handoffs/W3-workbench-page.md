@@ -18,7 +18,7 @@ The route, its navigation entry, and the site summary in `site.ts` are unchanged
 
 ## States
 
-The panel's `data-phase` attribute names the state; the headline is a `role="status"` region.
+The panel's `data-phase` attribute names the state; the headline is a `role="status"` region. After a lifecycle button's action, focus stays on that button if it is still usable, or moves to Claim or Start when one replaces it, or else to the headline.
 
 | Phase | When | Controls |
 | --- | --- | --- |

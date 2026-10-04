@@ -136,9 +136,10 @@ test('A43: the sandbox service API needs its bearer token, and production cannot
   assert.throws(() => sandboxEnvironment({ SANDBOX_SERVICE_TOKEN: 'short' }), /32/);
   const settings = sandboxEnvironment(env);
   assert.deepEqual([settings.siteOrigins, settings.gatewayHost, settings.portBase, settings.port], [['https://localhost:8443'], '0.0.0.0', 7600, 7620], 'slot N listens on 7600 + N, clear of the API on 7620');
-  assert.deepEqual(sandboxEnvironment({ ...env, SITE_ORIGIN: 'https://streamotter.dev, https://localhost:8443' }).siteOrigins, ['https://streamotter.dev', 'https://localhost:8443']);
+  assert.deepEqual(sandboxEnvironment({ ...env, SITE_ORIGIN: 'https://streamotter.dev' }).siteOrigins, ['https://streamotter.dev']);
+  for (const origin of ['https://streamotter.dev,https://localhost:8443', 'https://streamotter.dev, https://localhost:8443']) assert.throws(() => sandboxEnvironment({ ...env, SITE_ORIGIN: origin }), /one exact origin/, 'Caddy matches SITE_ORIGIN literally, so a list is refused');
   assert.throws(() => sandboxEnvironment({ ...env, NODE_ENV: 'production' }), /SITE_ORIGIN is required/);
-  for (const origin of ['https://streamotter.dev/', 'streamotter.dev', 'https://streamotter.dev/workbench']) assert.throws(() => sandboxEnvironment({ ...env, SITE_ORIGIN: origin }), /exact origins/, origin);
+  for (const origin of ['https://streamotter.dev/', 'streamotter.dev', 'https://streamotter.dev/workbench', '']) assert.throws(() => sandboxEnvironment({ ...env, SITE_ORIGIN: origin }), /one exact origin|required/, origin);
   assert.throws(() => sandboxEnvironment({ ...env, SANDBOX_GATEWAY_PORT_BASE: '7618' }), /API port 7620/, 'slot 2 would take the API port');
   assert.equal(sandboxEnvironment({ ...env, SANDBOX_GATEWAY_PORT_BASE: '7618', SANDBOX_SLOTS: '1' }).portBase, 7618);
   assert.throws(() => sandboxEnvironment({ ...env, SANDBOX_GATEWAY_PORT_BASE: '0' }), /port number/);

@@ -52,10 +52,11 @@ export function sandboxEnvironment(env: NodeJS.ProcessEnv): SandboxSettings {
   const count = Number(env['SANDBOX_SLOTS'] ?? 3);
   if (![1, 2, 3].includes(count)) throw new Error('SANDBOX_SLOTS must be 1, 2, or 3.');
   const slots = Array.from({ length: count }, (_, i) => i + 1 as SlotId);
-  const origins = env['SITE_ORIGIN'] ?? (env['NODE_ENV'] === 'production' ? '' : 'https://localhost:8443');
-  if (!origins) throw new Error('SITE_ORIGIN is required in production.');
-  const siteOrigins = origins.split(',').map(origin => origin.trim()).filter(Boolean);
-  for (const origin of siteOrigins) if (!URL.canParse(origin) || new URL(origin).origin !== origin) throw new Error(`SITE_ORIGIN must list exact origins; got ${origin.slice(0, 80)}.`);
+  const origin = env['SITE_ORIGIN'] ?? (env['NODE_ENV'] === 'production' ? '' : 'https://localhost:8443');
+  if (!origin) throw new Error('SITE_ORIGIN is required in production.');
+  // Caddy routes a slot's Socket.IO only for SITE_ORIGIN, matched as one literal Origin, so the gateways allow exactly that one.
+  if (!URL.canParse(origin) || new URL(origin).origin !== origin) throw new Error(`SITE_ORIGIN must be one exact origin; got ${origin.slice(0, 80)}.`);
+  const siteOrigins = [origin];
   const port = (key: string, fallback: number): number => { const n = Number(env[key] ?? fallback); if (!Number.isSafeInteger(n) || n < 1 || n > 65_535) throw new Error(`${key} must be a port number.`); return n; };
   const apiPort = port('SANDBOX_API_PORT', 7620); const portBase = port('SANDBOX_GATEWAY_PORT_BASE', 7600);
   if (portBase + 3 > 65_535) throw new Error('SANDBOX_GATEWAY_PORT_BASE leaves no room for three slots.');

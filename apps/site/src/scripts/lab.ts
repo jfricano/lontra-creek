@@ -24,7 +24,7 @@ const MESSAGES: Record<LabErrorCode, string> = {
   "unsupported-scenario": "This backend does not support this scenario.",
   "too-many-requests": "Too many Lab requests from your address. Trying again shortly.",
   "too-many-actions": "One action a second, please.",
-  "too-many-places": "Your address already holds two places in the Lab.",
+  "too-many-places": "This network address already holds two places across the Failure Lab and the workbench sandbox. Return one of them, then try again.",
   "queue-full": "The line for a bench is full. Try again in a few minutes.",
   "lab-unavailable": "The Lab is unavailable.",
   "bench-unavailable": "Your bench stopped answering."

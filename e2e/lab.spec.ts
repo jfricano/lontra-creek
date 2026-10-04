@@ -202,3 +202,14 @@ test("a Return refused with no-session ends the lease view instead of leaving Re
   await expect(page.locator("[data-lab-join]")).toBeEnabled();
   await expect(page.locator("[data-lab-clock]")).toHaveText("");
 });
+
+test("a too-many-places refusal names the cap the Lab shares with the workbench sandbox", async ({ page }) => {
+  await page.route("**/api/lab/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/status")) return route.fulfill({ json:{ enabled:true, now:now(), benches:[{ bench:1, state:"ready" }], queueLength:0, nextFreeAt:null } });
+    return route.fulfill({ status:429, json:{ error:"Too many places.", code:"too-many-places" } });
+  });
+  await page.goto("/lab/"); await page.locator("[data-lab-join]").click();
+  await expect(page.locator("[data-lab-message]")).toHaveText("This network address already holds two places across the Failure Lab and the workbench sandbox. Return one of them, then try again.");
+  await expect(page.locator("[data-lab-join]")).toBeEnabled();
+});

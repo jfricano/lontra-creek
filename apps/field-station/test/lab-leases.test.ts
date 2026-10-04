@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { BenchId, BenchStatus } from '../src/lab/contract.ts';
-import { LeasePool, type BenchClient } from '../src/lab/leases.ts';
-import { LabError } from '../src/lab/errors.ts';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { benchError, configuredLab, LeasePool, type BenchClient } from '../src/lab/leases.ts';
+import { LabError, MAX_LEASE_MS } from '../src/lab/errors.ts';
 import { LabFeed } from '../src/lab/feed.ts';
 import { benchConfig, benchEnvironment, benchHandlers } from '../src/lab/bench.ts';
 import { createGateway } from 'streamotter/gateway';
@@ -83,4 +85,54 @@ test('bench environment rejects production and other-bench secrets; options have
 test('startup self-check refuses any registered development principal', () => {
   assert.doesNotThrow(() => requireNoDevelopmentPrincipals([]));
   assert.throws(() => requireNoDevelopmentPrincipals([{ id: 'preview-researcher' }]), /forbidden/);
+});
+
+test('a lease longer than a bench accepts is refused at startup, not on every grant', () => {
+  const env = { LAB_BENCH_API_URLS: 'http://bench-1.test:7420', LAB_BENCH_1_SERVICE_TOKEN: 's'.repeat(32) };
+  assert.equal(configuredLab({ ...env, LAB_LEASE_SECONDS: '300' }, 'https://demo.test').pool.enabled, true);
+  assert.throws(() => configuredLab({ ...env, LAB_LEASE_SECONDS: '301' }, 'https://demo.test'), /at most 300/);
+  assert.throws(() => configuredLab({ ...env, LAB_LEASE_SECONDS: '600' }, 'https://demo.test'), /at most 300/);
+  assert.throws(() => new LeasePool({ client: { call: async () => { throw new Error('unused'); } }, benches: [1], gatewayOrigin: 'https://demo.test', leaseMs: MAX_LEASE_MS + 1 }), RangeError);
+});
+
+test("a bench's error codes reach the visitor as the contract names them", () => {
+  const mapped = (status: number, code?: unknown) => { const error = benchError(status, code); return [error.code, error.status]; };
+  assert.deepEqual(mapped(409, 'no-lease'), ['no-lease', 409]);
+  assert.deepEqual(mapped(409, 'not-applicable'), ['not-applicable', 409]);
+  assert.deepEqual(mapped(409, 'something-else'), ['not-applicable', 409]);
+  assert.deepEqual(mapped(429, 'too-many-actions'), ['too-many-actions', 429]);
+  assert.deepEqual(mapped(400), ['invalid-request', 400]);
+  for (const status of [401, 404, 500, 502]) assert.deepEqual(mapped(status, 'no-lease'), ['bench-unavailable', 503]);
+});
+
+test('over HTTP, a bench no-lease stays no-lease and a bench failure ends the lease as bench-failed', async () => {
+  const token = 's'.repeat(32);
+  let leaseId: string | null = null; let expiresAt = '';
+  let mode: 'ok' | 'no-lease' | 'broken' = 'ok';
+  const status = (): BenchStatus => ({ bench: 1, state: leaseId ? 'leased' : 'ready', lease: leaseId ? { leaseId, expiresAt } : null, scenario: { gateway: 'running', source: { status: 'healthy' }, relay: 'up', calibration: 'present', satellite: 'idle', receiptTimeoutMs: 5000 }, checks: { developmentPrincipals: 0, fixtureSources: 0, managementHost: '127.0.0.1' } });
+  const server = createServer(async (request, response) => {
+    let text = ''; for await (const chunk of request) text += chunk;
+    const body = text ? JSON.parse(text) as { leaseId?: string; expiresAt?: string } : {};
+    const send = (code: number, value: unknown) => { response.writeHead(code, { 'content-type': 'application/json' }); response.end(JSON.stringify(value)); };
+    if (request.headers.authorization !== `Bearer ${token}`) return send(401, { error: 'Unauthorized.' });
+    if (request.url === '/bench/v1/reset') { leaseId = null; return send(202, status()); }
+    if (request.url === '/bench/v1/lease') { leaseId = body.leaseId!; expiresAt = body.expiresAt!; return send(200, status()); }
+    if (request.url === '/bench/v1/tokens') return mode === 'no-lease' ? send(409, { error: 'no-lease', code: 'no-lease' }) : send(200, { token: 'lab1_x', expiresAt });
+    if (request.url === '/bench/v1/actions') return mode === 'broken' ? send(500, { error: 'Bench failure.', code: 'bench-unavailable' }) : send(200, { at: new Date().toISOString(), scenario: status().scenario });
+    send(200, status());
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const { pool } = configuredLab({ LAB_BENCH_API_URLS: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, LAB_BENCH_1_SERVICE_TOKEN: token }, 'https://demo.test');
+    await pool.initialize(); await pool.run(() => pool.sweep());
+    const visitor = { subject: 'visitor', role: 'volunteer' as const, exp: Date.now() + 1_800_000 };
+    assert.equal((await pool.run(() => pool.join(visitor, '192.0.2.9'))).status, 'ready');
+    assert.equal((await pool.token(visitor)).token, 'lab1_x');
+    mode = 'no-lease';
+    await assert.rejects(pool.token(visitor), code('no-lease'));
+    mode = 'broken';
+    await assert.rejects(pool.action(visitor, 'relay.cut'), (error: unknown) => error instanceof LabError && error.code === 'bench-unavailable' && error.status === 503);
+    const ended = pool.view(visitor);
+    assert.equal(ended.status === 'ended' && ended.reason, 'bench-failed');
+  } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
 });

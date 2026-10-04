@@ -13,7 +13,7 @@ cd lontra-creek
 npm install
 npm run dev</code></pre><p>The fixture demo does not include failure benches. The repository's <a href="https://github.com/jfricano/lontra-creek/blob/main/docs/LOCAL_LAB.md">local Lab instructions</a> show how to build and run the Kafka stack with three isolated benches.</p></aside>
     <div class="panel-grid">
-      <section class="content-card"><h2>Your bench</h2><p data-lab-state>Not leased.</p><p>LC-03 subscription: <strong data-lab-view-state>idle</strong></p><dl><dt>Stage</dt><dd data-lab-stage>—</dd><dt>Flow</dt><dd data-lab-flow>—</dd><dt>Revision</dt><dd data-lab-revision>—</dd></dl><p data-lab-snapshot-note></p></section>
+      <section class="content-card"><h2>Your bench</h2><p data-lab-state>Not leased.</p><p>LC-03 subscription: <strong data-lab-view-state>idle</strong></p><dl><dt>Stage</dt><dd data-lab-stage>—</dd><dt>Flow</dt><dd data-lab-flow>—</dd><dt>Revision</dt><dd data-lab-revision>—</dd></dl><p data-lab-snapshot-note></p><p aria-live="polite" data-lab-outcome></p></section>
       <section class="content-card"><h2>Four controlled failures</h2><fieldset data-lab-actions disabled><legend>Actions on your leased bench</legend>
         <h3>Fouled sensor</h3><p>Remove LC-03's calibration. The map handler fails and pauses at the record; restoring the table and resuming retries that same record.</p><button class="button button-quiet" data-lab-action="sensor.foul">Foul sensor</button> <button class="button button-quiet" data-lab-action="sensor.restore">Restore calibration</button> <button class="button button-quiet" data-lab-action="source.resume">Resume source</button>
         <h3>Flash flood takes the relay</h3><p>Cut only this bench's Kafka path. Views become stale, then recover after restoration. Watch the feed for this run's actual timing.</p><button class="button button-quiet" data-lab-action="relay.cut">Cut relay</button> <button class="button button-quiet" data-lab-action="relay.restore">Restore relay</button>
@@ -21,8 +21,11 @@ npm run dev</code></pre><p>The fixture demo does not include failure benches. Th
         <h3>Relay restart</h3><p>Restart your gateway. The SDK reconnects and takes a fresh snapshot.</p><button class="button button-quiet" data-lab-action="gateway.restart">Restart gateway</button>
       </fieldset></section>
     </div>
-    <section class="content-card"><h2>Redacted gateway feed</h2><p>Actual actions, source states, and traces from your current lease. No payloads, credentials, or other visitors' data.</p><ol tabindex="0" data-lab-feed aria-label="Gateway trace feed"></ol></section>
+    <section class="content-card"><h2>Redacted gateway feed</h2><p>Actual actions, source states, and traces from your current lease. No payloads, credentials, or other visitors' data.</p>
+      <p>The scenario view shows what each scenario turns on: your actions, failed or rejected traces, source state changes, the LC-03 record a fouled sensor stopped on (topic, partition, and offset), and trace gaps. A record retried after Resume is marked <strong>Retried</strong>. “Mapper returned” means the bench's map handler finished for that record; it isn't proof that the gateway delivered it or committed its offset.</p>
+      <label class="feed-toggle"><input type="checkbox" data-lab-feed-all> Show the full feed, including every <code>ok</code> trace</label>
+      <ol tabindex="0" data-lab-feed aria-label="Gateway trace feed"></ol></section>
   </section>
 </ContentPage>
 <script>import "../scripts/lab.ts";</script>
-<style>.lab-controls { display:flex; gap:12px; flex-wrap:wrap; margin-block:20px; } fieldset { border:0; padding:0; min-width:0; } fieldset button { margin-block:4px; } [data-lab-feed] { max-height:420px; overflow:auto; font: .8rem/1.6 var(--mono); } dd { margin:4px 0 16px; overflow-wrap:anywhere; }</style>
+<style>.lab-controls { display:flex; gap:12px; flex-wrap:wrap; margin-block:20px; } fieldset { border:0; padding:0; min-width:0; } fieldset button { margin-block:4px; } [data-lab-feed] { max-height:420px; overflow:auto; font: .8rem/1.6 var(--mono); } dd { margin:4px 0 16px; overflow-wrap:anywhere; } .feed-toggle { display:flex; gap:8px; align-items:center; margin-block:12px; } .feed-retried { font-weight:700; border-inline-start:3px solid currentColor; padding-inline-start:6px; }</style>

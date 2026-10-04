@@ -135,7 +135,8 @@ Operator env names, without secret values:
   bench's `KAFKA_LAB_PASSWORD` with `KAFKA_LAB_USERNAME=lab-N`. No other bench's
   or production secret belongs in a bench/proxy container.
 - Lab wiring: `LAB_BENCH_API_URLS`, `FIELD_LAB_BENCHES`, `LAB_BENCH`,
-  `LAB_SNAPSHOT_ORIGIN`, optional `LAB_LEASE_SECONDS`, `LAB_QUEUE_MAX`.
+  `LAB_SNAPSHOT_ORIGIN`, optional `LAB_LEASE_SECONDS` (at most 300; the field station refuses
+  to start above that), `LAB_QUEUE_MAX`.
 - CI credentials and guards: `DEPLOY_HOST`, `DEPLOY_KEY`, `DEPLOY_KNOWN_HOSTS`,
   `CLOUDFLARE_API_TOKEN`; variables `CLOUDFLARE_ACCOUNT_ID`,
   `CLOUDFLARE_PAGES_PROJECT`, `LONTRA_IMAGES_ENABLED`, `LONTRA_DEPLOY_ENABLED`,

@@ -96,6 +96,8 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
 
   return createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://field-station.invalid");
+    // Set once the request is under /api/, so an error answer still carries CORS and the page can read it.
+    let cors: Headers = {};
     try {
       if (url.pathname === "/healthz") {
         const healthy = station.ready && station.kafkaHealthy && notebooks.ready;
@@ -110,7 +112,7 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
       if (!url.pathname.startsWith("/api/")) return send(response, 404, { error: "Not found." });
 
       const origin = request.headers.origin;
-      const cors: Headers = { vary: "Origin" };
+      cors = { vary: "Origin" };
       if (origin !== undefined && config.siteOrigins.includes(origin)) {
         cors["access-control-allow-origin"] = origin;
         cors["access-control-allow-credentials"] = "true";
@@ -199,7 +201,7 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
       send(response, 404, { error: "Not found." }, cors);
     } catch (error) {
       log(`Request failed: ${error instanceof Error ? error.message : String(error)}`);
-      if (!response.headersSent) send(response, 400, { error: "Bad request." });
+      if (!response.headersSent) send(response, 400, { error: "Bad request." }, cors);
     }
   });
 }

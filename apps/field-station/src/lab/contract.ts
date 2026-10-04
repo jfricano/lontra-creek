@@ -110,7 +110,12 @@ export type LabFeedItem =
     })
   /** The bench's source changed status, as its gateway reports it. */
   | (FeedBase & { kind: "source"; sourceId: string; status: SourceStatus["status"]; reason?: ErrorCode })
-  /** An LC-03 reading during the fouled-sensor scenario, so the page can show the same record failing and then processed. */
+  /**
+   * An LC-03 reading, so the page can show the same record failing and then retried.
+   * `processed` means the bench's map handler returned for this record. It is written
+   * before StreamOtter validates, delivers, or commits anything, so it is not proof of
+   * acceptance or of the offset advancing; the page labels it "mapper returned".
+   */
   | (FeedBase & { kind: "record"; stationId: "LC-03"; topic: string; partition: number; offset: string; outcome: "failed" | "processed" })
   /** A scenario action the bench carried out. */
   | (FeedBase & { kind: "action"; action: LabAction })
@@ -138,7 +143,7 @@ export type LabErrorCode =
   | "too-many-places"     // 429: this client address already holds two places
   | "queue-full"          // 503
   | "lab-unavailable"     // 503: the Lab is off, or no bench is working
-  | "bench-unavailable";  // 503: the lease's bench didn't answer
+  | "bench-unavailable";  // 503: the lease's bench didn't answer, or answered that it failed; the lease ends as bench-failed
 
 export interface LabError {
   error: string;

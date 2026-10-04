@@ -317,6 +317,20 @@ describe("the field station's HTTP APIs", () => {
     assert.equal(forged.status, 403);
   });
 
+  test("a malformed request from the site's origin gets a 400 the page can read", async () => {
+    const badge = await fetch(`${apiOrigin}/api/badge`, { method: "POST", headers: { origin: "https://streamotter.app", "content-type": "application/json", "x-client-ip": "198.51.100.39" }, body: "{}" });
+    const cookie = badge.headers.get("set-cookie")!.split(";")[0]!;
+    for (const path of ["/api/badge", "/api/notebook/sightings"]) {
+      const response = await fetch(`${apiOrigin}${path}`, { method: "POST", headers: { origin: "https://streamotter.app", cookie, "content-type": "application/json", "x-client-ip": "198.51.100.40" }, body: "{not json" });
+      assert.equal(response.status, 400, path);
+      assert.equal(response.headers.get("access-control-allow-origin"), "https://streamotter.app", path);
+      assert.equal(response.headers.get("access-control-allow-credentials"), "true");
+    }
+    const tooLarge = await fetch(`${apiOrigin}/api/badge`, { method: "POST", headers: { origin: "https://streamotter.app", "content-type": "application/json", "x-client-ip": "198.51.100.41" }, body: JSON.stringify({ role: "x".repeat(5_000) }) });
+    assert.equal(tooLarge.status, 400);
+    assert.equal(tooLarge.headers.get("access-control-allow-origin"), "https://streamotter.app");
+  });
+
   test("a badge keeps its subject for the same role and changes it for another", async () => {
     const first = await fetch(`${apiOrigin}/api/badge`, { method: "POST", headers: { origin: "https://streamotter.app", "content-type": "application/json", "x-client-ip": "198.51.100.7" }, body: JSON.stringify({ role: "volunteer" }) });
     assert.equal(first.status, 200);

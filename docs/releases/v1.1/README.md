@@ -21,6 +21,7 @@ Start with the creek's `station` channel alongside the pinned `streamotter init`
 - [Slice A baseline](BASELINE.md): compatibility and exposure review of the current `main`.
 - Decisions: [LC11-ADR-01 coverage ledger and guard](decisions/LC11-ADR-01-coverage-ledger-and-guard.md), [LC11-ADR-02 restart and reset](decisions/LC11-ADR-02-study-restart-and-reset.md), [LC11-ADR-03 private operations and Kafka authority](decisions/LC11-ADR-03-private-operations-and-kafka-authority.md), [LC11-ADR-04 workbench sandbox](decisions/LC11-ADR-04-workbench-sandbox-architecture.md).
 - [Independent review of the combined slices](REVIEW_FINDINGS.md): findings and fixes, October 4, 2026.
+- [Release handoff](RELEASE_HANDOFF.md): StreamOtter version consumed, unfinished integrations, server changes, acceptance checks and rollback.
 - [Requirements on published StreamOtter packages](UPSTREAM_REQUIREMENTS.md).
 - [Workbench sandbox API contract](../../contracts/sandbox-api.md) (draft).
 

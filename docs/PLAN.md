@@ -10,13 +10,23 @@ The phase descriptions below preserve the agreed scope; they are not a claim of
 public deployment. Hosted timing/capacity, staging acceptance, cloud/account setup,
 Kafka topic confinement disposition, and launch approval remain outstanding.
 
+**October 4, 2026 update:** V1.1 is built, not deployed. Draft PR #40 (with #41's
+move to streamotter.dev) runs on StreamOtter 0.1.0-rc.3; the phase 2 branch adds
+the workbench sandbox and the source-failure exercises on 0.2.0-rc.1, which is
+not on npm yet ([V1.1 status](releases/v1.1/STATUS.md)). Hosting changed: the demo
+will run on a shared ARM host behind devops's shared TLS edge, not a dedicated VM
+(see [Architecture and hosting](#architecture-and-hosting)). The
+[rollout plan](releases/0.2.0-rc.1/ROLLOUT_PLAN.md) governs the deployment, in two
+phases; in both, the Lab benches and the workbench sandbox stay off on the hosted
+demo until the owner approves them separately.
+
 This repository holds StreamOtter's public home site and its live demo. The demo is a fictional river-otter study at Lontra Creek whose data moves through real Kafka, a real StreamOtter gateway, and the real browser SDK. The site's job is to take a developer from "what is this" to "I watched it survive a failure" to `npm install streamotter` in one visit.
 
 This document owns the site's scope, the demo's behavior and operating rules, and the launch criteria. StreamOtter's own behavior is defined by the library, not here. [DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md) holds the engineering steps to launch, and [HOSTING.md](HOSTING.md) the owner's account checklist.
 
 ## Future site releases
 
-The [site release index](releases/README.md) and [V1.1 plan](releases/v1.1/README.md) own future site/demo work. The former V1.5 milestone is now V1.1. It adds Source failures inside `/lab/` and replaces the existing `/workbench/` tour with the actual published workbench sandbox, without another route or navigation item. `/playground/` remains the quick validator. These are planned changes; the route table and operating rules below describe the baseline until implementation and launch checks pass. Implementation progress is tracked in [V1.1 status](releases/v1.1/STATUS.md).
+The [site release index](releases/README.md) and [V1.1 plan](releases/v1.1/README.md) own future site/demo work. The former V1.5 milestone is now V1.1. It adds Source failures inside `/lab/` and replaces the existing `/workbench/` tour with the actual published workbench sandbox, without another route or navigation item. `/playground/` remains the quick validator. Both are built (the sandbox and the exercises on the phase 2 branch, against a pre-publish StreamOtter 0.2.0-rc.1) and run under `npm run dev:lab`; neither is deployed, and neither runs on the hosted demo until the owner approves it. The route table and operating rules below describe the baseline until launch checks pass. Implementation progress is tracked in [V1.1 status](releases/v1.1/STATUS.md).
 
 Library policies, native acceptance, and package publication stay in StreamOtter's `docs/releases/v1.1/`; Lontra Creek owns visitor sessions, synthetic integration, site acceptance, and deployment. Their release decisions remain independent.
 
@@ -85,6 +95,8 @@ Benches run StreamOtter's gateway in development mode so their traces can be rea
 Each bench reaches Kafka only through a proxy of its own, which the flash flood cuts. Its feed, a copy of the creek that the field station publishes to the bench's topics, never crosses that path. The mechanism is proven in CI on amd64 and arm64 ([DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md), workstream 6).
 
 ## Architecture and hosting
+
+> **October 4, 2026: hosting changed.** The demo backend will run on a shared ARM host beside other apps (iYosi and Roost), behind devops's shared TLS edge, as the private Compose project described in [SHARED_HOST_READINESS.md](SHARED_HOST_READINESS.md): Caddy is a private router on the edge network, the edge owns TLS and port 443, and no service publishes a host port. Releases live under `/srv/apps/lontra` and are activated by an operator with devops's shared-host procedure; no workflow deploys the backend (GitHub Actions only builds the image). The [rollout plan](releases/0.2.0-rc.1/ROLLOUT_PLAN.md) governs. The VM sizing, budget rules and cost below were written for a host Lontra Creek had to itself (the standalone layout); the shared host's capacity, monitoring and budget belong to its owners. The routes, the Kafka setup and the static site on Cloudflare still hold.
 
 The whole stack runs on free tiers. The only fixed cost is the domain.
 
@@ -214,5 +226,5 @@ After launch, the planned [V1.1 companion](./releases/v1.1/README.md) adds Sourc
 
 ## Open decisions
 
-- Confirm the hosting above (Oracle Cloud Always Free and Cloudflare), or choose the AWS fallback.
+- ~~Confirm the hosting above (Oracle Cloud Always Free and Cloudflare), or choose the AWS fallback.~~ Settled: a shared host behind devops's edge, and Cloudflare for DNS and the static site (see the note under Architecture and hosting).
 - Whether this repository is public on GitHub, and when it is first pushed.

@@ -1,6 +1,8 @@
 # Hosting checklist
 
-How streamotter.dev and the Lontra Creek demo get onto the internet, on free tiers, per [PLAN.md](PLAN.md#architecture-and-hosting). The engineering steps are in [DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md). Steps marked **Owner** need the owner's accounts, payment details, or approval; Claude can't do them. Steps marked **Claude** are code in this repository.
+How streamotter.dev and the Lontra Creek demo get onto the internet, on free tiers, per [PLAN.md](PLAN.md#architecture-and-hosting). The engineering steps are in [DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md). Steps marked **Owner** need the owner's accounts, payment details, or approval. Section 4 is code in this repository.
+
+> **October 4, 2026: superseded for the hosted demo.** This checklist was written for a dedicated Oracle Cloud VM in the standalone `/srv/lontra` layout. The hosted demo is to run on a shared ARM host beside other apps, behind devops's shared TLS edge, under `/srv/apps/lontra` with `/etc/apps/lontra/lontra.env`, activated with devops's shared-host procedure; the instance, its ports, the origin certificate and the deploy SSH key below are not part of that path. The one-time GitHub, Cloudflare and shared-host configuration is in the [rollout plan](releases/0.2.0-rc.1/ROLLOUT_PLAN.md) (Configure first), and the adapter in [SHARED_HOST_READINESS.md](SHARED_HOST_READINESS.md). The rest of this file is kept as the record of the standalone plan.
 
 ## 1. Accounts (Owner, now)
 
@@ -9,7 +11,7 @@ How streamotter.dev and the Lontra Creek demo get onto the internet, on free tie
 - [ ] **Oracle Cloud account** at oracle.com/cloud/free, with two-factor authentication on. Oracle verifies a card at signup. The **home region can't be changed later** and decides where the demo runs: pick one near most visitors. Ampere A1 capacity is sometimes short in busy regions; if instance creation later says "out of capacity", retry later or try another availability domain.
 - [ ] **Upgrade the Oracle account to Pay As You Go** (Billing and Cost Management, Upgrade and Manage Payment). Always Free resources stay free.
 - [ ] **Budget alarm:** Billing and Cost Management, Budgets, Create Budget: the root compartment, $1 a month, and an alert rule on *actual* spend at 100% that emails you. Any charge means something outside Always Free exists. Alarms notify; they don't stop spending.
-- [ ] **GitHub repository** `jfricano/lontra-creek`: decide public or private. Claude pushes only with your go-ahead.
+- [ ] **GitHub repository** `jfricano/lontra-creek`: decide public or private. Nothing is pushed without your go-ahead.
 
 ## 2. The demo host (Owner, with the values below)
 
@@ -20,10 +22,10 @@ How streamotter.dev and the Lontra Creek demo get onto the internet, on free tie
   - Boot volume: 100 GB (Always Free covers 200 GB in total).
   - Networking: a new VCN with a public subnet, and a public IPv4 address.
   - SSH: paste the public key.
-- [ ] **Open ports** in the subnet's security list: TCP 443 from anywhere (Cloudflare connects here), and TCP 22 from your own IP only. The server's own firewall is opened by Claude's setup script.
-- [ ] Send Claude the instance's public IP. Never send the private key.
+- [ ] **Open ports** in the subnet's security list: TCP 443 from anywhere (Cloudflare connects here), and TCP 22 from your own IP only. The server's own firewall is opened by the setup script.
+- [ ] Record the instance's public IP for the deploy configuration. Never share the private key.
 
-## 3. Domain and TLS (Owner, with Claude's values)
+## 3. Domain and TLS (Owner, with the values below)
 
 - [ ] Cloudflare DNS: `demo.streamotter.dev`, an `A` record to the instance IP, **proxied** (orange cloud), so visitors never see the server's address.
 - [ ] Cloudflare SSL/TLS mode: **Full (strict)**.
@@ -32,7 +34,7 @@ How streamotter.dev and the Lontra Creek demo get onto the internet, on free tie
 - [ ] A deploy SSH key for GitHub Actions, separate from your own (`ssh-keygen -t ed25519 -f ~/.ssh/lontra-creek-deploy -C lontra-creek-deploy`): the public key goes on the server (the setup script restricts it to deploying), and the private key is stored as a secret of a GitHub `production` environment that requires your approval.
 - [ ] Decide whether `images.yml` publishes the stack's image to GitHub's registry (`ghcr.io/jfricano/lontra-creek`) on merges to `main`: public, with a retention policy for old images. See [TEAM_PLAN.md](TEAM_PLAN.md#8-the-owner).
 
-## 4. What Claude builds (Claude, in this repository)
+## 4. What this repository builds
 
 - [x] Production StreamOtter configuration: Kafka over TLS with SCRAM-SHA-512, allowed origin `https://streamotter.dev`.
 - [x] The field station's production runner: the simulation on the wall clock, write then publish to Kafka, hourly checkpoints, the site API.

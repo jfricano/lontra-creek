@@ -6,7 +6,7 @@ October 3, 2026 · **Draft 0.2** · The interface between the `/workbench/` page
 
 **Seam.** StreamOtter defined the integration seam as the **workbench host contract, WHC-1, revision 0.1** (StreamOtter `docs/releases/v1.1/WORKBENCH_HOST_CONTRACT.md`, [UPSTREAM_REQUIREMENTS.md](../releases/v1.1/UPSTREAM_REQUIREMENTS.md)); revision 0.2 §9 (StreamOtter PR #14, unmerged and unpublished) clarifies it as implemented by `createManagementHandler`, and §6 here follows those clarifications so the real handler can later be mounted behind the same routes. The page writes a WHC-1 boot block and loads the published `app.js`; the workbench then calls the host API in §6 with the visitor's session cookie. WHC-1 is defined but not published, so §6's names and shapes follow its text and the rc.3 `ManagementOperations` types, and are revised when `@streamotter/contracts` exports its own. Until a release provides the seam, the sandbox reports `availability: "unavailable"` with reason `seam-unavailable`.
 
-**Status of each section.** §§1–5 and 7–9 are implemented by W2 (session layer, test-only design fixture for the slot runtime). §6 is implemented against WHC-1 rev 0.1 and the rc.3 types; the slot runtime that serves it (W9a) waits for a published seam.
+**Status of each section.** §§1–5 and 7–9 are implemented in code by W2 (session layer, test-only design fixture for the slot runtime). §6 is implemented against WHC-1 rev 0.1 and the rc.3 types; the slot runtime that serves it (W9a) waits for a published seam. **None of it is deployed yet.** No Compose file runs a `sandbox` service, and no `deploy/Caddyfile*` has §1's `/sandbox/N/socket.io/` route or its Origin check; both are deployment work in W9a. Until then no deployment sets `SANDBOX_API_URL`, so the sandbox reports `disabled`. Do not read §1 or §9 as a deployable topology.
 
 ## 1. The pieces
 
@@ -19,6 +19,7 @@ browser (/workbench/)
 field-station ──service token──▶ sandbox:7620 (sandbox API, §9, Compose network only)
 ```
 
+- **Planned, not deployed.** The diagram is the target topology. Today only the field station's `/api/sandbox/*` routes exist, behind the existing Caddy `/api/*` route. The `/sandbox/N/socket.io/` Caddy route (exact Origin check, ADR-04 decision 7) and the `sandbox` Compose service do not exist; W9a adds them.
 - **The field station is the only thing visitors talk to about sessions.** It owns the queue and leases for sandbox slots and Lab benches (one lifecycle owner), and never lets a request name a slot.
 - **The sandbox service is the only authority over its slots**: their runtimes, gateways, private management services, candidates, preview credentials, and cleanup.
 - **The native management service is never reachable from outside the sandbox process.** The browser holds only its `lc_session` cookie and short-lived preview tokens for its own slot.
@@ -249,7 +250,7 @@ The lease state machine is the Lab's (Lab contract §4) with the sandbox's own q
 
 ## 9. The sandbox service API (private)
 
-`sandbox:7620`, on the Compose network only. Every route except `GET /healthz` needs `Authorization: Bearer <SANDBOX_SERVICE_TOKEN>` (at least 32 characters, compared in constant time). Bodies are JSON, at most 72 KB. Only the field station calls it; types are in `contract.ts` (`SandboxServiceStatus`, `SandboxServiceSlot`).
+`sandbox:7620`, on the Compose network only once W9a adds the `sandbox` Compose service; no deployment runs it yet. Every route except `GET /healthz` needs `Authorization: Bearer <SANDBOX_SERVICE_TOKEN>` (at least 32 characters, compared in constant time). Bodies are JSON, at most 72 KB. Only the field station calls it; types are in `contract.ts` (`SandboxServiceStatus`, `SandboxServiceSlot`).
 
 | Route | Body | Does | Answers |
 | --- | --- | --- | --- |
@@ -261,7 +262,7 @@ The lease state machine is the Lab's (Lab contract §4) with the sandbox's own q
 | `POST /sandbox/v1/slots/N/ops` | `{ leaseId, studyId, op, input }` | One §6 operation, re-checked against the allowlist and bounds | `Result`-shaped `{ ok, data }` or `{ ok: false, error }` |
 | `POST /sandbox/v1/slots/N/repro` | `{ leaseId, studyId }` | The §7 bundle | 200 `SandboxReproDownload` |
 
-The service refuses to start with production or Lab secrets in its environment (`FIELD_STATION_*`, Kafka usernames and passwords, Lab bench tokens). It also ends any lease past its `expiresAt` on its own.
+The service refuses to start with production or Lab secrets in its environment (`FIELD_STATION_*`, Kafka usernames and passwords, and every Lab token, `LAB_*_TOKEN`, which covers each Lab secret `deploy/make-secrets.sh` writes). It also ends any lease past its `expiresAt` on its own.
 
 **Slot runtimes.** The service hosts each study on a `SlotRuntime` from a `SlotBackend` (`src/sandbox/service.ts`): the slot's server-owned base `ProjectConfig`, its development principal, its editable-limit maxima, `call(op, input)`, `revoke()`, and `close()`. The only production backend for rc.3, `publishedBackend()`, reports `seam-unavailable` and opens nothing. W9a adds the backend for the first published release with WHC-1 (likely mounting `createManagementHandler` behind the service's own checks). A design-fixture backend exists for tests only, under `apps/field-station/test/support/`; `sandbox-main.ts` cannot select it.
 
@@ -283,7 +284,7 @@ The service refuses to start with production or Lab secrets in its environment (
 
 ## Changes
 
-- **Draft 0.2, review fixes (October 4, 2026).** §§6 and 8: a call from a study that was reset while it ran is answered `stale-study` whether it succeeded or failed, and never ends the lease. §4: a refused `POST /api/sandbox/session` sets no cookie. §8: nothing is granted, and joins are refused, until startup has returned every slot. §2: `Retry-After` and `X-Request-Id` are exposed to the cross-origin page. §5: an export refused for more issues than fit in 16 KB keeps `details.code` and a cut, flagged `details.issues`.
+- **Draft 0.2, review fixes (October 4, 2026).** §§6 and 8: a call from a study that was reset while it ran is answered `stale-study` whether it succeeded or failed, and never ends the lease. §4: a refused `POST /api/sandbox/session` sets no cookie. §8: nothing is granted, and joins are refused, until startup has returned every slot. §2: `Retry-After` and `X-Request-Id` are exposed to the cross-origin page. §5: an export refused for more issues than fit in 16 KB keeps `details.code` and a cut, flagged `details.issues`. Status, §1, and §9 say plainly that the Caddy route and the `sandbox` Compose service are not deployed yet (W9a); §9's refused secrets include every `LAB_*_TOKEN`.
 - **Draft 0.2, W3 clarification (October 3, 2026).** §4 records how the page uses the lifecycle routes (no allocation on open, reload, or restore; heartbeat; `pagehide` return; 404 status as not enabled), that unconfigured lifecycle routes other than `status` answer 503 `sandbox-unavailable` (as W2 implements), and the conditions under which the page mounts the published workbench. No route, payload, or type changed.
 - **Draft 0.2 (October 3, 2026, W2).** §6's single `POST /api/sandbox/ops` replaced by the WHC-1 rev 0.1 host API at `/api/sandbox/wb/v1` (discovery, WHC-1 operation names and paths, `Result<T>` envelope, StreamOtter error codes, `X-StreamOtter-Workbench` header on `POST`), aligned with rev 0.2 §9 (`workbench` in discovery, discovery behind the session check, `createManagementHandler`'s check order, `Authorization` ignored). `requestId`/`studyId` request fields removed: the study is bound to the session on the server. `repro.export` became `POST /api/sandbox/session/repro`. §3 adds the WHC-1 types; `stale-study` is now "a study the session has since reset or ended". §5 says how refusals are reported. §§7–10 add the bundle contents, the download guard, the timings table, the private service API, and configuration.
 - **Draft 0.1 (October 3, 2026, P0).** First draft.

@@ -50,7 +50,7 @@ export function publishedBackend(): SlotBackend {
 /** The service's settings. Production and other services' secrets are refused, as for Lab benches. */
 export function sandboxEnvironment(env: NodeJS.ProcessEnv): { serviceToken: string; slots: SlotId[]; host: string; port: number } {
   for (const key of Object.keys(env)) {
-    if (key.startsWith('FIELD_STATION_') || /^KAFKA_.*(PASSWORD|USERNAME)$/.test(key) || /^LAB_BENCH_\d+_(SERVICE|RELAY)_TOKEN$/.test(key)) throw new Error(`Production or Lab secret forbidden: ${key}`);
+    if (key.startsWith('FIELD_STATION_') || /^KAFKA_.*(PASSWORD|USERNAME)$/.test(key) || /^LAB_\w+_TOKEN$/.test(key)) throw new Error(`Production or Lab secret forbidden: ${key}`);
   }
   const serviceToken = env['SANDBOX_SERVICE_TOKEN'];
   if (!serviceToken || serviceToken.length < 32) throw new Error('SANDBOX_SERVICE_TOKEN needs 32 characters.');

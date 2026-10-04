@@ -12,7 +12,7 @@ const leaks = (text: string, extra: string[]) => [SERVICE_TOKEN, 'lc_session', '
 
 test('A45: config export returns canonical configuration of the validated candidate, capped at 256 KB, without secrets or host paths', async () => {
   const h = await harness({ slots: 1 }); const s = h.session('s'); await h.join(s); const connection = await h.claim(s);
-  const preview = await h.opSlow(s, 'preview-sessions', { fixturePrincipalRef: 'visitor' }) as { token: string };
+  const preview = await h.opSlow(s, 'preview-sessions', { fixturePrincipalRef: 'creek-volunteer' }) as { token: string };
   const candidate = structuredClone(fixtureBase(1)) as unknown as { channels: { station: { version: number } } }; candidate.channels.station.version = 2;
   const exported = await h.opSlow(s, 'config.export', { config: candidate }) as { filename: string; content: string };
   assert.equal(exported.filename, 'streamotter.json'); assert.equal(JSON.parse(exported.content).channels.station.version, 2);
@@ -30,7 +30,7 @@ test('A45: the reproduction bundle holds only this study\'s metadata, labels the
   const h = await harness(); const a = h.session('a'); const b = h.session('b');
   await h.join(a); await h.join(b); const ca = await h.claim(a); const cb = await h.claim(b);
   await assert.rejects(h.pool.repro(h.session('nobody')), code('no-lease'));
-  const pa = await h.opSlow(a, 'preview-sessions', { fixturePrincipalRef: 'visitor' }) as { token: string; previewSessionId: string };
+  const pa = await h.opSlow(a, 'preview-sessions', { fixturePrincipalRef: 'creek-volunteer' }) as { token: string; previewSessionId: string };
   await h.opSlow(b, 'dev.fixtures.advance', { sourceId: 'creek', count: 10 });
   await h.opSlow(a, 'dev.fixtures.advance', { sourceId: 'jobs', count: 2 });
   const download = await h.pool.repro(a); assert.equal(download.filename, 'lontra-creek-sandbox-repro.json');

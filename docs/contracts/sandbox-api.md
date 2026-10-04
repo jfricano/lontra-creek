@@ -1,12 +1,12 @@
 # Workbench sandbox API contract
 
-October 3, 2026 · **Draft 0.2** · The interface between the `/workbench/` page and the published workbench, the field station's sandbox routes, and the `sandbox` service · Owner: Jason Fricano (lead)
+October 4, 2026 · **Draft 0.3** · The interface between the `/workbench/` page and the published workbench, the field station's sandbox routes, and the `sandbox` service · Owner: Jason Fricano (lead)
 
 [LC11-ADR-04](../releases/v1.1/decisions/LC11-ADR-04-workbench-sandbox-architecture.md) owns the architecture; the [companion plan](../releases/v1.1/LONTRA_CREEK_V1_1_COMPANION_PLAN.md#workbench-sandbox-on-the-existing-route) owns what visitors get. This document fixes routes, payloads, limits, and security rules. As with the [Lab contract](lab-api.md), the types here are normative: they live in a type-only module, `apps/field-station/src/sandbox/contract.ts`, which the site imports with `import type`. A change to either goes in the same pull request.
 
-**Seam.** StreamOtter defined the integration seam as the **workbench host contract, WHC-1, revision 0.1** (StreamOtter `docs/releases/v1.1/WORKBENCH_HOST_CONTRACT.md`, [UPSTREAM_REQUIREMENTS.md](../releases/v1.1/UPSTREAM_REQUIREMENTS.md)); revision 0.2 §9 (StreamOtter PR #14, unmerged and unpublished) clarifies it as implemented by `createManagementHandler`, and §6 here follows those clarifications so the real handler can later be mounted behind the same routes. The page writes a WHC-1 boot block and loads the published `app.js`; the workbench then calls the host API in §6 with the visitor's session cookie. WHC-1 is defined but not published, so §6's names and shapes follow its text and the rc.3 `ManagementOperations` types, and are revised when `@streamotter/contracts` exports its own. Until a release provides the seam, the sandbox reports `availability: "unavailable"` with reason `seam-unavailable`.
+**Seam.** The integration seam is StreamOtter's **workbench host contract, WHC-1** (StreamOtter `docs/releases/v1.1/WORKBENCH_HOST_CONTRACT.md`, [UPSTREAM_REQUIREMENTS.md](../releases/v1.1/UPSTREAM_REQUIREMENTS.md)), published in **streamotter 0.2.0-rc.1**: `@streamotter/workbench` ships `app.js`, `workbench-host.css`, and the host manifest (`@streamotter/workbench/host`, `hostContract: 1`); `@streamotter/contracts` exports the WHC-1 types; `streamotter/gateway/management` exports `createManagementHandler`. The page writes a WHC-1 boot block and loads the published `app.js`; the workbench then calls the host API in §6 with the visitor's session cookie. §6's operation names and types are the published ones (`WorkbenchOperation`, `WorkbenchDiscovery`, `ManagementOperations`), and the sandbox service answers each operation with a `createManagementHandler` mounted per study (§9). An install without a WHC-1 manifest reports `availability: "unavailable"` with reason `seam-unavailable`.
 
-**Status of each section.** §§1–5 and 7–9 are implemented in code by W2 (session layer, test-only design fixture for the slot runtime). §6 is implemented against WHC-1 rev 0.1 and the rc.3 types; the slot runtime that serves it (W9a) waits for a published seam. **None of it is deployed yet.** No Compose file runs a `sandbox` service, and no `deploy/Caddyfile*` has §1's `/sandbox/N/socket.io/` route or its Origin check; both are deployment work in W9a. Until then no deployment sets `SANDBOX_API_URL`, so the sandbox reports `disabled`. Do not read §1 or §9 as a deployable topology.
+**Status of each section.** §§1–9 are implemented in code: the session layer by W2, the slot runtime on the published seam by W9a (§9). **None of it is deployed yet.** No Compose file runs a `sandbox` service, and no `deploy/Caddyfile*` has §1's `/sandbox/N/socket.io/` route or its Origin check; both are deployment work in W9a. Until then no deployment sets `SANDBOX_API_URL`, so the sandbox reports `disabled`. Do not read §1 or §9 as a deployable topology.
 
 ## 1. The pieces
 
@@ -14,7 +14,7 @@ October 3, 2026 · **Draft 0.2** · The interface between the `/workbench/` page
 browser (/workbench/)
   ├─ published workbench (WHC-1, session mode) ──fetch, credentials──▶ /api/sandbox/wb/v1/*   Caddy ─▶ field-station:7402
   ├─ page (session lifecycle) ──fetch, credentials──────────────────▶ /api/sandbox/*          Caddy ─▶ field-station:7402
-  └─ preview SDK ──WebSocket────────────────────────────────────────▶ /sandbox/N/socket.io/  Caddy (Origin check) ─▶ sandbox:76N0
+  └─ preview SDK ──WebSocket────────────────────────────────────────▶ /sandbox/N/socket.io/  Caddy (Origin check) ─▶ sandbox:760N
 
 field-station ──service token──▶ sandbox:7620 (sandbox API, §9, Compose network only)
 ```
@@ -22,7 +22,7 @@ field-station ──service token──▶ sandbox:7620 (sandbox API, §9, Compo
 - **Planned, not deployed.** The diagram is the target topology. Today only the field station's `/api/sandbox/*` routes exist, behind the existing Caddy `/api/*` route. The `/sandbox/N/socket.io/` Caddy route (exact Origin check, ADR-04 decision 7) and the `sandbox` Compose service do not exist; W9a adds them.
 - **The field station is the only thing visitors talk to about sessions.** It owns the queue and leases for sandbox slots and Lab benches (one lifecycle owner), and never lets a request name a slot.
 - **The sandbox service is the only authority over its slots**: their runtimes, gateways, private management services, candidates, preview credentials, and cleanup.
-- **The native management service is never reachable from outside the sandbox process.** The browser holds only its `lc_session` cookie and short-lived preview tokens for its own slot.
+- **The slot's management handler is never reachable from outside the sandbox process.** It listens on `127.0.0.1` inside the sandbox container and answers only a per-study key that never leaves the process; no native management token exists. The browser holds only its `lc_session` cookie and short-lived preview tokens for its own slot's principals.
 
 ## 2. Rules for every route
 
@@ -45,7 +45,7 @@ export interface SandboxRuntime {
   /** Exact installed packages, from the running service, not the site build. */
   packages: { streamotter: string; workbench: string };
   mode: SandboxMode;
-  /** The seam's contract version, once a release defines one. */
+  /** The seam's contract version: the installed workbench's `hostContract`, "1" for WHC-1; null only from a service that reports none. */
   contractVersion: string | null;
 }
 
@@ -109,24 +109,21 @@ export type SandboxErrorCode =
 export interface SandboxError { error: string; code: SandboxErrorCode }
 ```
 
-WHC-1 host API (provisional; `contract.ts` has the full definitions):
+WHC-1 host API (`contract.ts` has the full definitions; the WHC-1 names are the published ones):
 
 ```ts
-import type { ManagementOperations, Result } from "streamotter/contracts";
+import type { ManagementOperations, Result, WorkbenchDiscovery as PublishedWorkbenchDiscovery, WorkbenchOperation as PublishedWorkbenchOperation } from "streamotter/contracts";
 
-/** WHC-1 §4 and rev 0.2 §9: the closed vocabulary, discovery included (sources.retire-boundary is deliberately absent). */
-export type WorkbenchOperation = "workbench" | "capabilities" | "health" | "sources" | "channels" | "config" | "config.validate"
-  | "config.export" | "traces" | "source-checks" | "sources.resume" | "preview-sessions" | "dev.principals"
-  | "dev.fixtures.advance" | "dev.disconnect" | "operator.status" | "failures.list" | "failures.show"
-  | "failures.export" | "failures.evaluate" | "failures.redrive" | "sources.retry-current" | "sources.reassess"
-  | "sources.reopen-circuit";
+/** WHC-1 §4: the closed vocabulary, discovery included (sources.retire-boundary is deliberately absent). */
+export type WorkbenchOperation = PublishedWorkbenchOperation;
 
 /** The operations the sandbox may serve (§6); every other WHC-1 operation is 403 FORBIDDEN. */
 export type SandboxOperation = Extract<WorkbenchOperation, "capabilities" | "health" | "sources" | "channels" | "config"
   | "config.validate" | "config.export" | "traces" | "source-checks" | "sources.resume" | "preview-sessions"
   | "dev.principals" | "dev.fixtures.advance" | "dev.disconnect">;
 
-export interface WorkbenchDiscovery { hostContract: 1; operations: (SandboxOperation | "workbench")[]; limits: { maxRequestBytes: number } }
+/** { hostContract: 1, operations, limits: { maxRequestBytes } } */
+export type WorkbenchDiscovery = PublishedWorkbenchDiscovery;
 
 /** Per operation: { method, path, request, response }, request and response taken from ManagementOperations. */
 export interface SandboxOperations { /* §6 table */ }
@@ -174,23 +171,25 @@ How a refusal is reported:
 
 ## 6. Operations: the WHC-1 host API
 
-Mounted at `/api/sandbox/wb/v1` (WHC-1 `apiBase`). Every response is StreamOtter's `Result<T>` envelope, `{ ok: true, requestId, data }` or `{ ok: false, requestId, error: StreamError }`, with an `X-Request-Id` header; `requestId` is generated by the field station. Request and response types are rc.3's `ManagementOperations` for the same native route.
+Mounted at `/api/sandbox/wb/v1` (WHC-1 `apiBase`). Every response is StreamOtter's `Result<T>` envelope, `{ ok: true, requestId, data }` or `{ ok: false, requestId, error: StreamError }`, with an `X-Request-Id` header; `requestId` is generated by the field station. Request and response types are the published `ManagementOperations` for the same native route.
 
 | `op` | Method and path | Input (bounded) | Notes |
 | --- | --- | --- | --- |
 | `workbench` (discovery) | `GET /workbench` | none | `{ hostContract: 1, operations, limits: { maxRequestBytes: 65536 } }`. `operations` is `workbench` plus the allowlisted operations the running release supports, so only `workbench` while the sandbox is unavailable. Needs a session, like every route here, but no lease. |
 | `capabilities`, `health`, `sources`, `channels`, `config` | `GET /<name>` | none | Reads of the slot's own gateway |
-| `dev.principals` | `GET /dev/principals` | none | Lists only the slot's synthetic principal |
-| `traces` | `GET /traces` | query `limit` 1–100, `cursor`, `sourceId` (a slot source), `channel` (a slot channel), `outcome` | Cursors are opaque handles bound to the study |
+| `dev.principals` | `GET /dev/principals` | none | Lists only the slot's two synthetic principals (below) |
+| `traces` | `GET /traces` | query `limit` 1–500, `cursor`, `sourceId` (a slot source), `channel` (a slot channel), `outcome` | At most 100 items a page: a larger `limit` (the workbench asks for 200 and 500) is narrowed, as WHC-1 §5 allows a host to. As natively, a page without a cursor holds the newest traces, oldest first, and a cursor returns traces recorded after it. Cursors are opaque handles bound to the study |
 | `config.validate` | `POST /config/validate` | `{ config }`, candidate (§5) | Allowlist, then the published validator |
 | `config.export` | `POST /config/export` | `{ config }`, candidate (§5) | `{ filename, content, fingerprint }`; content at most 256 KB (§7) |
 | `source-checks` | `POST /source-checks` | `{ sourceId }`, one of the slot's sources | |
 | `sources.resume` | `POST /sources/resume` | `{ sourceId }`, one of the slot's fixture sources | |
-| `preview-sessions` | `POST /preview-sessions` | `{ fixturePrincipalRef }`, the slot's own principal | `expiresAt` is the earlier of the native lifetime and the lease's end |
+| `preview-sessions` | `POST /preview-sessions` | `{ fixturePrincipalRef }`, one of the slot's own principals | `expiresAt` is the earlier of the native lifetime and the lease's end |
 | `dev.fixtures.advance` | `POST /dev/fixtures/advance` | `{ sourceId, count }`, count 1–10, a slot fixture source | |
 | `dev.disconnect` | `POST /dev/disconnect` | `{ previewSessionId }`, minted in this study | |
 
 Unknown keys, query parameters on other operations, a missing `Content-Type: application/json`, or a body over its limit are refused. Requests never name a slot, lease, or study: the field station binds the session's current lease and study and passes them to the slot itself.
+
+**Principals.** Each slot registers two server-owned development principals, and previews are minted only for them: `creek-volunteer` (tenant `lontra-creek`, role volunteer), who may read `station`, and `developer` (tenant `local`, the init scaffold's own principal, verbatim), who may read `jobProgress`. Gateway routing includes the verified tenant, so one principal cannot preview both channels. Neither may read the other's channel.
 
 **Check order.** After the shared budget (429) and the Origin check (403), checks run in `createManagementHandler`'s order (WHC-1 rev 0.2 §9): session (401), route (404), allowlist (403), query (400), the `POST` header (403), body size (413), then body content type and JSON (400). The input bounds and the session's lease (401) follow; the sandbox service re-checks the allowlist, bounds, lease, and study.
 
@@ -218,7 +217,7 @@ Failure operations are added only when a pinned release supports them and the sa
 `config.export` and `POST /api/sandbox/session/repro` return content the page saves as a file. They contain only this study's data:
 
 - **Configuration:** canonical JSON of the validated candidate, with the server-owned bindings as they are (synthetic names only).
-- **Reproduction bundle** (`SandboxReproBundle` in `contract.ts`): format and version, generation time, mode, exact packages, contract versions, the scenario by synthetic name (project, channels and versions, source IDs and kinds), the study's start and operation counts, and at most 500 of the study's traces as `{ at, stage, outcome, sourceId?, channel?, errorCode? }`, without request or subscription identifiers. `gaps.tracesTruncated` is set when the study had more; `gaps.tracesUnavailable` when traces could not be read.
+- **Reproduction bundle** (`SandboxReproBundle` in `contract.ts`): format and version, generation time, mode, exact packages, contract versions, the scenario by synthetic name (project, channels and versions, source IDs and kinds), the study's start and operation counts, and the study's newest traces, at most 500, oldest first, as `{ at, stage, outcome, sourceId?, channel?, errorCode? }`, without request or subscription identifiers. Native trace pages cannot reach older traces, so `gaps.tracesTruncated` is set when the 500 are a full page (the study may have had more); `gaps.tracesUnavailable` when traces could not be read.
 
 Never cookies, tokens, lease or study IDs, host paths, credentials, other sessions, or raw production material. Each is at most 256 KB (413 `candidate-too-large` otherwise). The service withholds any download that contains its service token, a preview token minted in the study, the lease ID, or a host path (500 `INTERNAL`, `details.code` `invalid-request`).
 
@@ -250,7 +249,7 @@ The lease state machine is the Lab's (Lab contract §4) with the sandbox's own q
 
 ## 9. The sandbox service API (private)
 
-`sandbox:7620`, on the Compose network only once W9a adds the `sandbox` Compose service; no deployment runs it yet. Every route except `GET /healthz` needs `Authorization: Bearer <SANDBOX_SERVICE_TOKEN>` (at least 32 characters, compared in constant time). Bodies are JSON, at most 72 KB. Only the field station calls it; types are in `contract.ts` (`SandboxServiceStatus`, `SandboxServiceSlot`).
+`sandbox:7620`, on the Compose network only. Every route except `GET /healthz` needs `Authorization: Bearer <SANDBOX_SERVICE_TOKEN>` (at least 32 characters, compared in constant time). Bodies are JSON, at most 72 KB. Only the field station calls it; types are in `contract.ts` (`SandboxServiceStatus`, `SandboxServiceSlot`).
 
 | Route | Body | Does | Answers |
 | --- | --- | --- | --- |
@@ -264,7 +263,14 @@ The lease state machine is the Lab's (Lab contract §4) with the sandbox's own q
 
 The service refuses to start with production or Lab secrets in its environment (`FIELD_STATION_*`, Kafka usernames and passwords, and every Lab token, `LAB_*_TOKEN`, which covers each Lab secret `deploy/make-secrets.sh` writes). It also ends any lease past its `expiresAt` on its own.
 
-**Slot runtimes.** The service hosts each study on a `SlotRuntime` from a `SlotBackend` (`src/sandbox/service.ts`): the slot's server-owned base `ProjectConfig`, its development principal, its editable-limit maxima, `call(op, input)`, `revoke()`, and `close()`. The only production backend for rc.3, `publishedBackend()`, reports `seam-unavailable` and opens nothing. W9a adds the backend for the first published release with WHC-1 (likely mounting `createManagementHandler` behind the service's own checks). A design-fixture backend exists for tests only, under `apps/field-station/test/support/`; `sandbox-main.ts` cannot select it.
+**Slot runtimes.** The service hosts each study on a `SlotRuntime` from a `SlotBackend` (`src/sandbox/service.ts`): the slot's server-owned base `ProjectConfig`, its development principals, its editable-limit maxima, `call(op, input)`, `revoke()`, and `close()`. The only production backend, `publishedBackend()` (`src/sandbox/seam.ts`), uses only the published exports:
+
+- **Identity.** `runtime.packages` are the installed `streamotter` and `@streamotter/workbench` versions and `contractVersion` the manifest's `hostContract` (`"1"`). It reports `seam-unavailable` and opens nothing unless the installed manifest is WHC-1's (`hostContract: 1`, package `@streamotter/workbench`) and `createManagementHandler` is exported. `operations` is the allowlist intersected with what the latest runtime's handler discovered.
+- **One study.** A fresh project (`src/sandbox/slot-project.ts`: project `lontra-creek-sandbox-N`; the creek's `station` channel on a fixture of the simulation's first study day; the pinned init scaffold's `jobProgress` channel, schemas, handler, and fixture records, ported and held to the scaffold by a test; gateway `maxConnections` 4 and `maxSubscriptionsPerConnection` 8; the site origins as `allowedOrigins`) runs on its own development gateway (`createGateway`, `mode: "development"`) at `SANDBOX_GATEWAY_HOST`:`SANDBOX_GATEWAY_PORT_BASE + N`, path `/sandbox/N/socket.io`. Its `createManagementHandler`, offering only the §6 allowlist, listens on `127.0.0.1` on a system-chosen port; its `authorize` accepts only a 32-byte random key for this study, compared in constant time, sent in a private header by the service itself. `Authorization` headers are ignored and no native management token exists.
+- **Calls.** Each operation is rebuilt from the service's checked input: a `GET` with a query only for `traces`, or a `POST` with a JSON body and `X-StreamOtter-Workbench: 1`. A native error passes through with its public fields.
+- **Cleanup.** `revoke()` revokes both principals' subjects on the gateway; `close()` closes the management listener and stops the gateway (5 s). Preview tokens live in that gateway's memory, so none survives its study. A failed `close()` leaves the slot `failed` (§8).
+
+A design-fixture backend exists for tests only, under `apps/field-station/test/support/`; `sandbox-main.ts` cannot select it.
 
 ## 10. Configuration
 
@@ -275,14 +281,18 @@ The service refuses to start with production or Lab secrets in its environment (
 | `SANDBOX_SLOTS` | both | 1–3, default 3 |
 | `SANDBOX_LEASE_SECONDS`, `SANDBOX_QUEUE_MAX` | field station | Default 600 and 30 |
 | `SANDBOX_API_HOST`, `SANDBOX_API_PORT` | service | Default `0.0.0.0` and 7620 |
+| `SITE_ORIGIN` | service | Comma-separated exact site origins the slot gateways allow. Required when `NODE_ENV=production`; default `https://localhost:8443` otherwise |
+| `SANDBOX_GATEWAY_HOST`, `SANDBOX_GATEWAY_PORT_BASE` | service | Default `0.0.0.0` and 7600: slot N's gateway listens on 7600 + N. A base that puts a slot on the API port is refused |
 
 ## 11. Open points
 
-- Final operation types and names follow the published WHC-1 (`@streamotter/contracts`); this document is revised then, with `contractVersion` filled in.
-- WHC-1 rev 0.1 refuses a cross-origin `apiBase`; the site is static on `streamotter.dev` while `/api` is on `demo.streamotter.dev`. R11 (same-site API base) decides whether the page can point the workbench at `/api/sandbox/wb/v1` on the field station's origin as specified here, or whether the deployment slice must route it on the site origin.
+- WHC-1 has no unmount: the page loads one workbench instance per document (§4).
+- R11 (same-site API base) is met by the published WHC-1's `apiOrigin` in session mode: the site is static on `streamotter.dev` and `/api` is on `demo.streamotter.dev`, and the field station's CORS for `/api/sandbox/wb/*` already answers the page's exact origin with credentials. The page's use of it is §4's.
 - Failures operations and a possible real-Kafka slot type (ADR-04 open question 1).
 
 ## Changes
+
+- **Draft 0.3, W9a slot runtime (October 4, 2026).** The seam is the published WHC-1 in streamotter 0.2.0-rc.1: §3's `WorkbenchOperation` and `WorkbenchDiscovery` are the published types, and `contractVersion` is `"1"`. §9: the production backend mounts a `createManagementHandler` per study on a private loopback listener with a per-study key, on a development gateway per study; slot N's gateway is on port 760N (was 76N0, which put slot 2 on the API port). §6: each slot has two server-owned principals, `creek-volunteer` and the scaffold's `developer`; `traces` accepts `limit` up to 500 and serves at most 100 a page, with native paging. §7: the bundle holds the newest 500 traces, flagged as possibly truncated when that page is full. §10 adds `SITE_ORIGIN` and the gateway host and port base for the service.
 
 - **Draft 0.2, review fixes (October 4, 2026).** §§6 and 8: a call from a study that was reset while it ran is answered `stale-study` whether it succeeded or failed, and never ends the lease. §4: a refused `POST /api/sandbox/session` sets no cookie. §8: nothing is granted, and joins are refused, until startup has returned every slot. §2: `Retry-After` and `X-Request-Id` are exposed to the cross-origin page. §5: an export refused for more issues than fit in 16 KB keeps `details.code` and a cut, flagged `details.issues`. Status, §1, and §9 say plainly that the Caddy route and the `sandbox` Compose service are not deployed yet (W9a); §9's refused secrets include every `LAB_*_TOKEN`.
 - **Draft 0.2, W3 clarification (October 3, 2026).** §4 records how the page uses the lifecycle routes (no allocation on open, reload, or restore; heartbeat; `pagehide` return; 404 status as not enabled), that unconfigured lifecycle routes other than `status` answer 503 `sandbox-unavailable` (as W2 implements), and the conditions under which the page mounts the published workbench. No route, payload, or type changed.

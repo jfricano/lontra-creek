@@ -13,7 +13,8 @@ import { readConfig } from '../src/server/config.ts';
 import { publicApi } from '../src/server/http.ts';
 import type { FieldStation } from '../src/server/station.ts';
 import type { Notebooks } from '../src/server/notebooks.ts';
-import { publishedBackend, SandboxService, sandboxEnvironment } from '../src/sandbox/service.ts';
+import { publishedBackend } from '../src/sandbox/seam.ts';
+import { SandboxService, sandboxEnvironment } from '../src/sandbox/service.ts';
 import { configuredSandbox } from '../src/sandbox/leases.ts';
 import { harness, SERVICE_TOKEN } from './support/sandbox-harness.ts';
 
@@ -21,6 +22,8 @@ const SITE = 'https://site.test';
 async function serving(server: Server, run: (origin: string) => Promise<void>) { await new Promise<void>(r => server.listen(0, '127.0.0.1', r)); try { await run(`http://127.0.0.1:${(server.address() as AddressInfo).port}`); } finally { server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); } }
 const api = (sandbox?: Awaited<ReturnType<typeof harness>>['pool']) => publicApi({ config: readConfig({ SITE_ORIGIN: SITE }), station: {} as FieldStation, notebooks: {} as Notebooks, ...(sandbox ? { sandbox } : {}) });
 const WB = { 'x-streamotter-workbench': '1', origin: SITE };
+/** An install from before WHC-1: the rc.3 workbench shipped no host manifest contract. */
+const PRE_WHC1 = { package: '@streamotter/workbench', version: '0.1.0-rc.3' };
 // Spread requests over client addresses so this test exercises the routes, not the shared request budget.
 let client = 0;
 const fetch = (url: string, init: RequestInit = {}) => globalThis.fetch(url, { ...init, headers: { 'x-client-ip': `198.51.100.${++client % 250}`, ...(init.headers as Record<string, string> ?? {}) } });
@@ -95,8 +98,8 @@ test('A42/A43: lifecycle and WHC-1 routes enforce Origin, the workbench header, 
   });
 });
 
-test('A44/A46: the rc.3 production backend reports seam-unavailable and allocates nothing', async () => {
-  const h = await harness({ backend: () => publishedBackend() });
+test('A44/A46: on a pre-WHC-1 install the production backend reports seam-unavailable and allocates nothing', async () => {
+  const h = await harness({ backend: () => publishedBackend({ siteOrigins: [SITE], manifest: PRE_WHC1 }) });
   const status = h.pool.status(); assert.equal(status.availability, 'unavailable'); assert.equal(status.reason, 'seam-unavailable'); assert.equal(status.runtime, null);
   assert.deepEqual(h.pool.discovery().operations, ['workbench'], 'nothing but discovery while the seam is unavailable');
   await serving(api(h.pool), async origin => {
@@ -108,7 +111,7 @@ test('A44/A46: the rc.3 production backend reports seam-unavailable and allocate
 });
 
 test('A43: the sandbox service API needs its bearer token, and production cannot select a test runtime', async () => {
-  const service = new SandboxService({ backend: publishedBackend(), slots: [1], serviceToken: SERVICE_TOKEN }); await service.start();
+  const service = new SandboxService({ backend: publishedBackend({ siteOrigins: [SITE], manifest: PRE_WHC1 }), slots: [1], serviceToken: SERVICE_TOKEN }); await service.start();
   await serving(service.api(), async origin => {
     assert.equal((await fetch(`${origin}/healthz`)).status, 200);
     assert.equal((await fetch(`${origin}/sandbox/v1/status`)).status, 401);
@@ -123,10 +126,18 @@ test('A43: the sandbox service API needs its bearer token, and production cannot
   const generated = [...readFileSync(new URL('../../../deploy/make-secrets.sh', import.meta.url), 'utf8').matchAll(/^([A-Z][A-Z0-9_]*)=\$\(secret\)$/gm)].map(m => m[1]!);
   assert.ok(generated.includes('LAB_RELAY_TOKEN') && generated.length >= 14, 'the secrets the script writes');
   for (const key of generated) assert.throws(() => sandboxEnvironment({ ...env, [key]: 'secret' }), /forbidden/, key);
-  assert.deepEqual(sandboxEnvironment({ ...env, SANDBOX_SLOTS: '2', SANDBOX_API_PORT: '7620', LAB_BENCH_API_URLS: 'http://lab-1:7420', LAB_LEASE_SECONDS: '600', NODE_ENV: 'production' }).slots, [1, 2]);
+  assert.deepEqual(sandboxEnvironment({ ...env, SANDBOX_SLOTS: '2', SANDBOX_API_PORT: '7620', LAB_BENCH_API_URLS: 'http://lab-1:7420', LAB_LEASE_SECONDS: '600', NODE_ENV: 'production', SITE_ORIGIN: 'https://streamotter.dev' }).slots, [1, 2]);
   assert.throws(() => sandboxEnvironment({ SANDBOX_SERVICE_TOKEN: 'short' }), /32/);
+  const settings = sandboxEnvironment(env);
+  assert.deepEqual([settings.siteOrigins, settings.gatewayHost, settings.portBase, settings.port], [['https://localhost:8443'], '0.0.0.0', 7600, 7620], 'slot N listens on 7600 + N, clear of the API on 7620');
+  assert.deepEqual(sandboxEnvironment({ ...env, SITE_ORIGIN: 'https://streamotter.dev, https://localhost:8443' }).siteOrigins, ['https://streamotter.dev', 'https://localhost:8443']);
+  assert.throws(() => sandboxEnvironment({ ...env, NODE_ENV: 'production' }), /SITE_ORIGIN is required/);
+  for (const origin of ['https://streamotter.dev/', 'streamotter.dev', 'https://streamotter.dev/workbench']) assert.throws(() => sandboxEnvironment({ ...env, SITE_ORIGIN: origin }), /exact origins/, origin);
+  assert.throws(() => sandboxEnvironment({ ...env, SANDBOX_GATEWAY_PORT_BASE: '7618' }), /API port 7620/, 'slot 2 would take the API port');
+  assert.equal(sandboxEnvironment({ ...env, SANDBOX_GATEWAY_PORT_BASE: '7618', SANDBOX_SLOTS: '1' }).portBase, 7618);
+  assert.throws(() => sandboxEnvironment({ ...env, SANDBOX_GATEWAY_PORT_BASE: '0' }), /port number/);
   const main = readFileSync(new URL('../src/sandbox/sandbox-main.ts', import.meta.url), 'utf8');
-  assert.match(main, /backend: publishedBackend\(\)/); assert.doesNotMatch(main, /SANDBOX_RUNTIME|sandbox-fixture|FixtureBackend/);
+  assert.match(main, /backend: publishedBackend\(\{ siteOrigins: settings\.siteOrigins, gatewayHost: settings\.gatewayHost, portBase: settings\.portBase \}\)/); assert.doesNotMatch(main, /SANDBOX_RUNTIME|sandbox-fixture|FixtureBackend|manifest/);
   const src = new URL('../src/', import.meta.url).pathname;
   const files = readdirSync(src, { recursive: true, encoding: 'utf8' }).filter(f => f.endsWith('.ts'));
   for (const file of files) assert.doesNotMatch(readFileSync(join(src, file), 'utf8'), /from ['"][^'"]*(test\/|sandbox-fixture)/, file);

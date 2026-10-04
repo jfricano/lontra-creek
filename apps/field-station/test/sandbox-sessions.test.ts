@@ -162,7 +162,7 @@ test('A42: reset rotates the study and invalidates previews, trace cursors, and 
   const h = await harness({ slots: 1 }); const s = h.session('s'); await h.join(s); await h.claim(s);
   const first = h.view(s); assert.ok(first.status === 'active');
   const old = h.fixture.current(1);
-  const preview = await h.opSlow(s, 'preview-sessions', { fixturePrincipalRef: 'visitor' }) as { previewSessionId: string; token: string };
+  const preview = await h.opSlow(s, 'preview-sessions', { fixturePrincipalRef: 'creek-volunteer' }) as { previewSessionId: string; token: string };
   await h.opSlow(s, 'dev.fixtures.advance', { sourceId: 'creek', count: 3 });
   const page = await h.opSlow(s, 'traces', { limit: 2 }) as { items: unknown[]; nextCursor: string };
   assert.equal(page.items.length, 2); assert.ok(page.nextCursor);
@@ -232,7 +232,7 @@ test('A42: two concurrent sessions never share a slot, candidate, traces, previe
   await h.join(a); await h.join(b); await h.claim(a); await h.claim(b);
   const va = h.view(a); const vb = h.view(b); assert.ok(va.status === 'active' && vb.status === 'active'); assert.notEqual(va.slot, vb.slot);
   await h.opSlow(a, 'dev.fixtures.advance', { sourceId: 'jobs', count: 4 });
-  const pa = await h.opSlow(a, 'preview-sessions', { fixturePrincipalRef: 'visitor' }) as { previewSessionId: string; token: string };
+  const pa = await h.opSlow(a, 'preview-sessions', { fixturePrincipalRef: 'creek-volunteer' }) as { previewSessionId: string; token: string };
   assert.equal((await h.opSlow(b, 'traces', {}) as { items: unknown[] }).items.length, 0, 'B sees none of A\'s traces');
   assert.equal((await h.opSlow(a, 'traces', {}) as { items: unknown[] }).items.length, 4);
   await assert.rejects(h.opSlow(b, 'dev.disconnect', { previewSessionId: pa.previewSessionId }), wb('INVALID_REQUEST'), 'B cannot disconnect A\'s preview');

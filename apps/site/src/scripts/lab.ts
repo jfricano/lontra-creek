@@ -1,11 +1,17 @@
 import type { Client } from "streamotter/client";
-import type { LabStatus, LabLease, LabToken, LabAction, LabActionResult, LabFeedPage, LabBenchState, LabErrorCode } from "../../../field-station/src/lab/contract.ts";
+import type { LabStatus, LabLease, LabToken, LabAction, LabActionResult, LabFeedPage, LabBenchState, LabErrorCode, LabIncidentView } from "../../../field-station/src/lab/contract.ts";
 import { channelVersions, type AppChannels } from "../generated/streamotter.generated.ts";
 import { LabFeedModel } from "./lab-feed.ts";
+import { capabilityAnswer, type CapabilityAnswer } from "./lab-catalog-model.ts";
+import type { BrowserStep } from "./lab-incident.ts";
+import { IncidentPanel } from "./lab-incident-panel.ts";
+import { mountTracks } from "./lab-tracks.ts";
 import { HttpStatusError, SignInRetry } from "./sign-in-retry.ts";
 import { installTabletNetwork } from "./tablet-network.ts";
 installTabletNetwork();
 const origin = (import.meta.env?.PUBLIC_FIELD_STATION_ORIGIN ?? "").replace(/\/+$/, "");
+// The chooser and catalog work without the Lab: selecting a track or scenario only explains.
+const tracks = mountTracks(document);
 const root = document.querySelector<HTMLElement>("[data-lab]");
 if (root) void mount(root);
 /** What each Lab error means to a visitor; the API's own codes, not its messages. */
@@ -15,6 +21,7 @@ const MESSAGES: Record<LabErrorCode, string> = {
   "origin-not-allowed": "The Lab only accepts requests from this site.",
   "no-lease": "You don't have a bench right now.",
   "not-applicable": "That action doesn't apply to your bench's current state.",
+  "unsupported-scenario": "This backend does not support this scenario.",
   "too-many-requests": "Too many Lab requests from your address. Trying again shortly.",
   "too-many-actions": "One action a second, please.",
   "too-many-places": "Your address already holds two places in the Lab.",
@@ -55,6 +62,17 @@ async function mount(root: HTMLElement): Promise<void> {
   const actions = el<HTMLFieldSetElement>("[data-lab-actions]");
   const outcome = el("[data-lab-outcome]");
   const fullFeed = el<HTMLInputElement>("[data-lab-feed-all]");
+  const incident = new IncidentPanel(el("[data-lab-incident]"));
+  let capabilities: CapabilityAnswer = { kind: "pending" };
+  let connection = "idle";
+  let viewReason: string | undefined;
+  let lastValue: string | undefined;
+  /** The page's own SDK observations, for the incident's observed steps. Bounded. */
+  const browserSteps: BrowserStep[] = [];
+  /** The incident state last announced, so polling announces only changes. */
+  let announced: string | null = null;
+  function observe(text: string): void { browserSteps.push({ at: new Date(Date.now() + offset).toISOString(), text }); if (browserSteps.length > 50) browserSteps.shift(); }
+  function applicationView(): void { incident.application({ connection, subscription: viewState, reason: viewReason, revision, value: lastValue }); }
   async function request<T>(path: string, body?: unknown, method = body === undefined ? "GET" : "POST", signal?: AbortSignal): Promise<T> {
     const timeout = AbortSignal.timeout(8_000);
     const response = await fetch(`${origin}/api/lab/${path}`, { method, credentials: "include", cache: "no-store", signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
@@ -71,6 +89,7 @@ async function mount(root: HTMLElement): Promise<void> {
     el("[data-lab-snapshot-note]").textContent = "";
     outcome.textContent = "";
     benchStateNow = undefined; viewState = "idle"; revision = undefined; satelliteFrom = undefined;
+    connection = "idle"; viewReason = undefined; lastValue = undefined; browserSteps.length = 0; announced = null; incident.clear();
     model.clear(); renderFeed();
   }
   async function disconnect(): Promise<void> {
@@ -104,13 +123,14 @@ async function mount(root: HTMLElement): Promise<void> {
         getToken: ({ signal }) => retry.token(async () => (await request<LabToken>("lease/token", {}, "POST", signal)).token) });
       retry.attach(next);
       client = next; signIn = retry; leaseId = current.leaseId;
+      next.on("state", ({ state }) => { if (activeSequence !== sequence) return; connection = state; observe(`Connection ${state}`); applicationView(); });
       const view = client.subscribe("station", { channelVersion: channelVersions.station, params: { stationId: "LC-03" } });
-      view.on("state", ({ state, reason }) => { if (activeSequence !== sequence) return; viewState = state; el("[data-lab-view-state]").textContent = `${state}${reason ? ` · ${reason}` : ""}`; });
+      view.on("state", ({ state, reason }) => { if (activeSequence !== sequence) return; viewState = state; viewReason = reason; el("[data-lab-view-state]").textContent = `${state}${reason ? ` · ${reason}` : ""}`; observe(`LC-03 subscription ${state}${reason ? ` (${reason})` : ""}`); applicationView(); });
       let previous: string | undefined;
       view.on("data", event => {
         if (activeSequence !== sequence) return;
         el("[data-lab-stage]").textContent = `${event.data.stageFt} ft`; el("[data-lab-flow]").textContent = `${event.data.flowCfs} cfs`;
-        el("[data-lab-revision]").textContent = event.revision; revision = event.revision;
+        el("[data-lab-revision]").textContent = event.revision; revision = event.revision; lastValue = `${event.data.stageFt} ft, ${event.data.flowCfs} cfs`; applicationView();
         if (event.kind === "snapshot" && previous) el("[data-lab-snapshot-note]").textContent = `Fresh snapshot ${previous} → ${event.revision}; intermediate states were not replayed.`;
         previous = event.revision;
       });
@@ -120,6 +140,7 @@ async function mount(root: HTMLElement): Promise<void> {
     heartbeatHealthy = true;
     const changed = lease?.status !== next.status || ("leaseId" in next && (!lease || !("leaseId" in lease) || lease.leaseId !== next.leaseId));
     lease = next; offset = Date.parse(next.now) - Date.now();
+    incident.explain(capabilities, next.status === "ready" || next.status === "active");
     returns.disabled = next.status === "none" || next.status === "ended";
     joins.disabled = !returns.disabled;
     if (next.status === "queued") { message.textContent = `All benches are busy. Your place in line: ${next.position} of ${next.queueLength}.`; await disconnect(); resetPanel(); }
@@ -183,10 +204,30 @@ async function mount(root: HTMLElement): Promise<void> {
       if (run?.disconnected && changed) renderOutcome("satellite");
     } catch(error) { message.textContent = explain(error); }
   }
+  /** The capability summary, once per page and on Check again. A 404 (the fixture demo, an older backend) leaves every new exercise unavailable. */
+  async function loadCapabilities(): Promise<void> {
+    try { capabilities = capabilityAnswer(await request<unknown>("capabilities")); }
+    catch (error) { capabilities = error instanceof HttpStatusError && error.status === 404 ? { kind: "absent" } : { kind: "unreachable" }; }
+    tracks?.showCapabilities(capabilities);
+    incident.explain(capabilities, lease?.status === "ready" || lease?.status === "active");
+  }
+  /** The PROPOSED current-incident projection: fetched only when the backend says it serves one, which no release does yet. */
+  async function incidentPoll(): Promise<void> {
+    if (!leaseId || capabilities.kind !== "summary" || !capabilities.summary.features.incidentProjection.available) return;
+    const activeSequence = sequence;
+    try {
+      const view = await request<LabIncidentView>("incident");
+      if (activeSequence !== sequence) return;
+      const state = incident.render(view, browserSteps);
+      if (state !== null) applicationView();
+      if (state !== null && state !== announced) outcome.textContent = state;
+      announced = state;
+    } catch { /* The lease poll reports a lost lease; the panel keeps its last served state. */ }
+  }
   fullFeed.addEventListener("change", renderFeed);
   joins.addEventListener("click", () => { joins.disabled = true; void request<LabLease>("lease", {}).then(renderLease).catch(error => { message.textContent = explain(error); joins.disabled = false; }); });
   returns.addEventListener("click", () => { returns.disabled = true; void request<LabLease>("lease/return", undefined, "POST").then(renderLease).catch(error => { message.textContent = explain(error); returns.disabled = false; }); });
-  el("[data-lab-retry]").addEventListener("click", () => { void status(); });
+  el("[data-lab-retry]").addEventListener("click", () => { void status(); if (capabilities.kind !== "summary") void loadCapabilities(); });
   root.querySelectorAll<HTMLButtonElement>("[data-lab-action]").forEach(button => button.addEventListener("click", () => {
     if (actionBusy) return; actionBusy = true; actions.disabled = true;
     const action = button.dataset["labAction"] as LabAction; const from = revision;
@@ -196,7 +237,7 @@ async function mount(root: HTMLElement): Promise<void> {
   let pollTick = 0;
   async function poll(): Promise<void> {
     if (stopped) return;
-    await feed(); if (pollTick % 2 === 0) await leasePoll(); if (pollTick % 10 === 0) await status(); pollTick++;
+    await feed(); if (pollTick % 2 === 0) { await leasePoll(); await incidentPoll(); } if (pollTick % 10 === 0) await status(); pollTick++;
     if (!stopped) timer = setTimeout(() => { void poll(); }, 1_000);
   }
   const clock = setInterval(() => {
@@ -212,6 +253,7 @@ async function mount(root: HTMLElement): Promise<void> {
     stopped = true; clearTimeout(timer); clearInterval(clock); void disconnect();
     if (lease && lease.status !== "none" && lease.status !== "ended") void fetch(`${origin}/api/lab/lease/return`, { method: "POST", credentials: "include", keepalive: true });
   });
+  void loadCapabilities();
   await status(); timer = setTimeout(() => { void poll(); }, 1_000);
 }
 

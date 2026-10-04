@@ -44,8 +44,8 @@ test('A44: the line is first come, first served, and a freed slot goes to the he
 
 test('A44: one client address holds at most two places across the Lab and the sandbox combined', async () => {
   const cap = new AddressCap(); const h = await harness({ cap });
-  const bench: BenchStatus = { bench: 1, state: 'ready', lease: null, scenario: { gateway: 'running', source: { status: 'healthy' }, relay: 'up', calibration: 'present', satellite: 'idle', receiptTimeoutMs: 5000 }, checks: { developmentPrincipals: 0, fixtureSources: 0, managementHost: '127.0.0.1' } };
-  const client: BenchClient = { async call<T>(_b: BenchId, path: string, _m?: string, body?: unknown): Promise<T> { if (path === '/bench/v1/reset') { bench.state = 'ready'; bench.lease = null; } if (path === '/bench/v1/lease') { bench.state = 'leased'; bench.lease = body as BenchStatus['lease']; } return structuredClone(bench) as T; } };
+  const bench: BenchStatus = { bench: 1, state: 'ready', lease: null, scenario: { gateway: 'running', source: { status: 'healthy' }, relay: 'up', calibration: 'present', satellite: 'idle', receiptTimeoutMs: 5000 }, checks: { developmentPrincipals: 0, fixtureSources: 0, managementHost: '127.0.0.1' }, readiness: { control: true, source: true, cleanLease: true }, study: null };
+  const client: BenchClient = { async call<T>(_b: BenchId, path: string, _m?: string, body?: unknown): Promise<T> { if (path === '/bench/v1/reset') { bench.state = 'ready'; bench.lease = null; bench.readiness.cleanLease = true; } if (path === '/bench/v1/lease') { bench.state = 'leased'; bench.lease = body as BenchStatus['lease']; bench.readiness.cleanLease = false; } return structuredClone(bench) as T; } };
   const lab = new LeasePool({ client, benches: [1], gatewayOrigin: 'https://demo.test', now: h.clock, cap }); await lab.initialize(); await lab.sweep();
   const [one, two, three] = [h.session('one'), h.session('two'), h.session('three')];
   await lab.join(one, '203.0.113.9');

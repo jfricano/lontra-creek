@@ -91,7 +91,9 @@ test('redaction drops handshakes and map noise, replaces identifiers, bounds pag
 test('bench environment rejects production and other-bench secrets; options have no protected channels or development principals', () => {
   const env = { LAB_BENCH: '1', LAB_BENCH_1_SERVICE_TOKEN: 's'.repeat(32), LAB_BENCH_1_RELAY_TOKEN: 'r'.repeat(32) };
   assert.equal(benchEnvironment(env).number, 1);
-  for (const key of ['FIELD_STATION_SECRET', 'FIELD_STATION_SERVICE_TOKEN', 'KAFKA_GATEWAY_PASSWORD', 'KAFKA_FIELD_STATION_PASSWORD', 'LAB_BENCH_2_SERVICE_TOKEN', 'LAB_BENCH_3_RELAY_TOKEN']) assert.throws(() => benchEnvironment({ ...env, [key]: 'secret' }), /forbidden/);
+  for (const key of ['FIELD_STATION_SECRET', 'FIELD_STATION_SERVICE_TOKEN', 'FIELD_STATION_INTERNAL_URL', 'KAFKA_GATEWAY_PASSWORD', 'KAFKA_FIELD_STATION_PASSWORD', 'LAB_BENCH_2_SERVICE_TOKEN', 'LAB_BENCH_3_RELAY_TOKEN', 'SANDBOX_SERVICE_TOKEN', 'KAFKA_LAB_2_PASSWORD', 'CLOUDFLARE_API_TOKEN', 'SOME_FUTURE_SECRET', 'DEPLOY_KEY', 'lowercase_token']) assert.throws(() => benchEnvironment({ ...env, [key]: 'secret' }), /forbidden/, key);
+  // Its own credentials, and ordinary settings that merely look alike, are fine.
+  assert.doesNotThrow(() => benchEnvironment({ ...env, KAFKA_LAB_PASSWORD: 'p', KAFKA_LAB_USERNAME: 'lab-1', KAFKA_CA_FILE: '/etc/ca.pem', PATH: '/usr/bin', NODE_VERSION: '24.21.0', HOSTNAME: 'lab-1', LAB_STATE_DIR: '/var/lib/lontra', MONKEY: 'x' }));
   const config = benchConfig(1); assert.deepEqual(Object.keys(config.channels).sort(), ['creekOverview', 'otter', 'reach', 'station']); assert.ok(Object.values(config.sources).every(source => source.kind === 'kafka'));
   const handlers = benchHandlers(1, { authenticate: () => null, serviceToken: env.LAB_BENCH_1_SERVICE_TOKEN, snapshotOrigin: 'http://field.test', calibration: () => true, record: () => {} });
   assert.doesNotThrow(() => createGateway({ config, handlers, mode: 'production' }));

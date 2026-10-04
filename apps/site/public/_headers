@@ -1,0 +1,6 @@
+# Cloudflare Pages response headers. /workbench/ hosts the published StreamOtter workbench:
+# it is never framed (a meta Content-Security-Policy cannot carry frame-ancestors).
+/workbench/*
+  X-Frame-Options: DENY
+  Content-Security-Policy: frame-ancestors 'none'
+  X-Content-Type-Options: nosniff

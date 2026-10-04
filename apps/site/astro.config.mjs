@@ -24,7 +24,12 @@ export default defineConfig({
   server: { host: "127.0.0.1", port: SITE_PORT },
   // Serves the pinned published workbench at /workbench/assets/<version>/ (sandbox contract §4).
   integrations: [workbenchAssets()],
+  // /workbench/'s policy allows only 'self' scripts, styles and fonts, so no page's CSS,
+  // bundled script, or font is inlined (Astro inlines small scripts under Vite's
+  // assetsInlineLimit, and Vite small fonts as data: URLs; other assets keep the default).
+  build: { inlineStylesheets: "never" },
   vite: {
+    build: { assetsInlineLimit: file => (/\.(?:js|woff2?)$/.test(file) ? false : undefined) },
     // In development the field station's small site API runs beside the gateway.
     server: { proxy: { "/api": `http://127.0.0.1:${API_PORT}` } }
   }

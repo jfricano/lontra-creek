@@ -102,6 +102,8 @@ Real Kafka, `npm run dev:lab`, October 4, 2026: StreamOtter 0.2.0-rc.1 (the pre-
 
 The hosted default was rechecked on the same stack with `LAB_FAILURE_HANDLING=retry`, `LAB_LOCAL_EXERCISES=0` and `KAFKA_AUTHORIZATION=none`: only S06 is offered, the other seven report `deployment-restricted`, and S01, S06 and A32 pass. S06 is therefore also recorded under `retry`; no other story is, so under `retry` nothing else would be offered even if the profile could run it. That recheck ran on a developer machine, not under the shared host's container limits.
 
+After the phase 2 review's fixes (one intent at a time, ordered projection reads, plan tokens bound to the incident revision, no study ID in the projection, and a suite that fails on any refusal it doesn't expect, asserts S04's `superseded`, and resets every bench twice in A32), both runs were repeated on October 4 with the same packages: `quarantine` with ACLs 11 of 11 with no authorizer denials, and `retry` with `KAFKA_AUTHORIZATION=none` S01, S06 and A32 passing with the other seven skipped as not offered.
+
 One limit found on the real stack: a bench container that is recreated (a new hostname) while its gateway still holds the journal lock, for example after a kill, comes back `failed`, because StreamOtter can't check a lock that names another host. The field station's reset then discards that study and the bench is ready with a new one in about a minute. A graceful stop releases the lock, and a restart in place (same hostname) resumes the same study.
 
 ## Pre-publish packages, and their removal

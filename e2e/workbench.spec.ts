@@ -2,19 +2,25 @@
  * /workbench/: the sandbox panel's states against stubbed /api/sandbox/* answers
  * (sandbox contract §4), the design-fixture seed, and the labeled fallback screenshots.
  * Every stubbed answer here is a test fixture; versions use "0.0.0-design-fixture" so
- * a label that leaked the site's own build would show.
+ * a label that leaked the site's own build would show. The mounted workbench is the
+ * real published app.js, served by the dev server from the pinned release, talking to
+ * stubbed /api/sandbox/wb/v1/* answers.
  */
 import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { validateWorkbenchHostConfig, type WorkbenchDiscovery } from "streamotter/contracts";
 import type { SandboxConnection, SandboxLease, SandboxRuntime, SandboxStatus } from "../apps/field-station/src/sandbox/contract.ts";
 import capture from "../apps/site/public/recordings/workbench/capture.json" with { type: "json" };
+import { PUBLISHED_SEAM } from "../apps/site/src/scripts/workbench-seam.ts";
 
 const iso = (offsetMs = 0): string => new Date(Date.now() + offsetMs).toISOString();
 const runtime: SandboxRuntime = { packages: { streamotter: "0.0.0-design-fixture", workbench: "0.0.0-design-fixture" }, mode: "synthetic-fixture", contractVersion: null };
 const available = (over: Partial<SandboxStatus> = {}): SandboxStatus => ({ now: iso(), availability: "available", runtime, slots: [{ slot: 1, state: "ready" }, { slot: 2, state: "leased" }, { slot: 3, state: "ready" }], queueLength: 0, nextFreeAt: null, ...over });
 const unavailable = (reason: NonNullable<SandboxStatus["reason"]>): SandboxStatus => ({ now: iso(), availability: "unavailable", reason, runtime: null, slots: [], queueLength: 0, nextFreeAt: null });
-const lease = (status: "ready" | "active" | "resetting", studyId = "study-a"): SandboxLease =>
-  ({ status, now: iso(), leaseId: "lease-fixture", studyId, slot: 2, grantedAt: iso(), expiresAt: iso(600_000), claimBy: status === "ready" ? iso(30_000) : null, runtime });
+/** A service that runs exactly the pinned workbench with host contract 1. */
+const pinned: SandboxRuntime = { ...runtime, packages: { streamotter: "0.0.0-design-fixture", workbench: PUBLISHED_SEAM!.version }, contractVersion: "1" };
+const lease = (status: "ready" | "active" | "resetting", studyId = "study-a", leaseRuntime = runtime): SandboxLease =>
+  ({ status, now: iso(), leaseId: "lease-fixture", studyId, slot: 2, grantedAt: iso(), expiresAt: iso(600_000), claimBy: status === "ready" ? iso(30_000) : null, runtime: leaseRuntime });
 const ended = (reason: Extract<SandboxLease, { status: "ended" }>["reason"]): SandboxLease => ({ status: "ended", now: iso(), reason, endedAt: iso() });
 const connection = (studyId = "study-a"): SandboxConnection => ({ leaseId: "lease-fixture", studyId, expiresAt: iso(600_000), gatewayOrigin: "http://127.0.0.1:1", gatewayPath: "/sandbox/2/socket.io" });
 
@@ -46,7 +52,7 @@ test("today's production answer, seam-unavailable, is first-class: nothing to st
   await page.goto("/workbench/");
   await expect(ui.root).toHaveAttribute("data-phase", "unavailable");
   await expect(ui.headline).toHaveText("The workbench sandbox is not available yet.");
-  await expect(ui.detail).toContainText("No published release does yet");
+  await expect(ui.detail).toContainText("The StreamOtter the sandbox service runs does not");
   await expect(ui.start).toBeDisabled();
   await expect(ui.mode).toHaveText("Not reported");
   await expect(ui.packages).toHaveText("Not reported");
@@ -155,7 +161,7 @@ test("a full pool queues with position, and leaving the line returns the place",
   expect(seen).toContain("POST session/return");
 });
 
-test("an explicit start claims at once; labels come from the service; the mount point stays inert without a published seam", async ({ page }) => {
+test("an explicit start claims at once; labels come from the service; the mount point stays inert while the service reports no host contract", async ({ page }) => {
   let state: SandboxLease = lease("ready");
   const seen = await stubSandbox(page, ({ method, path }) => {
     if (path === "status") return { json: available() };
@@ -166,7 +172,7 @@ test("an explicit start claims at once; labels come from the service; the mount 
     return undefined;
   });
   const appRequests: string[] = [];
-  page.on("request", request => { if (/\/app\.js|workbench-host\.json|\/api\/sandbox\/wb\//.test(request.url())) appRequests.push(request.url()); });
+  page.on("request", request => { if (/\/app\.js|workbench-host\.css/.test(request.url())) appRequests.push(request.url()); });
   const ui = panel(page);
   await page.goto("/workbench/");
   await ui.start.click();
@@ -176,7 +182,7 @@ test("an explicit start claims at once; labels come from the service; the mount 
   await expect(ui.mode).toHaveText("Synthetic fixture");
   await expect(ui.packages).toHaveText("streamotter@0.0.0-design-fixture · @streamotter/workbench@0.0.0-design-fixture");
   await expect(page.locator("[data-sandbox-contract]")).toHaveText("No host contract reported");
-  await expect(ui.mountNote).toContainText("pins no StreamOtter release that publishes the embeddable workbench");
+  await expect(ui.mountNote).toContainText("The sandbox service reports no host contract; this page mounts host contract 1.");
   await expect(page.locator("#streamotter-workbench-host")).toHaveCount(0);
   await expect(page.locator("[data-sandbox-mount]")).toBeHidden();
   expect(appRequests).toEqual([]);
@@ -385,4 +391,150 @@ test("coming back to the page checks in at once, without starting a second heart
   await expect.poll(beats, { timeout: 1_500 }).toBe(before + 1);
   await page.waitForTimeout(5_500);
   expect(beats()).toBe(before + 2);
+});
+
+// The published workbench, mounted. Discovery and the shell's reads are stubbed WHC-1 answers
+// (test fixtures); app.js and workbench-host.css are the pinned release's own files.
+const SHELL: WorkbenchDiscovery = { hostContract: 1, operations: ["workbench", "capabilities", "health", "sources", "channels", "config", "config.validate", "config.export", "traces", "dev.principals", "preview-sessions"], limits: { maxRequestBytes: 65_536 } };
+const FIXTURE_CONFIG = { projectId: "lontra-creek-sandbox-design-fixture" };
+/** The gateway on the page's own origin, as under `npm run dev:lab`, so a production build's policy ('self') allows it too. */
+const SAME_ORIGIN = `http://127.0.0.1:${process.env["LONTRA_SITE_PORT"] ?? 4321}`;
+function hostApi(path: string): Answer | undefined {
+  const op = path.replace(/^wb\/v1\//, "");
+  const ok = (data: unknown): Answer => ({ json: { ok: true, data } });
+  switch (op) {
+    case "workbench": return ok(SHELL);
+    case "config": return ok({ config: FIXTURE_CONFIG, fingerprint: "0".repeat(64) });
+    case "channels": case "sources": case "dev/principals": return ok({ items: [] });
+    case "health": return ok({ ready: true, sources: [] });
+    case "traces": return ok({ items: [], nextCursor: null });
+    default: return undefined;
+  }
+}
+/** An active lease on the pinned runtime, claimed by Start; `state` and the WHC-1 answers can be changed by the test. */
+async function stubMounted(page: Page, options: { hostApi?: (path: string) => Answer | undefined } = {}) {
+  const world = { state: { status: "none", now: iso() } as SandboxLease, headers: [] as { path: string; headers: Record<string, string> }[] };
+  const seen = await stubSandbox(page, ({ method, path }) => {
+    if (path.startsWith("wb/v1/")) return (options.hostApi ?? hostApi)(path);
+    if (path === "status") return { json: { ...available(), runtime: pinned } };
+    if (method === "POST" && path === "session") { world.state = lease("ready", "study-a", pinned); return { json: world.state }; }
+    if (path === "session/claim") { const study = world.state.status === "ready" || world.state.status === "active" ? world.state.studyId : "study-a"; world.state = lease("active", study, pinned); return { json: { ...connection(study), gatewayOrigin: SAME_ORIGIN } }; }
+    if (path === "session/reset") { world.state = lease("resetting", "study-b", pinned); return { status: 202, json: world.state }; }
+    if (path === "session/return") { world.state = ended("returned"); return { json: world.state }; }
+    if (path === "session") return { json: world.state };
+    return undefined;
+  });
+  page.on("request", request => { if (request.url().includes("/api/sandbox/")) world.headers.push({ path: new URL(request.url()).pathname, headers: request.headers() }); });
+  return { world, seen };
+}
+
+test("with an active lease on the pinned release and host contract 1, the real published workbench mounts in session mode, scoped to its mount", async ({ page }) => {
+  const { world, seen } = await stubMounted(page);
+  const violations: string[] = [];
+  page.on("console", message => { if (/Content.Security.Policy|Refused to|integrity/i.test(message.text())) violations.push(message.text()); });
+  page.on("pageerror", error => violations.push(error.message));
+  const ui = panel(page);
+  await page.goto("/workbench/");
+  const h1 = page.locator(".reference > header h1");
+  const before = await page.evaluate(() => ({ accent: getComputedStyle(document.documentElement).getPropertyValue("--accent"), h1: getComputedStyle(document.querySelector(".reference > header h1")!).fontSize, body: getComputedStyle(document.body).fontFamily }));
+  await ui.start.click();
+  await expect(ui.root).toHaveAttribute("data-phase", "active");
+  const mount = page.locator("#app");
+  await expect(mount).toHaveAttribute("data-streamotter-workbench", "");
+  await expect(mount.getByRole("heading", { name: "StreamOtter Workbench" })).toBeVisible();
+  await expect(mount.getByRole("note", { name: "Environment" })).toContainText("Synthetic fixture");
+  await expect(mount).not.toContainText("Version mismatch");
+  // The boot block is what WHC-1 accepts: same origin here, so no apiOrigin.
+  const boot = JSON.parse(await page.locator("script#streamotter-workbench-host").textContent() ?? "null") as unknown;
+  const checked = validateWorkbenchHostConfig(boot);
+  expect(checked.ok, JSON.stringify(checked)).toBe(true);
+  expect(boot).toMatchObject({ hostContract: 1, apiBase: "/api/sandbox/wb/v1", auth: { mode: "session" }, gateway: { origin: SAME_ORIGIN, path: "/sandbox/2/socket.io" }, environment: { kind: "sandbox", packageVersion: PUBLISHED_SEAM!.version } });
+  expect(boot).not.toHaveProperty("apiOrigin");
+  // Pinned files with their integrity; the scoped host stylesheet, never the native one.
+  await expect(page.locator("[data-sandbox-mount] link[rel=stylesheet]")).toHaveAttribute("href", PUBLISHED_SEAM!.hostStyle);
+  await expect(page.locator("[data-sandbox-mount] link[rel=stylesheet]")).toHaveAttribute("integrity", PUBLISHED_SEAM!.integrity.hostStyle);
+  await expect(page.locator("[data-sandbox-mount] script[type=module]")).toHaveAttribute("src", PUBLISHED_SEAM!.script);
+  await expect(page.locator("[data-sandbox-mount] script[type=module]")).toHaveAttribute("integrity", PUBLISHED_SEAM!.integrity.script);
+  await expect(page.locator(`a[href="${PUBLISHED_SEAM!.licenses}"]`)).toBeVisible();
+  // The site keeps its own heading and tokens (R12).
+  await expect(h1).toHaveText("Meet the workbench");
+  const after = await page.evaluate(() => ({ accent: getComputedStyle(document.documentElement).getPropertyValue("--accent"), h1: getComputedStyle(document.querySelector(".reference > header h1")!).fontSize, body: getComputedStyle(document.body).fontFamily }));
+  expect(after).toEqual(before);
+  // The browser holds only the session cookie: no Authorization anywhere, and the WHC-1 header on every host API request.
+  const hostRequests = world.headers.filter(entry => entry.path.startsWith("/api/sandbox/wb/v1/"));
+  expect(hostRequests.map(entry => entry.path)).toEqual(expect.arrayContaining(["/api/sandbox/wb/v1/workbench", "/api/sandbox/wb/v1/config", "/api/sandbox/wb/v1/health"]));
+  for (const entry of world.headers) expect(entry.headers["authorization"], entry.path).toBeUndefined();
+  for (const entry of hostRequests) expect(entry.headers["x-streamotter-workbench"], entry.path).toBe("1");
+  expect(allocations(seen)).toBe(1);
+  // In a production build the page's meta policy is enforced; nothing the workbench does breaks it.
+  expect(violations).toEqual([]);
+  const results = await new AxeBuilder({ page }).analyze();
+  const serious = results.violations.filter(v => ["serious", "critical"].includes(v.impact ?? ""));
+  expect(serious, serious.map(v => `${v.id}: ${v.nodes.map(n => n.target.join(" ")).join(", ")}`).join("\n")).toEqual([]);
+});
+
+test("a service on another workbench version is not mounted, and says why", async ({ page }) => {
+  const other: SandboxRuntime = { ...pinned, packages: { ...pinned.packages, workbench: "0.0.0-design-fixture" } };
+  await stubSandbox(page, ({ path }) => path === "status" ? { json: available({ runtime: other }) } : path === "session" ? { json: lease("active", "study-a", other) } : path === "session/claim" ? { json: connection() } : path.startsWith("wb/v1/") ? hostApi(path) : undefined);
+  const scripts: string[] = [];
+  page.on("request", request => { if (request.url().includes(PUBLISHED_SEAM!.script)) scripts.push(request.url()); });
+  const ui = panel(page);
+  await page.goto("/workbench/");
+  await ui.claim.click();
+  await expect(ui.mountNote).toHaveText(`The sandbox runs @streamotter/workbench@0.0.0-design-fixture; this page pins ${PUBLISHED_SEAM!.version}.`);
+  await expect(page.locator("#app")).toHaveCount(0);
+  expect(scripts).toEqual([]);
+});
+
+test("when the field station ends the browser session, the mounted workbench shows Session ended", async ({ page }) => {
+  let expired = false;
+  await stubMounted(page, { hostApi: path => expired ? { status: 401, json: { ok: false, error: { code: "UNAUTHENTICATED", message: "No session.", retryable: false, requestId: "" } } } : hostApi(path) });
+  const ui = panel(page);
+  await page.goto("/workbench/");
+  await ui.start.click();
+  const mount = page.locator("#app");
+  await expect(mount.getByRole("heading", { name: "StreamOtter Workbench" })).toBeVisible();
+  expired = true;
+  await mount.getByRole("tab", { name: "Inspect" }).click();
+  await expect(mount.getByRole("heading", { name: "Session ended" })).toBeVisible();
+  await expect(mount.getByRole("button", { name: "Reload" })).toBeVisible();
+});
+
+test("a reset reloads the page once and reopens the same lease on the new study, without a second allocation or a return", async ({ page }) => {
+  const { world, seen } = await stubMounted(page);
+  const ui = panel(page);
+  await page.goto("/workbench/");
+  await ui.start.click();
+  await expect(page.locator("#app")).toHaveAttribute("data-streamotter-workbench", "");
+  await page.evaluate(() => { (window as unknown as { beforeReset: boolean }).beforeReset = true; });
+  const reloaded = page.waitForEvent("load");
+  await ui.reset.click();
+  await expect(ui.headline).toHaveText("Starting a fresh study on slot 2…");
+  world.state = lease("active", "study-b", pinned);
+  await reloaded;
+  expect(await page.evaluate(() => (window as unknown as { beforeReset?: boolean }).beforeReset)).toBeUndefined();
+  await expect(ui.root).toHaveAttribute("data-phase", "active");
+  await expect(page.locator("#app")).toHaveAttribute("data-streamotter-workbench", "");
+  await expect(page.locator("#app").getByRole("heading", { name: "StreamOtter Workbench" })).toBeVisible();
+  await expect(ui.claim).toBeHidden();
+  expect(await page.evaluate(() => sessionStorage.getItem("lontra.workbench.reopen"))).toBeNull();
+  expect(allocations(seen)).toBe(1);
+  expect(seen).not.toContain("POST session/return");
+  // Start's claim, the claim after the reset, and the reopening claim after the reload.
+  expect(seen.filter(entry => entry === "POST session/claim")).toHaveLength(3);
+});
+
+test("a reload while the workbench is open does not reopen it by itself", async ({ page }) => {
+  const { seen } = await stubMounted(page);
+  const ui = panel(page);
+  await page.goto("/workbench/");
+  await ui.start.click();
+  await expect(page.locator("#app")).toHaveAttribute("data-streamotter-workbench", "");
+  await page.reload();
+  // Leaving returns the slot, as always; whether or not the return lands first, nothing reopens, claims, or allocates by itself.
+  await expect(ui.root).toHaveAttribute("data-phase", /^(?:active|ended)$/);
+  await page.waitForTimeout(1_000);
+  await expect(page.locator("#app")).toHaveCount(0);
+  expect(seen.filter(entry => entry === "POST session/claim")).toHaveLength(1);
+  expect(allocations(seen)).toBe(1);
 });

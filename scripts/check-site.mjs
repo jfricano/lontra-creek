@@ -31,4 +31,34 @@ for(const file of (await files(root)).filter(f=>f.endsWith('.html'))) {
     } catch {failures.push(`${route}: missing ${raw}`);}
   }
 }
-if(failures.length) {console.error(failures.join('\n'));process.exitCode=1;} else console.log(`Checked ${count} built local links and assets.`);
+// /workbench/ hosts the published workbench under a meta Content-Security-Policy that allows only
+// 'self' scripts and styles (sandbox contract §4), so the built page must have nothing inline.
+{
+  const route='/workbench/';
+  const html=await readFile(join(root,'workbench','index.html'),'utf8');
+  const policy=html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]*)"/)?.[1]?.replaceAll('&#39;',"'");
+  if(!policy) failures.push(`${route}: no meta Content-Security-Policy`);
+  else {
+    const directives=new Map(policy.split(';').map(part=>part.trim().split(/\s+/)).map(([name,...sources])=>[name,sources]));
+    for(const name of ['default-src','script-src','style-src']) if(directives.get(name)?.join(' ')!=="'self'") failures.push(`${route}: ${name} is not exactly 'self' (${directives.get(name)?.join(' ')})`);
+    if(!directives.has('connect-src')) failures.push(`${route}: the policy has no connect-src`);
+    if(/unsafe-|frame-ancestors/.test(policy)) failures.push(`${route}: the policy allows unsafe sources or carries frame-ancestors, which a meta policy cannot`);
+    const head=html.slice(0,html.indexOf('<meta http-equiv="Content-Security-Policy"'));
+    if(/<(?:script|link|style)\b/.test(head)) failures.push(`${route}: something loads before the meta Content-Security-Policy`);
+  }
+  for(const match of html.matchAll(/<script\b([^>]*)>/g)) {
+    const attributes=match[1];
+    if(!/\bsrc="/.test(attributes) && !/\btype="application\/json"/.test(attributes)) failures.push(`${route}: inline <script${attributes}>`);
+  }
+  if(/<style\b/.test(html)) failures.push(`${route}: inline <style>`);
+  if(/\sstyle=/.test(html)) failures.push(`${route}: a style= attribute`);
+  // The policy allows data: only for images; an inlined font would be refused.
+  for(const match of html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)) {
+    const css=await readFile(join(root,match[1]),'utf8').catch(()=>'');
+    if(/url\(\s*["']?data:(?!image\/)/.test(css)) failures.push(`${route}: ${match[1]} inlines a data: URL the policy refuses`);
+  }
+  const headers=await readFile(join(root,'_headers'),'utf8').catch(()=>'');
+  const block=headers.match(/^\/workbench\/\*\n((?:[ \t]+.+\n?)+)/m)?.[1]??'';
+  for(const header of ['X-Frame-Options: DENY',"Content-Security-Policy: frame-ancestors 'none'",'X-Content-Type-Options: nosniff']) if(!block.includes(header)) failures.push(`_headers: /workbench/* does not send ${header}`);
+}
+if(failures.length) {console.error(failures.join('\n'));process.exitCode=1;} else console.log(`Checked ${count} built local links and assets, and /workbench/'s policy.`);

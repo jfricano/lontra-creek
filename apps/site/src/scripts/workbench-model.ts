@@ -4,14 +4,15 @@
  * test/workbench-model.test.ts covers it. Nothing in this module invents a session,
  * a runtime, or a version: when the service has not said, the page says so.
  */
-import type { SandboxConnection, SandboxEndReason, SandboxErrorCode, SandboxLease, SandboxRuntime, SandboxStatus, WorkbenchDiscovery } from "../../../field-station/src/sandbox/contract.ts";
+import { isWorkbenchApiOrigin, validateWorkbenchHostConfig, WORKBENCH_BOOT_ELEMENT_ID, WORKBENCH_MOUNT_ELEMENT_ID, type WorkbenchDiscovery, type WorkbenchHostConfig } from "streamotter/contracts";
+import type { SandboxConnection, SandboxEndReason, SandboxErrorCode, SandboxLease, SandboxRuntime, SandboxStatus } from "../../../field-station/src/sandbox/contract.ts";
 import type { PublishedSeam } from "./workbench-seam.ts";
 
 /** WHC-1 `apiBase`: the sandbox's host API on the field station (sandbox contract §6). */
 export const API_BASE = "/api/sandbox/wb/v1";
-/** WHC-1 §2's `bootElementId` and `mountElementId`. */
-export const BOOT_ELEMENT_ID = "streamotter-workbench-host";
-export const MOUNT_ELEMENT_ID = "app";
+/** WHC-1 §2's `bootElementId` and `mountElementId`, from the published contract. */
+export const BOOT_ELEMENT_ID = WORKBENCH_BOOT_ELEMENT_ID;
+export const MOUNT_ELEMENT_ID = WORKBENCH_MOUNT_ELEMENT_ID;
 /** WHC-1 §4: without all of these the workbench shows only "Not available in this environment". */
 export const SHELL_OPERATIONS = ["config", "health", "channels", "sources"] as const;
 
@@ -54,7 +55,7 @@ const UNAVAILABLE: Readonly<Record<NonNullable<SandboxStatus["reason"]>, { headl
   "disabled": { headline: "The workbench sandbox is not enabled on this deployment.", detail: "This field station runs no sandbox service, so no session can start here." },
   "seam-unavailable": {
     headline: "The workbench sandbox is not available yet.",
-    detail: "A sandbox session runs the published StreamOtter workbench, which needs a release that publishes its host contract (WHC-1). No published release does yet, so the sandbox service has nothing to run and no session can start. Nothing on this page simulates one."
+    detail: "A sandbox session runs the published StreamOtter workbench, which needs a release that publishes its host contract (WHC-1). The StreamOtter the sandbox service runs does not, so it has nothing to run and no session can start. Nothing on this page simulates one."
   },
   "service-unavailable": { headline: "The sandbox service is not answering.", detail: "The field station cannot reach it, so no session can start, and any open session has ended." },
   "all-slots-unavailable": { headline: "Every sandbox slot is out of service.", detail: "Each slot is being cleaned or failed its cleanup. None is handed out again until it is clean." }
@@ -193,18 +194,14 @@ export function sessionView(input: SessionInput): SessionView {
   return { ...base, phase: "idle", enabled: start, headline: availability.headline, detail: availability.detail };
 }
 
-export type MountDecision =
-  | { mount: true; boot: HostBoot; script: string; style: string; integrity: PublishedSeam["integrity"] }
-  | { mount: false; reason: string };
+/** The boot block this page writes: WHC-1's `WorkbenchHostConfig`, with every field the sandbox needs present. */
+export type SandboxBoot = WorkbenchHostConfig & Required<Pick<WorkbenchHostConfig, "apiBase" | "auth" | "gateway">> & {
+  environment: Required<NonNullable<WorkbenchHostConfig["environment"]>>;
+};
 
-/** WHC-1 §3: the boot block, as `WorkbenchHostConfig` defines it (not exported by any published release yet). */
-export interface HostBoot {
-  hostContract: 1;
-  apiBase: string;
-  auth: { mode: "session" };
-  gateway: { origin: string; path: string };
-  environment: { kind: "sandbox"; label: string; detail: string; packageVersion: string };
-}
+export type MountDecision =
+  | { mount: true; boot: SandboxBoot; script: string; hostStyle: string; integrity: PublishedSeam["integrity"] }
+  | { mount: false; reason: string };
 
 export interface MountInput {
   lease: SandboxLease | null;
@@ -214,13 +211,26 @@ export interface MountInput {
   /** Where the page sends API requests ("" for its own origin), and the page's origin. */
   apiOrigin: string;
   pageOrigin: string;
+  /** The page's enforced `connect-src` (see `cspConnectSources`), or null when it sets no policy, as in development. */
+  connectSrc: readonly string[] | null;
+}
+
+/** The ws: or wss: origin a socket to an http: or https: origin uses. */
+export function websocketOrigin(origin: string): string { return origin.replace(/^http(s?):/, "ws$1:"); }
+
+/** Whether a `connect-src` source list lets the page reach an origin; `'self'` also covers the page's own host over ws: and wss: (CSP3). */
+export function connectAllows(sources: readonly string[] | null, origin: string, pageOrigin: string): boolean {
+  if (sources === null || sources.includes(origin)) return true;
+  return sources.includes("'self'") && (origin === pageOrigin || origin === websocketOrigin(pageOrigin));
 }
 
 /**
  * Whether to mount the published workbench, and with what. Only an active lease, a
  * release this site pins with the seam, a service that runs exactly that release and
- * contract, discovery listing the shell operations, a same-origin API base (WHC-1
- * refuses any other; R11), and the claim's connection together say yes.
+ * contract, discovery listing the shell operations, an API origin WHC-1 accepts (the
+ * page's own, or an exact `apiOrigin`; R11), a gateway this page's CSP lets it reach,
+ * and the claim's connection together say yes. The boot block is checked with the
+ * published `validateWorkbenchHostConfig` before it is returned.
  */
 export function mountDecision(input: MountInput): MountDecision {
   const { lease, connection, discovery, seam } = input;
@@ -232,11 +242,53 @@ export function mountDecision(input: MountInput): MountDecision {
   if (!discovery || discovery.hostContract !== seam.hostContract) return { mount: false, reason: "The sandbox did not describe its host API." };
   const missing = SHELL_OPERATIONS.filter(op => !discovery.operations.includes(op));
   if (missing.length) return { mount: false, reason: `The sandbox does not serve ${missing.join(", ")}, which the workbench needs to open.` };
-  if (input.apiOrigin !== "" && input.apiOrigin !== input.pageOrigin) return { mount: false, reason: "The sandbox's API is on another origin, and the workbench sends requests only to its own page's origin." };
+  const apiOrigin = input.apiOrigin === "" || input.apiOrigin === input.pageOrigin ? null : input.apiOrigin;
+  if (apiOrigin !== null && !isWorkbenchApiOrigin(apiOrigin)) return { mount: false, reason: `The sandbox's API origin, ${apiOrigin}, is not an exact https origin, so the workbench would refuse it.` };
   if (!connection || connection.leaseId !== lease.leaseId || connection.studyId !== lease.studyId) return { mount: false, reason: "The slot has not been claimed for the current study." };
-  return { mount: true, script: seam.script, style: seam.style, integrity: seam.integrity, boot: {
-    hostContract: 1, apiBase: API_BASE, auth: { mode: "session" },
-    gateway: { origin: connection.gatewayOrigin, path: connection.gatewayPath },
+  const gateway = connection.gatewayOrigin;
+  if (!connectAllows(input.connectSrc, gateway, input.pageOrigin) || !connectAllows(input.connectSrc, websocketOrigin(gateway), input.pageOrigin)) {
+    return { mount: false, reason: `The sandbox's gateway, ${gateway}, is not in this page's Content-Security-Policy, so the workbench could not reach it. This page was built for another gateway.` };
+  }
+  const boot: SandboxBoot = {
+    hostContract: 1, apiBase: API_BASE, ...(apiOrigin === null ? {} : { apiOrigin }), auth: { mode: "session" },
+    gateway: { origin: gateway, path: connection.gatewayPath },
     environment: { kind: "sandbox", label: MODE_LABELS[runtime.mode] ?? runtime.mode, detail: "An isolated demo session on synthetic data. Nothing here touches the field station, its Kafka topics, or another visitor.", packageVersion: runtime.packages.workbench }
-  } };
+  };
+  const checked = validateWorkbenchHostConfig(boot);
+  if (!checked.ok) return { mount: false, reason: `The workbench would refuse this page's boot block (${checked.issues.map(issue => `${issue.path}: ${issue.message}`).join("; ").slice(0, 200)}).` };
+  return { mount: true, script: seam.script, hostStyle: seam.hostStyle, integrity: seam.integrity, boot };
+}
+
+/** The manifest's placeholders (WHC-1 §2); any other `<…>` value fails the build. */
+const CSP_PLACEHOLDERS = new Set(["<api origin>", "<gateway origin>", "<gateway websocket origin>"]);
+
+/**
+ * The /workbench/ page's Content-Security-Policy, from the manifest's `csp`, delivered in a
+ * `<meta>` element: the placeholders are filled from `apiOrigin` and `gatewayOrigin`, or
+ * dropped when null (the page's own origin, which `'self'` covers). `frame-ancestors` is
+ * left out because a meta policy cannot carry it; Caddy and `public/_headers` send it as a
+ * header. The page adds `default-src`, `object-src`, `base-uri` and `form-action`.
+ */
+export function workbenchCsp(csp: Readonly<Record<string, readonly string[]>>, origins: { apiOrigin: string | null; gatewayOrigin: string | null }): string {
+  const fill = (source: string): string[] => {
+    if (!source.startsWith("<")) return [source];
+    if (!CSP_PLACEHOLDERS.has(source)) throw new Error(`Unknown placeholder ${source} in the workbench manifest's csp.`);
+    if (source === "<api origin>") return origins.apiOrigin === null ? [] : [origins.apiOrigin];
+    if (origins.gatewayOrigin === null) return [];
+    return [source === "<gateway origin>" ? origins.gatewayOrigin : websocketOrigin(origins.gatewayOrigin)];
+  };
+  const directives: [string, string[]][] = [["default-src", ["'self'"]]];
+  for (const [name, sources] of Object.entries(csp)) {
+    if (name === "frame-ancestors" || name === "default-src") continue;
+    directives.push([name, [...new Set(sources.flatMap(fill))]]);
+  }
+  directives.push(["object-src", ["'none'"]], ["base-uri", ["'none'"]], ["form-action", ["'self'"]]);
+  return directives.map(([name, sources]) => [name, ...sources].join(" ")).join("; ");
+}
+
+/** The sources a policy applies to fetches and sockets: `connect-src`, else `default-src`, else null (unrestricted). */
+export function cspConnectSources(policy: string | null): string[] | null {
+  if (!policy) return null;
+  const directives = new Map(policy.split(";").map(part => part.trim().split(/\s+/)).filter(([name]) => name).map(([name, ...sources]) => [name!.toLowerCase(), sources]));
+  return directives.get("connect-src") ?? directives.get("default-src") ?? null;
 }

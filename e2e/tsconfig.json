@@ -5,5 +5,5 @@
     // the base config leaves out for server-side sources.
     "lib": ["ES2024", "DOM"]
   },
-  "include": [".", "../playwright.config.ts"]
+  "include": [".", "../playwright.config.ts", "../playwright.real.config.ts"]
 }

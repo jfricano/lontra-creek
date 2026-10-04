@@ -13,9 +13,13 @@ interface Props {
   description: string;
   /** Keeps search engines away from placeholders and the not-found page. */
   noindex?: boolean;
+  /** A Content-Security-Policy for this page, delivered in a `<meta>` element ahead of everything it governs. */
+  csp?: string | undefined;
+  /** The tablet's network switch replaces window.WebSocket on every page; a page that hosts another app's sockets turns it off. */
+  tabletNetwork?: boolean;
 }
 
-const { title, description, noindex = false } = Astro.props;
+const { title, description, noindex = false, csp, tabletNetwork = true } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site);
 const socialImage = new URL("/social-preview.png", Astro.site);
 const current = Astro.url.pathname;
@@ -26,9 +30,10 @@ const isCurrent = (href: string) => (current.startsWith(href) ? "page" : undefin
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    {csp && <meta http-equiv="Content-Security-Policy" content={csp} />}
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <!-- Run before module evaluation, including SDK chunks shared by the build. -->
-    <script is:inline set:html={`(${bootstrapTabletNetwork.toString()})();`}></script>
+    {tabletNetwork && <script is:inline set:html={`(${bootstrapTabletNetwork.toString()})();`}></script>}
     <title>{title}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />

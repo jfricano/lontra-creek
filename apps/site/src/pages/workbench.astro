@@ -2,11 +2,20 @@
 import ReferencePage from "../layouts/ReferencePage.astro";
 import {LINKS} from "../site.ts";
 import {IN_YOUR_APP,JOB_SEED,STATION_SEED} from "../data/workbench-seed.ts";
+import workbenchHost from "virtual:lontra/workbench-host";
+import {workbenchCsp} from "../scripts/workbench-model.ts";
+import {PUBLISHED_SEAM} from "../scripts/workbench-seam.ts";
 // The recording's own provenance, not the site's build: a later pin must not relabel an older capture.
 import capture from "../../public/recordings/workbench/capture.json" with { type: "json" };
 const capturedOn=new Date(capture.capturedAt).toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric",timeZone:"UTC"});
 const node=capture.node.replace(/^v/,"");
 const json=(value:unknown)=>JSON.stringify(value,null,2);
+// The published workbench's policy, from its manifest (sandbox contract §4). Production builds only:
+// Vite's dev server needs inline styles and its own socket. The sandbox's gateways are routed on the
+// field station's origin (GATEWAY_PUBLIC_ORIGIN), so that origin is allowed over https: and wss:;
+// with no field station origin (same-origin), 'self' covers both. frame-ancestors is a header.
+const apiOrigin=(import.meta.env.PUBLIC_FIELD_STATION_ORIGIN??"").replace(/\/+$/,"")||null;
+const csp=import.meta.env.PROD&&workbenchHost?workbenchCsp(workbenchHost.csp,{apiOrigin,gatewayOrigin:apiOrigin}):undefined;
 const seeds=[
 {id:"seed-station",title:"The creek's station channel",seed:STATION_SEED,record:{topic:"field.gauges",key:STATION_SEED.record.key,value:STATION_SEED.record.value},origin:"From the creek simulation's first tick, mapped by the field station's own Kafka handler."},
 {id:"seed-job",title:"The init example's jobProgress channel",seed:JOB_SEED,record:{source:"jobs (fixture)",key:JOB_SEED.record.key,value:JOB_SEED.record.value},origin:"The first jobs fixture record of the streamotter init scaffold this site pins, mapped by that scaffold's handler."}
@@ -19,7 +28,7 @@ const panels=[
 {key:"export",title:"Export",description:"Export canonical configuration for review. The workbench never writes files or changes the running gateway; validate and generate locally before restarting it."}
 ];
 ---
-<ReferencePage title="Meet the workbench" description="Open the published StreamOtter workbench in an isolated sandbox when one is available, or follow its Connect, Define, Preview, Inspect, and Export steps in screenshots.">
+<ReferencePage title="Meet the workbench" description="Open the published StreamOtter workbench in an isolated sandbox when one is available, or follow its Connect, Define, Preview, Inspect, and Export steps in screenshots." csp={csp} tabletNetwork={false}>
 <section class="sandbox" data-sandbox data-phase="checking" aria-labelledby="sandbox-heading">
   <h2 id="sandbox-heading">Workbench sandbox</h2>
   <div class="sandbox-state" role="status"><p class="sandbox-headline" tabindex="-1" data-sandbox-headline>Checking the sandbox…</p><p data-sandbox-detail>Asking the field station for the sandbox's status and this browser's session.</p></div>
@@ -43,6 +52,7 @@ const panels=[
   <p class="sandbox-small" data-sandbox-runtime-note hidden>The sandbox service reports its mode and exact package versions only when it has a runtime to run. This page never fills them in from the site's own build.</p>
   <p class="sandbox-small" data-sandbox-mount-note></p>
   <div class="sandbox-mount" data-sandbox-mount hidden></div>
+  {PUBLISHED_SEAM&&<p class="sandbox-small" data-sandbox-licenses>A session runs StreamOtter's published <code>{PUBLISHED_SEAM.package}@{PUBLISHED_SEAM.version}</code>, served from this site. <a href={PUBLISHED_SEAM.licenses}>Its third-party licenses</a>.</p>}
   <p class="sandbox-small">A session is never started for you: not when this page opens, reloads, or comes back from your browser's history. Leaving the page returns your slot. A session also ends after a minute without a check-in from this page, which can happen when your browser slows a tab left in the background for several minutes. <a href="#workbench-steps">See the steps in screenshots instead</a>.</p>
 </section>
 <section aria-labelledby="seed-heading">

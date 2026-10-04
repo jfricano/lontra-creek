@@ -10,7 +10,7 @@ The route, its navigation entry, and the site summary in `site.ts` are unchanged
 | --- | --- |
 | `apps/site/src/scripts/workbench-model.ts` | View model, no DOM: availability and reason text, problems, session phases and controls, runtime labels, end reasons, and `mountDecision` (the mount gate and WHC-1 boot block) |
 | `apps/site/src/scripts/workbench.ts` | Page client: requests, heartbeat, `pagehide`/`pageshow`, buttons, the mount point |
-| `apps/site/src/scripts/workbench-seam.ts` | `PUBLISHED_SEAM`, the pinned workbench release with WHC-1. `null` today |
+| `apps/site/src/scripts/workbench-seam.ts` | `PUBLISHED_SEAM`, the pinned workbench release with WHC-1. `null` at W3; W9a pins `0.2.0-rc.1` |
 | `apps/site/src/data/workbench-seed.ts` | The `station` and `jobProgress` records and mapped states (design fixture), and the In your app terms |
 | `apps/site/src/pages/workbench.astro` | The page; recording provenance now comes from `public/recordings/workbench/capture.json` |
 | `apps/site/test/workbench-{model,seam,seed}.test.ts` | Unit tests |
@@ -43,6 +43,8 @@ Refusals (`too-many-places`, `queue-full`, `sandbox-unavailable`, `slot-unavaila
 
 ## Inert until W9a
 
+**Superseded by W9a** (see sandbox contract §4 for the current behavior). The page now pins `@streamotter/workbench@0.2.0-rc.1` (to be re-pinned from the published tarball after `npm publish`), serves `app.js`, `workbench-host.css` and `THIRD_PARTY_LICENSES.txt` from `/workbench/assets/0.2.0-rc.1/` (`apps/site/integrations/workbench-assets.mjs`), writes the boot block as the published `WorkbenchHostConfig` with `apiOrigin` when the field station is on another origin, links `workbench-host.css` before the boot block, `div#app` and `app.js`, and carries a meta Content-Security-Policy from the manifest in production builds. The `?study=` re-import is gone: a second mount in one document reloads the page and reopens the lease (WHC-1 has no teardown). The same-origin condition below no longer applies, and the remount question is answered. The text below is the W3 state.
+
 `mountDecision` mounts only when all of these hold: an `active` lease; `PUBLISHED_SEAM` is set; the lease's `runtime.contractVersion` equals the seam's host contract and `runtime.packages.workbench` equals its version; `GET /api/sandbox/wb/v1/workbench` lists `config`, `health`, `channels`, and `sources`; the API is on the page's origin (WHC-1 refuses a cross-origin `apiBase`; R11); and the claim's `SandboxConnection` matches the lease and study. Then it writes `script#streamotter-workbench-host` (JSON, session mode, `apiBase` `/api/sandbox/wb/v1`, gateway from the connection, `environment.kind: "sandbox"` with the service's mode label and workbench version), `div#app`, the stylesheet, and `app.js` with SRI. Discovery is not even requested while `PUBLISHED_SEAM` is `null`.
 
 Today `PUBLISHED_SEAM` is `null` (rc.3 ships no `workbench-host.json`), the production service answers `seam-unavailable`, and the page mounts nothing and simulates nothing. `workbench-seam.test.ts` fails once the installed `@streamotter/workbench` publishes the manifest and `PUBLISHED_SEAM` has not been filled in from it.
@@ -66,7 +68,7 @@ ASTRO_TELEMETRY_DISABLED=1 npm run build -w @lontra-creek/site && npm run check:
 npx playwright test e2e/workbench.spec.ts --project chromium  # starts npm run dev; stubs every sandbox answer
 ```
 
-The specs need no sandbox service: they stub `/api/sandbox/*` with `page.route`, and one spec checks the unstubbed dev field station (which has no sandbox routes). The back-forward cache spec dispatches `pagehide`/`pageshow` with `persisted: true`, because headless Chromium does not reliably restore from the cache; a separate spec navigates away and back for real and checks that nothing allocates. Firefox and WebKit runs belong to W10.
+The specs need no sandbox service: they stub `/api/sandbox/*` with `page.route`, and one spec checks the unstubbed dev field station (which has no sandbox routes). Since W9a the mounted-workbench specs run the real pinned `app.js` (served by the dev server) against stubbed `/api/sandbox/wb/v1/*` answers, and `e2e/real/workbench-sandbox.spec.ts` (`playwright.real.config.ts`, `SANDBOX_REAL_ORIGIN`) runs against a `npm run dev:lab` stack. The back-forward cache spec dispatches `pagehide`/`pageshow` with `persisted: true`, because headless Chromium does not reliably restore from the cache; a separate spec navigates away and back for real and checks that nothing allocates. Firefox and WebKit runs belong to W10.
 
 ## Acceptance evidence (fixture level)
 

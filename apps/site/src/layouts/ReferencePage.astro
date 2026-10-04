@@ -1,10 +1,10 @@
 ---
 import Base from "./Base.astro";
 import { RELEASE } from "../site.ts";
-interface Props { title: string; description: string; noindex?: boolean }
-const {title,description,noindex=false}=Astro.props;
+interface Props { title: string; description: string; noindex?: boolean; csp?: string | undefined; tabletNetwork?: boolean }
+const {title,description,noindex=false,csp,tabletNetwork=true}=Astro.props;
 ---
-<Base title={`${title} · StreamOtter`} description={description} noindex={noindex}>
+<Base title={`${title} · StreamOtter`} description={description} noindex={noindex} csp={csp} tabletNetwork={tabletNetwork}>
   <div class="wrap reference">
     <header><p class="eyebrow">StreamOtter <span>v{RELEASE}</span></p><h1>{title}</h1><p class="lede">{description}</p></header>
     <slot />

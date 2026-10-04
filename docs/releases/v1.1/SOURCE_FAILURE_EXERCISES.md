@@ -1,0 +1,114 @@
+# Lontra Creek V1.1 — Source failure exercises
+
+October 4, 2026 · Owner: Jason Fricano · Slice W9b · Built on the phase 2 branch `feat/v1.1-source-failure-exercises` against a pre-publish pack of StreamOtter 0.2.0-rc.1
+
+The Failure Lab's **Source failures** track: nine stories (LC11-S01–S09) in which a bad record reaches a leased bench and the visitor watches what StreamOtter 0.2.0-rc.1's opt-in failure handling does with it: hold it, save it as evidence, refuse to continue until the view can be trusted, evaluate it again, and reprocess it on approval. This page says what the exercises are, how to run them locally, why the hosted demo differs, what has been proven at which level, and how the temporary pre-publish packages come out.
+
+The interfaces are fixed elsewhere and not repeated here: the [Lab contract §12](../../contracts/lab-api.md#12-the-source-failures-track-v11) (routes, intents, projection, page), its private bench surface in §8b, the [companion plan](LONTRA_CREEK_V1_1_COMPANION_PLAN.md#4-scenario-catalog-and-release-coverage) (stories and labels), and the decisions listed at the end. [STATUS.md](STATUS.md) is the live tracker. Where this page and the [rollout plan](../0.2.0-rc.1/ROLLOUT_PLAN.md) differ about hosting, the rollout plan wins.
+
+## What the exercises are
+
+| Story | `?scenario=` | What it shows | Where it can run |
+| --- | --- | --- | --- |
+| LC11-S01 Fouled sensor: fix and retry | `fouled-sensor` | The default pause: restore calibration, retry the exact held record, nothing skipped | Every Lab, as before; also as an intent with any profile but `off` |
+| LC11-S02 Garbled reading: preserve and hold | `garbled-reading` | Invalid JSON is saved as evidence and the source stays held; saved bytes are not repairable | Public track, profile `quarantine` |
+| LC11-S03 Bad projection: recover from authoritative state | `bad-projection` | The headline path: quarantine, the recovery guard refusing to continue, then continuing once snapshot coverage is established | Public track, profile `quarantine` |
+| LC11-S04 Inspect the old reading: evaluate, then reprocess | `inspect-old-reading` | A dry-run evaluation with no delivery effect, one reviewed approval, and a newer snapshot superseding the old state | Public track, profile `quarantine` |
+| LC11-S05 Conflicting readings: stopping is correct | `conflicting-readings` | Two different readings at one revision stay held; there is no force-skip | Public track, profile `quarantine` |
+| LC11-S06 Calibration lookup blip | `calibration-blip` | Bounded retry of a transient mapper error: a clean retry, then retries that run out | Public track, profile `retry` or `quarantine` |
+| LC11-S07 Too many bad readings | `too-many-bad-readings` | The automatic-continuation limit: the sixth incident holds | Local and CI only |
+| LC11-S08 Recovery across restart and a new subscription | `restart-recovery` | The durable failure journal keeps a cumulative recovery barrier across a gateway restart | Local and CI only |
+| LC11-S09 Unavailable evidence | `unavailable-evidence` | A deleted quarantine copy refuses stored reprocessing | Local and CI only |
+
+A visitor borrows a bench, opens the Source failures track, and presses **Start this scenario**. The field station publishes the scenario's synthetic LC-03 (and, for S08, LC-01) records to that bench's own topics, recording each in the coverage ledger first. The incident panel then shows the application's view, the record's disposition, and the observed steps, and offers one **Next supported action** at a time (retry, reassess, prepare coverage, evaluate, or a reviewed approval to reprocess). Every incident fact comes from the installed library's published operator API (`streamotter/gateway/operator`); nothing is simulated. Returning the bench discards its study; it never fixes a held incident.
+
+A scenario is offered only when the capability summary (`GET /api/lab/capabilities`, contract §12.3) lists it as available. That needs all of:
+
+1. The installed StreamOtter release is one this backend's Lab was verified against **for that scenario** (`VERIFIED_WITH` in `apps/field-station/src/lab/capabilities.ts`). A scenario joins that set only after its real-Kafka test passes on `npm run dev:lab`. For 0.2.0-rc.1 the set starts empty.
+2. The deployment has Lab benches.
+3. The deployment's failure-handling profile (`LAB_FAILURE_HANDLING`: `off`, `retry`, or `quarantine`, set alike on the field station and every bench) provides what the scenario needs, and, for S07–S09, `LAB_LOCAL_EXERCISES=1` is set.
+
+Otherwise the page lists the scenario with the summary's reason and its Start button stays inert. An older backend without the route answers 404, and the page says it does not support the scenario.
+
+## Run them locally
+
+The exercises need real Kafka, so they run only under `npm run dev:lab` ([LOCAL_LAB.md](../../LOCAL_LAB.md)); `npm run dev` and `npm run dev:kafka` have no Lab benches.
+
+Requirements: Node 24.15 or later (the failure journal's floor: earlier Node 24 releases warn that `node:sqlite` is experimental, and the gateway refuses to open the journal on them; the image runs 24.21.0), Docker with Compose 2.24.4 or later, and OpenSSL.
+
+```sh
+npm ci
+npm run dev:lab
+```
+
+Then, in a test browser profile (see LOCAL_LAB.md for the throwaway certificate):
+
+1. Open `https://localhost:8443/lab/#source-failures` and choose **Borrow a bench**.
+2. Pick a scenario that the page lists as available and choose **Start this scenario**.
+3. Follow the incident panel's **Next supported action**. For reprocessing, the review dialog shows exactly what you approve.
+
+To see what this backend offers, without a browser:
+
+```sh
+curl --cacert .local/lab/secrets/origin/ca.pem https://localhost:8443/api/lab/capabilities
+```
+
+The contract's local profile is `quarantine` with `LAB_LOCAL_EXERCISES=1` (§12.2), with the local stack's least-privilege Kafka ACLs (`KAFKA_AUTHORIZATION=acl`, LC11-ADR-03), which include the grants for each bench's quarantine topics. Which scenarios the local stack offers on 0.2.0-rc.1 is whatever the capability summary above reports; STATUS.md records it.
+
+<!-- W9b verification: fill after slice D -->
+
+The unit, library and fixture suites below run with `npm test` on Node 24. Under Node 22, eight tests in `lab-coverage.test.ts` are cancelled by the test runner, which is not a product failure.
+
+## The hosted demo
+
+**In both hosted phases the Lab benches and the workbench sandbox are off**, and the pages read them as unavailable rather than broken: `/lab/` says "The Lab is unavailable." with **Borrow a bench** disabled, and each source-failure story is listed with the reason the capability summary gives. Phase 1 (#40 and #41) runs StreamOtter 0.1.0-rc.3, which lacks the failure APIs, so every new story waits for a StreamOtter release. Phase 2 (the pin PR) runs 0.2.0-rc.1 with no benches, so the stories read as not verified or as having no Lab benches. The [rollout plan](../0.2.0-rc.1/ROLLOUT_PLAN.md) has the sequence and the acceptance checks.
+
+Turning the hosted Lab on is not part of either phase. It needs Jason's separate approval and its own acceptance: a `lab.enabled` release on the shared host, with devops's shared-host procedure.
+
+Even then the hosted exercises would differ from local ones, because the hosted broker runs `KAFKA_AUTHORIZATION=none`: every SCRAM user can read and write every topic (the Lab threat model's residual risk R2). A bench that writes quarantine evidence makes that a release risk, so:
+
+- Hosted benches would run profile `retry`, which offers only S06 (`calibration-blip`) among the new stories, beside S01.
+- S02–S05 need profile `quarantine`, which waits for the owner-approved Kafka authorization migration (LC11-ADR-03; `deploy/OPERATIONS.md`, Kafka authorization). The pin PR's quarantine-topic grants take effect only once the broker enforces ACLs, and that migration never weakens existing authorization.
+- S07–S09 stay local and CI exercises (companion plan §4): they need the CI harness or a restart a visitor can't make on the hosted Lab. S09, for example, needs a harness that deletes the scenario's quarantine copy.
+
+## What is proven where
+
+| Level | What it shows | Where |
+| --- | --- | --- |
+| Rendering fixtures | The page's catalog, deep links, availability reasons, intent bodies, operation lookups, the review dialog, labels, focus, and axe, against scripted answers. Not evidence that any backend produces them | `apps/site/test/lab-catalog.test.ts`, `lab-incident.test.ts`, `lab-operation.test.ts`, `lab-approval.test.ts`; `e2e/lab-source-failures.spec.ts` |
+| Application, scripted bench | Intent validation and idempotency, preconditions and stale revisions, lease cancellation, the projection's composition, and each scenario's records against a hand-written expected ledger | `apps/field-station/test/lab-intents.test.ts`, `lab-capabilities.test.ts` |
+| Operator adapter, typed fake | The bench's bookkeeping: profiles, handler variants, the guard, plan tokens, closed studies | `apps/field-station/test/lab-bench-failures.test.ts` |
+| Installed library, fixture source | StreamOtter 0.2.0-rc.1's own behavior through its published exports: the journal, S02 quarantine and hold, S03 guard hold and reassess, S04 evaluation and single-use approval, S05 integrity hold, S06 and S01 under `retry`, S07 circuit, restart and reset. The quarantine topic, the committed offset, and Kafka coordinates are left to real Kafka | `apps/field-station/test/lab-failures.test.ts` |
+| Real Kafka, local stack | Each scenario end to end on `npm run dev:lab`; a scenario is offered only after this passes (contract §12.3) | See below |
+| Hosted | Nothing: no bench runs on the hosted demo in either phase | — |
+
+Results at the real-Kafka level are recorded in STATUS.md and here, scenario by scenario, as each passes. Until a scenario is listed, treat it as not verified on real Kafka, whatever the lower levels show.
+
+<!-- W9b verification: fill after slice D -->
+
+## Pre-publish packages, and their removal
+
+StreamOtter 0.2.0-rc.1 is not on npm yet. To build and test the exercises before it is, this branch installs six locally packed tarballs from [`vendor/`](../../../vendor/README.md): `jfricano/StreamOtter@4e67ef8` (the head of its #56), with every package version set to 0.2.0-rc.1. They arrived in one commit marked temporary (`chore(vendor): TEMPORARY pre-publish StreamOtter 0.2.0-rc.1 tarballs`).
+
+Until 0.2.0-rc.1 is published:
+
+- The GitHub tag `v0.2.0-rc.1` and the npm pages the site links to answer 404, and `npm install streamotter@0.2.0-rc.1` fails. An unpinned `npm install streamotter` installs 0.1.0-rc.3.
+- `scripts/check-release-pins.mjs` runs first in the Images (`images.yml`) and Deploy static site (`site.yml`) workflows and refuses this branch: StreamOtter must come from the npm registry at an exact version. No image or site build is made from the vendored packages.
+- The site's recorded workbench screenshots and creek recording say they were captured from a pre-publish tarball. The label comes from the lockfile, so it can't say npm until the packages come from the registry.
+
+After 0.2.0-rc.1 is published and verified on npm (rollout plan, step 1), one commit:
+
+1. Removes `vendor/`, the `file:` specs in `apps/field-station/package.json` and `apps/site/package.json`, the root `overrides`, and the two `COPY vendor vendor` lines in `deploy/Dockerfile`.
+2. Pins `streamotter` to `0.2.0-rc.1` exactly in both apps and regenerates `package-lock.json` from the registry.
+3. Re-pins `PUBLISHED_SEAM` in `apps/site/src/scripts/workbench-seam.ts` (version and the sha384 integrity of `app.js` and `workbench-host.css`) from the **published** tarball's `workbench-host.json`. `apps/site/test/workbench-seam.test.ts` and the site build fail until it matches the installed files.
+
+Then `node scripts/check-release-pins.mjs` passes, and the usual checks run on Node 24: `npm run typecheck`, `npm test`, the site build, `npm run check:site`, and `npm run test:browser`. Recapturing the recordings from the registry install ([content verification](../../research/content-verification.md)) changes their labels to npm. The pin PR also re-runs the Lab threat model's §10.2 and checks S1–S6 against the published package (Lab contract R4), and needs its own review and devops reconciliation before Jason merges it.
+
+## Decisions and contracts
+
+- [Lab contract §12](../../contracts/lab-api.md#12-the-source-failures-track-v11) (the track) and §8b (the private intent surface); §10.9 for the local Kafka ACLs.
+- [LC11-ADR-01](decisions/LC11-ADR-01-coverage-ledger-and-guard.md): the application coverage ledger and the recovery guard, with its W9b binding notes.
+- [LC11-ADR-02](decisions/LC11-ADR-02-study-restart-and-reset.md): restart keeps a study; reset discards it.
+- [LC11-ADR-03](decisions/LC11-ADR-03-private-operations-and-kafka-authority.md): operator operations stay inside the bench; least-privilege Kafka authorization, hosted only after approval.
+- [Companion plan](LONTRA_CREEK_V1_1_COMPANION_PLAN.md) §§4–11 and the [acceptance plan](LONTRA_CREEK_V1_1_ACCEPTANCE_PLAN.md) (LC11-A05–A24, A28, A31, A32).
+- [Release handoff](RELEASE_HANDOFF.md) and the [rollout plan](../0.2.0-rc.1/ROLLOUT_PLAN.md).

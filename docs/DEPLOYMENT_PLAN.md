@@ -2,6 +2,8 @@
 
 September 25, 2026 · Engineering plan for taking Lontra Creek from local development to `streamotter.dev`
 
+> **October 4, 2026: read with the rollout plan.** This plan was written for a dedicated host in the standalone `/srv/lontra` layout (workstream 5: `deploy/setup.sh`, the `Deploy demo` workflow, the origin certificate). The hosted demo is now to run on a shared host behind devops's TLS edge, under `/srv/apps/lontra` with `/etc/apps/lontra/lontra.env`, activated by an operator with devops's shared-host procedure; no workflow deploys the backend. The [rollout plan](releases/0.2.0-rc.1/ROLLOUT_PLAN.md) governs hosting, sequence, acceptance and rollback, [SHARED_HOST_READINESS.md](SHARED_HOST_READINESS.md) describes the adapter, and the standalone scripts must not be run on the shared host. Workstreams 1–4, 6 and 7 still describe the code; V1.1's additions are in [docs/releases/v1.1/](releases/v1.1/README.md).
+
 [PLAN.md](PLAN.md) owns scope, the story, architecture, consistency rules, and launch criteria. [HOSTING.md](HOSTING.md) is the owner's account and server checklist. This document is the engineering work in between: what to build, in what order, and how each piece is proven before it goes near a server. [TEAM_PLAN.md](TEAM_PLAN.md) assigns the remaining workstreams to the team and orders them into sprints.
 
 ## Where things stand
@@ -18,7 +20,7 @@ Milestone A (the stack proven in CI) is reached: workstreams 1–4 are merged in
 
 ## Rules that apply to every step
 
-- **npm only.** Use StreamOtter as the published `streamotter` package at the exact version in `apps/*/package.json` (now `0.1.0-rc.3`). No submodules, workspace links, local paths, or copies of the StreamOtter repository's source. Reading its public docs is fine. A bug found here becomes an issue there; upgrade after a release.
+- **npm only.** Use StreamOtter as the published `streamotter` package at the exact version in `apps/*/package.json` (`0.1.0-rc.3` in #40 and #41; the phase 2 branch temporarily installs a pre-publish pack of `0.2.0-rc.1` from `vendor/`, which `scripts/check-release-pins.mjs` keeps out of every release build until the registry pin replaces it). No submodules, workspace links, local paths, or copies of the StreamOtter repository's source. Reading its public docs is fine. A bug found here becomes an issue there; upgrade after a release.
 - **Authorship.** Commits are the owner's alone: no `Co-Authored-By` or other attribution lines, in commits or pull requests. The repository's local git identity is set.
 - **Owner's approval** before merging to `main`, deploying, creating or changing cloud resources, or anything that costs money. The owner holds every account; never handle their passwords, card details, or private keys.
 - **Branches and pull requests.** One branch per workstream below; CI must pass before merge.

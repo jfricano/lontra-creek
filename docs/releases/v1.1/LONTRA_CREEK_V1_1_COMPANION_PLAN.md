@@ -5,7 +5,8 @@
 
 **Companion product, demo, and delivery plan**\
 Prepared for Jason Fricano / Orca Solutions · September 28, 2026\
-Revision 0.4 · Proposed plan; not implemented, tested, or approved for public deployment
+Revision 0.4 · Proposed plan; not implemented, tested, or approved for public deployment\
+**Implementation state (October 4, 2026):** built on the V1.1 branches and not deployed; see [STATUS.md](STATUS.md).
 
 **Site baseline:** `jfricano/lontra-creek@2397e2cbdfa3a32dda69920583ed9d18881ab863`.\
 **Library installed by that site:** `streamotter@0.1.0-rc.3`.\

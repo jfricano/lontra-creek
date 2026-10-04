@@ -15,7 +15,7 @@ Lontra Creek has three ways to run locally. They are not interchangeable.
 | --- | --- | --- | --- | --- |
 | `npm run dev` | Field station replaying the simulation through a development gateway, the Astro dev server, and the StreamOtter workbench, at `http://127.0.0.1:4321` | No (fixture replay) | No | Node 24 |
 | `npm run dev:kafka` | The walkthrough on a native, loopback-only, plaintext Kafka broker, with persistent private notebooks (chapter six), at `http://127.0.0.1:4321/field-station/` | Yes, your own Kafka 4.1.2 and JDK 21 install | No | Node 24, `KAFKA_HOME`, `JAVA_HOME` |
-| `npm run dev:lab` | The production container topology plus three Lab benches and the workbench sandbox, behind local HTTPS, at `https://localhost:8443/lab/` and `/workbench/` | Yes, in Docker, over TLS with SCRAM | Yes, three benches | Node 24, Docker, Compose 2.24.4+, OpenSSL |
+| `npm run dev:lab` | The production container topology plus three Lab benches and the workbench sandbox, behind local HTTPS, at `https://localhost:8443/lab/` and `/workbench/` | Yes, in Docker, over TLS with SCRAM | Yes, three benches | Node 24.15+, Docker, Compose 2.24.4+, OpenSSL |
 
 `npm run dev` and `npm run dev:kafka` start no Lab benches; the `/lab/` page
 there has no live benches. Only `dev:lab` exercises the real Lab, and only
@@ -24,7 +24,9 @@ demonstrate it.
 
 ## Requirements
 
-- Node 24 or later, and `npm ci` already run in this checkout.
+- Node 24.15 or later (the failure journal's floor), and `npm ci` already run in
+  this checkout. On this branch `npm ci` installs StreamOtter 0.2.0-rc.1 from the
+  pre-publish tarballs in `vendor/` ([vendor/README.md](../vendor/README.md)).
 - Docker (Engine or Desktop) with the daemon running, and the Docker Compose v2
   plugin, 2.24.4 or later (the local overlay uses `!override`).
 - OpenSSL, for the throwaway secrets and test certificates.
@@ -174,6 +176,75 @@ SANDBOX_API_ORIGIN=https://localhost:8443 SANDBOX_SITE_ORIGIN=https://localhost:
   node --test --test-force-exit deploy/test/sandbox.test.ts
 ```
 
+## The workbench sandbox
+
+`deploy/compose.sandbox.yaml` adds one `sandbox` container, from the same image,
+with three synthetic slots (`SANDBOX_SLOTS`, default 3) on the published
+StreamOtter workbench seam (WHC-1): each slot runs the creek's `station` channel
+and the `streamotter init` example's `jobProgress` on fixture sources, never
+Kafka. `https://localhost:8443/workbench/` mounts the published
+`@streamotter/workbench` UI, served from the site's own origin, once you choose
+**Start a sandbox session**. Its contract is
+[docs/contracts/sandbox-api.md](contracts/sandbox-api.md), and its design
+[LC11-ADR-04](releases/v1.1/decisions/LC11-ADR-04-workbench-sandbox-architecture.md).
+
+| Inside the Compose network | What it is | Routed by Caddy |
+| --- | --- | --- |
+| `sandbox:7620` | The sandbox API; only the field station calls it, with `SANDBOX_SERVICE_TOKEN` | No |
+| `sandbox:7601` to `sandbox:7603` | Slot N's development gateway | Only `/sandbox/N/socket.io/*`, for the site's exact Origin (403 otherwise) |
+| Loopback inside the container | Each study's management handler, answering only a per-study key | No |
+
+The field station and the sandbox share `SANDBOX_SERVICE_TOKEN`, a 32-byte random
+value in `.local/lab/.env`. `deploy/make-secrets.sh` writes it into a new env
+file; for an env file made before the sandbox existed, `up` appends one once.
+The sandbox refuses to start with any `FIELD_STATION_*` value, Kafka credential,
+or `LAB_*_TOKEN` in its environment, and it publishes no port.
+
+Lab benches and sandbox slots share one place limit: a client address holds at
+most two places across both (`too-many-places` otherwise). A session ends after
+a minute without a check-in from the page.
+
+## Source-failure exercises
+
+The Lab page's **Source failures** track runs the V1.1 exercises (LC11-S01–S09)
+on a borrowed bench: open `https://localhost:8443/lab/#source-failures`, choose
+**Borrow a bench**, then **Start this scenario** on a story the page lists as
+available, and follow the incident panel. What each story shows, how a scenario
+gets offered, and what has been verified where are in
+[SOURCE_FAILURE_EXERCISES.md](releases/v1.1/SOURCE_FAILURE_EXERCISES.md); the
+interface is the [Lab contract, section 12](contracts/lab-api.md#12-the-source-failures-track-v11).
+
+Whether a story is offered is the backend's answer, not the page's. Ask it
+directly:
+
+```sh
+curl --cacert .local/lab/secrets/origin/ca.pem https://localhost:8443/api/lab/capabilities
+```
+
+A story the summary doesn't list as available stays listed with its reason:
+`not-integrated` while the installed release isn't one this Lab was verified
+against for that story (for 0.2.0-rc.1 a story joins that set only after its
+real-Kafka test passes here), or `deployment-restricted` when the benches'
+failure-handling profile (`LAB_FAILURE_HANDLING`) or `LAB_LOCAL_EXERCISES`
+doesn't cover it. Which stories the local stack offers is recorded in
+[STATUS.md](releases/v1.1/STATUS.md).
+
+<!-- W9b verification: fill after slice D -->
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `Port 8443 on 127.0.0.1 is in use` | Another local Lab or another program holds it. `npm run dev:lab -- stop` for a local Lab; there is only one port 8443. |
+| `npm ci` in the image build fails with `SELF_SIGNED_CERT_IN_CHAIN` | Your network re-signs HTTPS; use `--extra-ca` (below). |
+| Compose says `SANDBOX_SERVICE_TOKEN` is required | A hand-made env file without it. Append one as `deploy/OPERATIONS.md` (Workbench sandbox overlay) shows, then recreate `field-station` and `sandbox` together. `npm run dev:lab` does this for you. |
+| `/workbench/` says the sandbox is not enabled | The field station has no `SANDBOX_API_URL`: the stack was started without `deploy/compose.sandbox.yaml`. Start it with `npm run dev:lab`, or add that file to a manual `docker compose` command. |
+| `/api/sandbox/status` reports `seam-unavailable` | The installed StreamOtter has no WHC-1 manifest. Run `npm ci`, then `up` (with builds). |
+| The site build fails with `Workbench assets: … Re-pin apps/site/src/scripts/workbench-seam.ts` | The installed `@streamotter/workbench` differs from the version and integrity the site pins. Re-pin from the installed `workbench-host.json`, as the file's comment says. |
+| Every source-failure story is listed as unavailable | See the capability summary's reason (above). With Lab benches running, that is the backend's answer, not a fault. |
+| `npm test` reports eight cancelled tests in `lab-coverage.test.ts` | It ran on Node 22. Use Node 24.15 or later. |
+| Starting a sandbox session answers `too-many-places` | This address already holds two places across the Lab and the sandbox. Return a bench or end a session. |
+
 ## Behind a TLS-intercepting proxy
 
 If `npm ci` inside the image build fails with `SELF_SIGNED_CERT_IN_CHAIN` or a
@@ -229,7 +300,7 @@ They use the same directory, files and project name, so the launcher's
 npm ci
 mkdir -p .local/lab
 export LOCAL_LAB_DIR="$PWD/.local/lab"
-deploy/make-secrets.sh "$LOCAL_LAB_DIR/.env"
+deploy/make-secrets.sh "$LOCAL_LAB_DIR/.env"            # includes SANDBOX_SERVICE_TOKEN
 deploy/make-certs.sh kafka "$LOCAL_LAB_DIR/secrets/kafka" lab-1-kafka lab-2-kafka lab-3-kafka
 deploy/make-certs.sh test-origin "$LOCAL_LAB_DIR/secrets/origin" localhost   # only once: it always makes a new CA
 node --input-type=module <<'JS'

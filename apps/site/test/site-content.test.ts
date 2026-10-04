@@ -64,6 +64,10 @@ test("no page or script still says \"four controlled failures\"", () => {
   for (const file of sources(SRC)) assert.doesNotMatch(readFileSync(file, "utf8"), /four controlled failures/i, file);
 });
 
+test("no page shows an unpinned install: npm's latest tag need not be the release the site describes", () => {
+  for (const file of sources(join(SRC, "pages"))) assert.doesNotMatch(readFileSync(file, "utf8"), /npm (?:install|i) streamotter(?![@\w/-])/, file);
+});
+
 test("the releases page reports what the field station answers, and only that", () => {
   const rc3 = { kind: "summary", summary: labCapabilities({ labEnabled: false, now: 0, version: "0.1.0-rc.3" }) } as const;
   assert.deepEqual(serviceLines({ config: { gatewayOrigin: "", gatewayPath: "/socket.io/", mode: "fixture", tickMs: 2000 }, capabilities: rc3 }, "0.1.0-rc.3"), [

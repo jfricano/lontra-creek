@@ -54,6 +54,9 @@ export interface DerivedMutation {
 /** Channels a bench serves; holts never reach a bench. */
 const BENCH_CHANNELS: ReadonlySet<string> = new Set(['station', 'otter', 'reach', 'creekOverview']);
 
+/** A mutation built at a tick the world has since passed: nothing was derived or recorded, so it may be built again. */
+export class StaleMutationError extends RangeError { constructor() { super('A mutation is at or after the current tick.'); } }
+
 /**
  * Derives a mutation's affected instances by applying it to a copy of the world
  * and comparing every view the simulation derives, before and after. The tick is
@@ -61,7 +64,8 @@ const BENCH_CHANNELS: ReadonlySet<string> = new Set(['station', 'otter', 'reach'
  * returned are then derived at the mutation's own tick.
  */
 export function deriveMutation(world: WorldState, mutation: DomainMutation): DerivedMutation {
-  if (!Number.isSafeInteger(mutation.tick) || mutation.tick < world.tick) throw new RangeError('A mutation is at or after the current tick.');
+  if (!Number.isSafeInteger(mutation.tick)) throw new RangeError('A mutation is at or after the current tick.');
+  if (mutation.tick < world.tick) throw new StaleMutationError();
   const entries = Object.entries(mutation.reading);
   if (entries.length === 0 || entries.some(([, value]) => typeof value !== 'number' || !Number.isFinite(value))) throw new RangeError('A reading needs finite values.');
   const changed = structuredClone(world);

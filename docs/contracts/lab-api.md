@@ -1052,7 +1052,7 @@ The field station composes it from the bench's facts (`BenchIncidentFacts`, sect
 | `reason` | The application's sentence for the failure class |
 | `failure` | The library's `{ stage, class: failureClass }` |
 | `policy` | The library's policy for the incident |
-| `evidence` | `quarantine` `acknowledged` → `saved`; `pending` or `unknown` → `unknown`; `failed`, or evidence `expired` or `unavailable` → `unavailable`; `not-required` → `not-required` |
+| `evidence` | `quarantine` `acknowledged` → `saved`; `pending` or `unknown` → `unknown`; `failed`, or evidence `expired` or `unavailable` → `unavailable`; `not-required` → `not-required`. An evaluation of the current revision that found the copy gone (`ineligibleReason` `evidence-expired` or `evidence-unavailable`) also makes it `unavailable`: the incident's own record still says `acknowledged` once the copy is deleted from the topic, and only reading it back finds out. Its `evaluation.summary` then says the saved record couldn't be evaluated, never that it still fails |
 | `source` | `progress` `held`, `retrying`, or `advance-pending` → `held`; `advanced` → `advanced`; `processed` → `processed`; `uncertain` → `uncertain` |
 | `recovery` | `none` for an incident with no recovery guard; otherwise the ledger's run for the record: `withheld` → `coverage-not-ready`; `established` → `coverage-established`, and `view-resynchronized` once the bench saw the leaseholder's snapshot succeed after the advance |
 | `evaluation` | The bench's latest evaluation of this incident revision: `passed` when the saved record validates and maps now, with `planToken` while the plan may be approved |

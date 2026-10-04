@@ -31,7 +31,7 @@ jobs:
       - name: Check deployment orchestration
         run: |
           bash -n deploy/setup.sh deploy/operations/*.sh
-          node --test deploy/test/operations.test.ts
+          node --test deploy/test/operations.test.ts deploy/test/kafka-acl-guard.test.ts
       - name: Rehearse setup twice and preserve secrets
         run: |
           deploy/make-certs.sh test-origin "$RUNNER_TEMP/origin" demo.streamotter.app

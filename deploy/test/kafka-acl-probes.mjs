@@ -10,7 +10,10 @@
  * contract expects. Allowed writes go only to a bench's own quarantine topic: the
  * gateway's and the field station's own traffic is proved end to end by
  * deploy/test/stack.test.ts, and writing probe records into the creek's topics
- * would reach the production gateway's handlers.
+ * would reach the production gateway's handlers. The probes also try writes they
+ * expect to be denied, so the script first checks that the broker denies what no
+ * ACL allows (describing a topic nobody is granted) and refuses to run, exit 2,
+ * when it does not: a broker at `none` or `migrate` would accept those writes.
  *
  * Environment: the role's own credentials as its service already holds them, and
  * optionally KAFKA_PROBE_BROKERS, KAFKA_PROBE_CA_FILE, and KAFKA_PROBE_BENCHES
@@ -108,6 +111,13 @@ const deleteGroup = group => async () => {
   if (result?.error && result.error.type !== 'GROUP_ID_NOT_FOUND') throw result.error;
 };
 
+const guard = await attempt(describeTopic(`acl-probe-guard-${run}`));
+if (guard.outcome !== 'denied') {
+  console.error(`Refusing to probe: the broker did not deny describing a topic nobody is granted (got ${guard.outcome}${guard.detail ? `: ${guard.detail}` : ''}), so it is not enforcing ACLs and the probes' writes would reach real topics.`);
+  await admin.disconnect();
+  process.exit(2);
+}
+
 try {
   if (role === 'gateway') {
     for (const topic of [...WORLD, NOTEBOOKS]) await probe(`describe ${topic}`, 'allowed', describeTopic(topic));
@@ -156,7 +166,7 @@ try {
     await probe(`read ${quarantine}`, 'allowed', () => consume(quarantine, `${group}-q`));
     await probe('delete its own quarantine read group', 'allowed', deleteGroup(`${group}-q`));
     for (const topic of WORLD.filter(topic => topic !== 'field.holts').map(topic => `${mine}${topic}`)) await probe(`write ${topic} (its own source)`, 'denied', () => produce(topic));
-    await probe(`read ${mine}field.gauges in another bench's group`, 'denied', () => consume(`${mine}field.gauges`, `lab-${number % 3 + 1}-acl-probe-${run}`));
+    await probe(`read ${mine}field.gauges in another bench's group`, 'denied', () => consume(`${mine}field.gauges`, `streamotter-lab-${number % 3 + 1}-acl-probe-${run}`));
     await probe(`read ${mine}field.gauges in the production gateway's group`, 'denied', () => consume(`${mine}field.gauges`, 'streamotter-lontra-creek-field'));
     for (const topic of [...WORLD, NOTEBOOKS]) {
       await probe(`describe ${topic}`, 'denied', describeTopic(topic));

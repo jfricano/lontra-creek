@@ -11,8 +11,9 @@
  *   npm run dev:lab -- discard [--yes]      # deletes this local study, after confirmation
  *
  * Every command takes --dir <path> (default .local/lab; it must be a git-ignored
- * directory inside this repository) and --project <name> (the Compose project,
- * default lontra-local-lab, fixed when the directory is first prepared).
+ * directory under this repository's .local/, not dev:kafka's) and --project <name>
+ * (the Compose project, default lontra-local-lab, fixed when the directory is
+ * first prepared).
  *
  * This launcher never deploys anything, publishes no image, changes no system or
  * browser trust store, and deletes volumes only through `discard` after an
@@ -20,7 +21,7 @@
  * OpenSSL, and the repository's own scripts. See docs/LOCAL_LAB.md.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, copyFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, appendFileSync, copyFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { request } from "node:https";
 import { createInterface } from "node:readline/promises";
@@ -31,6 +32,8 @@ import { parseArgs as parseNodeArgs } from "node:util";
 export const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 export const DEFAULT_DIR = ".local/lab";
 export const DEFAULT_PROJECT = "lontra-local-lab";
+/** scripts/dev-kafka.mjs keeps its broker here unless LONTRA_KAFKA_DATA_DIR says otherwise. */
+export const KAFKA_DEV_DIR = ".local/kafka-dev";
 /** Fixed by deploy/compose.local-lab.yaml and deploy/Caddyfile.local-lab. */
 export const PORT = 8443;
 export const ORIGIN = `https://localhost:${PORT}`;
@@ -58,7 +61,7 @@ Commands:
             Asks for confirmation; --yes confirms non-interactively
 
 Options:
-  --dir <path>        Local directory, git-ignored, inside the repository (default ${DEFAULT_DIR})
+  --dir <path>        Local directory under .local/, git-ignored (default ${DEFAULT_DIR})
   --project <name>    Compose project name (default ${DEFAULT_PROJECT}); fixed at first \`up\`
   --no-build          up: reuse the existing site build and image instead of rebuilding
   --extra-ca <file>   up: trust this extra CA bundle for npm inside the image build only
@@ -173,21 +176,39 @@ export async function checkPrerequisites({ run = capture, portFree = isPortFree,
 }
 
 /**
- * The local directory, absolute, after checking it is inside the repository and
- * git-ignored, so secrets and study data never become tracked files. Without git
- * (a source archive), only a directory under .local/ is accepted.
+ * The local directory, absolute, after checking it is under the repository's
+ * .local/ and git-ignored, so secrets and study data never become tracked files,
+ * land where something serves them (apps/site/dist), or share dev:kafka's data,
+ * which `discard` would delete. Without git (a source archive), .local/ is enough.
  */
-export function localDirectory(dir, { root = ROOT, run = capture } = {}) {
+export function localDirectory(dir, { root = ROOT, run = capture, kafkaDataDir = process.env.LONTRA_KAFKA_DATA_DIR } = {}) {
   const path = resolve(root, dir);
   const inside = relative(root, path);
   if (inside === "" || inside.startsWith("..") || isAbsolute(inside)) throw new UsageError(`--dir must be a directory inside the repository (${root}); got ${path}.`);
   // .local/ also holds dev:kafka's data; the Lab gets a directory of its own beneath it.
   if (inside === ".local") throw new UsageError("--dir must be a directory of its own, such as .local/lab, not .local itself.");
+  if (inside.split(sep)[0] !== ".local") throw new UsageError(`--dir must be under .local/ (the default is ${DEFAULT_DIR}); got ${inside}.`);
+  for (const kafka of [resolve(root, KAFKA_DEV_DIR), ...(kafkaDataDir ? [resolve(root, kafkaDataDir)] : [])]) {
+    if (path === kafka || path.startsWith(kafka + sep) || kafka.startsWith(path + sep)) {
+      throw new UsageError(`--dir ${inside} overlaps dev:kafka's data directory (${relative(root, kafka) || kafka}); use another directory under .local/.`);
+    }
+  }
   const ignored = run("git", ["check-ignore", "-q", "--no-index", inside.split(sep).join("/") + "/"], { cwd: root });
-  if (ignored.status === 0) return path;
   if (ignored.status === 1) throw new UsageError(`${inside} is not git-ignored. Use a directory under .local/ (the default is ${DEFAULT_DIR}).`);
-  if (inside.split(sep)[0] === ".local") return path;
-  throw new UsageError(`Could not confirm with git that ${inside} is ignored; use a directory under .local/.`);
+  return path;
+}
+
+/**
+ * Refuses an existing directory that has contents but no dev-lab.json: `up` would
+ * write secrets among another tool's files and mark them as the launcher's, which
+ * `discard` then deletes.
+ */
+export function checkOwnDirectory(path) {
+  if (!existsSync(path)) return;
+  if (!statSync(path).isDirectory()) throw new UsageError(`${path} is not a directory.`);
+  if (readdirSync(path).length > 0 && !readState(path)) {
+    throw new UsageError(`${path} already has files and was not made by this launcher (no ${STATE_FILE}). Use a new or empty directory under .local/.`);
+  }
 }
 
 /**
@@ -363,6 +384,7 @@ when you are done. Command-line checks can trust it for one process:
 
 async function up(options) {
   const path = localDirectory(options.dir);
+  checkOwnDirectory(path);
   const project = projectFor(path, options.project);
   step("Checking prerequisites");
   const running = capture("docker", ["ps", "-q", "--filter", `label=com.docker.compose.project=${project}`, "--filter", "label=com.docker.compose.service=caddy"]);
@@ -414,7 +436,7 @@ controls and management listeners are private to the Compose network.
 
   npm run dev:lab -- status     # containers and URL checks
   npm run dev:lab -- logs -f    # stream logs
-  npm run dev:lab -- stop       # stop; keeps Kafka data, checkpoints, and the study epoch
+  npm run dev:lab -- stop       # stop; keeps Kafka data, checkpoints, bench studies, and the study epoch
   npm run dev:lab -- discard    # delete this local study (asks first)`);
 }
 

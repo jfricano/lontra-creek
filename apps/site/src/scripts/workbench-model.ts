@@ -169,10 +169,12 @@ export function sessionView(input: SessionInput): SessionView {
   if (lease && (lease.status === "ready" || lease.status === "active" || lease.status === "resetting")) {
     const held = { ...base, runtime: lease.runtime, clock: `${formatRemaining(Date.parse(lease.expiresAt) - now)} left in this session` };
     if (lease.status === "ready") {
+      // The countdown goes in the clock, outside the polite status region, which would otherwise announce it every second.
       const claim = lease.claimBy ? formatRemaining(Date.parse(lease.claimBy) - now) : null;
       return { ...held, phase: "ready", claimLabel: "Claim your slot", enabled: { ...NONE, claim: !busy, return: !busy },
+        clock: claim === null ? held.clock : `${claim} left to claim it · ${held.clock}`,
         headline: `Sandbox slot ${lease.slot} is yours to claim.`,
-        detail: claim === null ? "Claim it to open the workbench." : `Claim it within ${claim}, or it goes to the next visitor.` };
+        detail: claim === null ? "Claim it to open the workbench." : "Claim it within the time shown below, or it goes to the next visitor." };
     }
     if (lease.status === "resetting") {
       return { ...held, phase: "resetting", enabled: { ...NONE, return: !busy }, headline: `Starting a fresh study on slot ${lease.slot}…`,

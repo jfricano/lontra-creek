@@ -94,8 +94,15 @@ describe("sessionView", () => {
   });
   test("a ready slot shows its claim window and the lease's runtime", () => {
     const view = sessionView(input({ lease: held("ready"), now: Date.parse(NOW) + 5_000 }));
-    assert.equal(view.phase, "ready"); assert.match(view.detail, /within 0:25/); assert.equal(view.clock, "9:55 left in this session");
+    assert.equal(view.phase, "ready"); assert.equal(view.clock, "0:25 left to claim it · 9:55 left in this session");
     assert.equal(view.runtime, runtime); assert.ok(view.enabled.claim && view.enabled.return && !view.enabled.start);
+  });
+  test("the claim countdown runs in the clock, so the status text holds still from second to second", () => {
+    const first = sessionView(input({ lease: held("ready"), now: Date.parse(NOW) + 5_000 }));
+    const next = sessionView(input({ lease: held("ready"), now: Date.parse(NOW) + 6_000 }));
+    assert.equal(next.headline, first.headline); assert.equal(next.detail, first.detail);
+    assert.equal(first.detail, "Claim it within the time shown below, or it goes to the next visitor.");
+    assert.notEqual(next.clock, first.clock);
   });
   test("an active session can reset, download, and end; claim only until this page holds the study's connection", () => {
     const active = sessionView(input({ lease: held("active") }));

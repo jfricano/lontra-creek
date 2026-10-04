@@ -188,7 +188,8 @@ test("a ready slot found on load shows its claim window and waits for the visito
   const ui = panel(page);
   await page.goto("/workbench/");
   await expect(ui.root).toHaveAttribute("data-phase", "ready");
-  await expect(ui.detail).toContainText(/Claim it within 0:[23]\d, or it goes to the next visitor\./);
+  await expect(ui.detail).toHaveText("Claim it within the time shown below, or it goes to the next visitor.");
+  await expect(page.locator("[data-sandbox-clock]")).toContainText(/^0:[23]\d left to claim it · /);
   await expect(ui.claim).toBeVisible();
   await expect(ui.claim).toBeEnabled();
   expect(seen.filter(entry => entry.startsWith("POST"))).toEqual([]);
@@ -322,3 +323,19 @@ test("leaving the page while Start is in flight still returns the place", async 
   await expect.poll(() => seen.includes("POST session/return")).toBe(true);
   release();
 });
+
+for (const phase of ["idle", "ready"] as const) {
+  test(`the polite status region holds still in the ${phase} phase: the panel's once-a-second render rewrites nothing in it`, async ({ page }) => {
+    await stubSandbox(page, ({ path }) => path === "status" ? { json: available() } : path === "session" ? (phase === "ready" ? { json: lease("ready") } : { status: 401, json: { error: "No session.", code: "no-session" } }) : undefined);
+    await page.goto("/workbench/");
+    await expect(panel(page).root).toHaveAttribute("data-phase", phase);
+    const mutations = await page.evaluate(() => new Promise<number>(resolve => {
+      let count = 0;
+      const observer = new MutationObserver(records => { count += records.length; });
+      observer.observe(document.querySelector(".sandbox-state")!, { subtree: true, childList: true, characterData: true });
+      setTimeout(() => { observer.disconnect(); resolve(count); }, 3_000);
+    }));
+    expect(mutations).toBe(0);
+    if (phase === "ready") await expect(page.locator("[data-sandbox-clock]")).toContainText("left to claim it");
+  });
+}

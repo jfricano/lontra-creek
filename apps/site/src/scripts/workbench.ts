@@ -87,14 +87,17 @@ function mount(root: HTMLElement): void {
     host.append(boot, style, app, script); host.hidden = false; mountedStudy = lease.studyId;
   }
 
+  /** Rendering runs every second; only a real change touches the DOM, so live regions announce changes only. */
+  function text(element: HTMLElement, value: string): void { if (element.textContent !== value) element.textContent = value; }
+
   function render(): void {
     const view = sessionView({ status, statusProblem, lease, checking, busy, now: now(), connectedStudy: connection?.studyId ?? null });
     root.dataset["phase"] = view.phase;
-    el("[data-sandbox-headline]").textContent = view.headline;
-    el("[data-sandbox-detail]").textContent = view.detail;
-    el("[data-sandbox-clock]").textContent = view.clock;
-    el("[data-sandbox-note]").textContent = [note, contact].filter(Boolean).join(" ");
-    el("[data-sandbox-pool]").textContent = checking ? "" : availabilityView(status, statusProblem).pool;
+    text(el("[data-sandbox-headline]"), view.headline);
+    text(el("[data-sandbox-detail]"), view.detail);
+    text(el("[data-sandbox-clock]"), view.clock);
+    text(el("[data-sandbox-note]"), [note, contact].filter(Boolean).join(" "));
+    text(el("[data-sandbox-pool]"), checking ? "" : availabilityView(status, statusProblem).pool);
     // Revalidating mid-action would drop the action's answer, such as the place a Start was given.
     el<HTMLButtonElement>("[data-sandbox-retry]").disabled = busy;
     const shown: Record<keyof typeof buttons, boolean> = {
@@ -102,13 +105,13 @@ function mount(root: HTMLElement): void {
       return: ["queued", "ready", "active", "resetting"].includes(view.phase), reset: view.phase === "active", repro: view.phase === "active"
     };
     for (const [name, button] of Object.entries(buttons) as [keyof typeof buttons, HTMLButtonElement][]) { button.hidden = !shown[name]; button.disabled = !view.enabled[name]; }
-    buttons.return.textContent = view.returnLabel; buttons.claim.textContent = view.claimLabel;
+    text(buttons.return, view.returnLabel); text(buttons.claim, view.claimLabel);
     const labels = runtimeLabels(checking ? null : view.runtime);
-    el("[data-sandbox-mode]").textContent = labels?.mode ?? "Not reported";
-    el("[data-sandbox-packages]").textContent = labels?.packages ?? "Not reported";
-    el("[data-sandbox-contract]").textContent = labels?.contract ?? "Not reported";
+    text(el("[data-sandbox-mode]"), labels?.mode ?? "Not reported");
+    text(el("[data-sandbox-packages]"), labels?.packages ?? "Not reported");
+    text(el("[data-sandbox-contract]"), labels?.contract ?? "Not reported");
     el("[data-sandbox-runtime-note]").hidden = labels !== null || checking;
-    el("[data-sandbox-mount-note]").textContent = view.phase === "active" ? mountNote : "";
+    text(el("[data-sandbox-mount-note]"), view.phase === "active" ? mountNote : "");
   }
 
   async function refreshStatus(): Promise<void> {

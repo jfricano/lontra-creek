@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import {
-  COMPOSE_FILES, DEFAULT_DIR, DEFAULT_PROJECT, ROOT, UsageError,
+  COMPOSE_FILES, DEFAULT_DIR, DEFAULT_PROJECT, MIN_NODE, ROOT, UsageError,
   checkOwnDirectory, checkPrerequisites, compareVersions, confirmDiscard, extraCaDockerfile, localDirectory, parseArgs, readEnv, sandboxSecret, urls, waitForReadyBench
 } from "../dev-lab.mjs";
 
@@ -81,42 +81,48 @@ describe("checkPrerequisites", () => {
     const { run } = runner(healthy);
     const problems = await checkPrerequisites({ run, portFree: free, nodeVersion: "22.12.0" });
     assert.equal(problems.length, 1);
-    assert.match(problems[0], /Node 24 or later.*22\.12\.0/);
+    assert.match(problems[0], /Node 24\.15\.0 or later.*22\.12\.0/);
+    assert.match((await checkPrerequisites({ run, portFree: free, nodeVersion: "24.14.1" })).join(), /Node 24\.15\.0 or later.*24\.14\.1/, "the engines floor, not just the major");
+  });
+
+  test("asks for the Node the root package.json's engines field does", async () => {
+    const engines = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).engines.node;
+    assert.equal(engines, `>=${MIN_NODE.replace(/\.0$/, "")}`);
   });
 
   test("reports missing Docker without probing its daemon or Compose", async () => {
     const { run, calls } = runner({ "openssl version": ok("OpenSSL 3") });
-    const problems = await checkPrerequisites({ run, portFree: free, nodeVersion: "24.0.0" });
+    const problems = await checkPrerequisites({ run, portFree: free, nodeVersion: "24.15.0" });
     assert.deepEqual(problems.map(p => /Docker is not installed/.test(p)), [true]);
     assert.ok(!calls.some(call => call.startsWith("docker info") || call.startsWith("docker compose")));
   });
 
   test("reports a stopped daemon, a missing or old Compose, and missing OpenSSL", async () => {
     const stopped = runner({ ...healthy, "docker info --format {{.ServerVersion}}": { status: 1, stdout: "", stderr: "Cannot connect" } });
-    assert.match((await checkPrerequisites({ run: stopped.run, portFree: free, nodeVersion: "24.0.0" })).join(), /daemon is not reachable/);
+    assert.match((await checkPrerequisites({ run: stopped.run, portFree: free, nodeVersion: "24.15.0" })).join(), /daemon is not reachable/);
 
     const noCompose = runner({ ...healthy, "docker compose version --short": { status: 1, stdout: "", stderr: "unknown command" } });
-    assert.match((await checkPrerequisites({ run: noCompose.run, portFree: free, nodeVersion: "24.0.0" })).join(), /`docker compose` plugin/);
+    assert.match((await checkPrerequisites({ run: noCompose.run, portFree: free, nodeVersion: "24.15.0" })).join(), /`docker compose` plugin/);
 
     const oldCompose = runner({ ...healthy, "docker compose version --short": ok("2.20.2\n") });
-    assert.match((await checkPrerequisites({ run: oldCompose.run, portFree: free, nodeVersion: "24.0.0" })).join(), /2\.24\.4 or later.*found 2\.20\.2/);
+    assert.match((await checkPrerequisites({ run: oldCompose.run, portFree: free, nodeVersion: "24.15.0" })).join(), /2\.24\.4 or later.*found 2\.20\.2/);
 
     const noOpenssl = runner({ ...healthy, "openssl version": { status: null, stdout: "", stderr: "" } });
-    assert.match((await checkPrerequisites({ run: noOpenssl.run, portFree: free, nodeVersion: "24.0.0" })).join(), /OpenSSL is required/);
+    assert.match((await checkPrerequisites({ run: noOpenssl.run, portFree: free, nodeVersion: "24.15.0" })).join(), /OpenSSL is required/);
   });
 
   test("reports a busy port 8443 unless the check is skipped for an already running stack", async () => {
     const { run } = runner(healthy);
     const ports = [];
     const busy = async port => { ports.push(port); return false; };
-    assert.match((await checkPrerequisites({ run, portFree: busy, nodeVersion: "24.0.0" })).join(), /Port 8443 on 127\.0\.0\.1 is in use/);
+    assert.match((await checkPrerequisites({ run, portFree: busy, nodeVersion: "24.15.0" })).join(), /Port 8443 on 127\.0\.0\.1 is in use/);
     assert.deepEqual(ports, [8443]);
-    assert.deepEqual(await checkPrerequisites({ run, portFree: busy, nodeVersion: "24.0.0", checkPort: false }), []);
+    assert.deepEqual(await checkPrerequisites({ run, portFree: busy, nodeVersion: "24.15.0", checkPort: false }), []);
   });
 
   test("reports a missing --extra-ca file", async () => {
     const { run } = runner(healthy);
-    assert.match((await checkPrerequisites({ run, portFree: free, nodeVersion: "24.0.0", extraCa: "/nonexistent/ca.pem" })).join(), /--extra-ca file not found/);
+    assert.match((await checkPrerequisites({ run, portFree: free, nodeVersion: "24.15.0", extraCa: "/nonexistent/ca.pem" })).join(), /--extra-ca file not found/);
   });
 });
 

@@ -282,7 +282,10 @@ sudo /usr/local/sbin/lontra-deploy "$(sudo cat /srv/lontra/current.sha)"
    matrix, run `deploy/test/kafka-acls.test.ts` against the host with
    `STACK_KAFKA_EXEC="$compose exec -T"` and `STACK_KAFKA_BENCHES="1 2 3"` (or
    empty without the Lab). Its probes write only to the bench quarantine
-   topics and leave empty groups named `*-acl-probe-*`, which expire.
+   topics and leave empty groups named `*-acl-probe-*`, which expire. They
+   also try writes that must be denied, so the test and the probe script
+   refuse to probe a broker that does not deny what no ACL allows (`none` or
+   `migrate`): run it only after this step.
 5. **Confirm the setting will survive the next deploy:** `sudo grep -H
    '^KAFKA_AUTHORIZATION=' /srv/lontra/stack.env /srv/lontra/current.env`
    prints `acl` for both files, and nothing else. **Record the evidence**

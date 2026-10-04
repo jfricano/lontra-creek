@@ -11,12 +11,15 @@
  * skips. STACK_KAFKA_BENCHES lists the stack's benches (none by default). The
  * broker's ACLs must match the contract's table exactly, nothing more, and each
  * principal's probes (deploy/test/kafka-acl-probes.mjs) run in its own container
- * with its own credentials.
+ * with its own credentials. The probes try writes they expect to be denied, so
+ * they run only once the broker's properties show it denies what no ACL allows:
+ * against a broker at `none` or `migrate` those writes would land in the creek's
+ * topics and stop the production gateway's sources.
  */
 import assert from "node:assert/strict";
 import { exec } from "node:child_process";
 import { join } from "node:path";
-import { describe, test } from "node:test";
+import { before, describe, test } from "node:test";
 import { promisify } from "node:util";
 
 const EXEC = process.env["STACK_KAFKA_EXEC"];
@@ -54,11 +57,16 @@ function parseAcls(listing: string): string[] {
   return acls.sort();
 }
 
+const AUTHORIZER = /^authorizer\.class\.name=org\.apache\.kafka\.metadata\.authorizer\.StandardAuthorizer$/m;
+const DENY_BY_DEFAULT = /^allow\.everyone\.if\.no\.acl\.found=false$/m;
+
 describe("Kafka authorization", { skip: EXEC === undefined && "STACK_KAFKA_EXEC is not set" }, () => {
+  let config = "";
+  before(async () => { ({ stdout: config } = await run(`${EXEC} kafka cat /tmp/lontra-kafka.properties`)); });
+
   test("the broker denies what no ACL allows, and its ACLs are exactly the contract's", async () => {
-    const { stdout: config } = await run(`${EXEC} kafka cat /tmp/lontra-kafka.properties`);
-    assert.match(config, /^authorizer\.class\.name=org\.apache\.kafka\.metadata\.authorizer\.StandardAuthorizer$/m);
-    assert.match(config, /^allow\.everyone\.if\.no\.acl\.found=false$/m);
+    assert.match(config, AUTHORIZER);
+    assert.match(config, DENY_BY_DEFAULT);
     assert.match(config, /^super\.users=User:ANONYMOUS$/m);
     const { stdout: listing } = await run(`${EXEC} kafka env KAFKA_HEAP_OPTS=-Xmx256m /opt/kafka/bin/kafka-acls.sh --bootstrap-server 127.0.0.1:9092 --list`, { timeout: 60_000 });
     assert.deepEqual(parseAcls(listing), expectedAcls(BENCHES));
@@ -70,6 +78,7 @@ describe("Kafka authorization", { skip: EXEC === undefined && "STACK_KAFKA_EXEC 
   const services: [string, string][] = [["gateway", "gateway"], ["field-station", "field-station"], ...BENCHES.map((n): [string, string] => [`lab-${n}`, "bench"])];
   for (const [service, role] of services) {
     test(`${service} can do only what its ACLs allow`, async () => {
+      assert.ok(AUTHORIZER.test(config) && DENY_BY_DEFAULT.test(config), `Not probing ${service}: the broker does not deny what no ACL allows, so its probes' writes would reach the creek's topics.`);
       const command = `${EXEC} ${service} env KAFKA_PROBE_BENCHES=${BENCHES.length > 0 ? BENCHES.join(",") : "1,2,3"} node --input-type=module - ${role} < '${PROBES}'`;
       const result = await run(command, { timeout: 300_000 }).catch((error: { stdout?: string; stderr?: string; message: string }) => {
         assert.fail(`${service}'s probes failed:\n${error.stdout ?? ""}${error.stderr ?? ""}${error.stdout ? "" : error.message}`);

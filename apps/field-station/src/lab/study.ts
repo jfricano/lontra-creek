@@ -18,6 +18,7 @@
 import { randomBytes } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { bench as benchNamed } from './benches.ts';
 import type { BenchStudy, StudySummary } from './contract.ts';
 
 const FORMAT = 1;
@@ -37,7 +38,8 @@ export interface StudyDescriptor extends BenchStudy {
 /** URL-safe and short enough that `lab-N-<studyId>` passes rc.3's identifier rule ([A-Za-z][A-Za-z0-9_-]{0,63}). */
 export function newStudyId(): string { return randomBytes(12).toString('base64url'); }
 export const generationFor = (bench: number, studyId: string): string => `lab-${bench}-${studyId}`;
-export const consumerGroupFor = (bench: number, studyId: string): string => `streamotter-lab-${bench}-${studyId}`;
+/** Inside the prefix bench N's Kafka ACLs allow (`Bench.consumerGroupPrefix`, streamotter-lab-N-). */
+export const consumerGroupFor = (bench: number, studyId: string): string => `${benchNamed(bench).consumerGroupPrefix}${studyId}`;
 
 export function newStudy(bench: number, at: number, studyId = newStudyId()): StudyDescriptor {
   return { format: FORMAT, bench, studyId, generation: generationFor(bench, studyId), consumerGroup: consumerGroupFor(bench, studyId), createdAt: new Date(at).toISOString(), phase: 'provisioning', restarts: { gateway: 0, process: 0 }, lease: null, calibration: 'present' };

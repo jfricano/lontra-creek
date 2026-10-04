@@ -574,7 +574,7 @@ LC11-ADR-03 decides least privilege per Kafka user; this section is the authorit
 | `lab-N.quarantine` | topic, created by the broker's bootstrap: 1 partition, `retention.ms` 3600000, `retention.bytes` 8388608, 1 MiB/10 min segments | bench N (V1.1's quarantine writer, W9b) | bench N | `deploy/kafka/start.sh` |
 | `streamotter-lontra-creek-field`, `streamotter-lontra-creek-notebooks` | consumer groups | | production gateway | `apps/field-station/src/project.ts` |
 | `lontra-field-station-read-<UUID>` | throwaway group, deleted after use | | field station | `readAll` in `server/kafka.ts` |
-| `streamotter-lab-N-<UUID>` (and the static default `streamotter-lab-N-field`) | a fresh group per bench gateway start, the previous one deleted on reset | | bench N | `consumerGroupPrefix` in `lab/benches.ts`; `BenchRuntime` in `lab/runtime.ts` |
+| `streamotter-lab-N-<studyId>` (and the static default `streamotter-lab-N-field`) | one group per study, kept across restarts, deleted when a reset discards the study (section 8) | | bench N | `consumerGroupPrefix` in `lab/benches.ts`; `consumerGroupFor` in `lab/study.ts` |
 
 **Grants** (all `ALLOW`, host `*`; nothing else is allowed to an application user)
 

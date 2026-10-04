@@ -268,6 +268,16 @@ describe('the publisher gate and study discard', () => {
     await s.registry.discard(1, S1);
   });
 
+  test('a publication still waiting for its ledger when the gate closes never reaches Kafka', async t => {
+    const s = await studies(t); s.registry.open(1, S1);
+    // The study's ledger isn't open yet (its first use in this process), so the publication waits on it.
+    const publishing = s.registry.publish(1, S1, 'run-1', record('run-1'), s.sink);
+    const closed = await s.registry.close(1, S1);
+    assert.deepEqual(closed, { studyId: S1, state: 'closed', inFlight: 0 });
+    await assert.rejects(publishing, StudyClosedError);
+    assert.equal(s.sent.length, 0, 'nothing reached Kafka after the gate reported closed');
+  });
+
   test('scenario records go only to the bench\'s own copy of a creek topic', async t => {
     const s = await studies(t); s.registry.open(1, S1);
     await s.registry.beginRun(1, S1, { scenarioId: 'S03', runId: 'run-1', mutation: flowLc03(), coverage: 'withheld' });

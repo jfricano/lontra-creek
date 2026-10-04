@@ -220,6 +220,8 @@ export class LabStudies {
     const study = this.#current.get(bench);
     if (!study || study.studyId !== studyId || study.state !== 'open') throw new StudyClosedError();
     const ledger = await this.ledger(bench, studyId);
+    // close() may have run while the ledger opened: check again in the same step that starts the send and registers it.
+    if (study.state !== 'open' || this.#current.get(bench) !== study) throw new StudyClosedError();
     const sending = sink.send(record);
     study.inFlight.add(sending);
     try {

@@ -1,8 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { SessionClaims } from '../sessions.ts';
-import type { BenchId, BenchStatus, LabAction, LabActionResult, LabEndReason, LabFeedPage, LabLease, LabStatus, LabToken } from './contract.ts';
+import type { BenchFailureProfile, BenchId, BenchStatus, LabAction, LabActionResult, LabEndReason, LabFeedPage, LabLease, LabStatus, LabToken } from './contract.ts';
 import { LabError, MAX_LEASE_MS } from './errors.ts';
 import { AddressCap } from '../places.ts';
+import type { CapabilityOptions } from './capabilities.ts';
+import { FAILURE_PROFILES } from './bench.ts';
+import { LabIntents, type IntentLease, type IntentPool } from './intents.ts';
+import type { LabStudies, ScenarioSink } from './studies.ts';
 export interface BenchClient { call<T>(bench: BenchId, path: string, method?: string, body?: unknown): Promise<T>; }
 /** The publisher gate (studies.ts): opened when a lease is granted on a study, closed before any reset is asked for. `current` is the study it holds open. */
 export interface StudyGate { open(bench: BenchId, studyId: string): void; close(bench: BenchId, studyId: string): Promise<unknown>; current(bench: BenchId): string | null; }
@@ -21,11 +25,18 @@ export class LeasePool {
   readonly #origin: string;
   readonly #cap: AddressCap;
   readonly #studies: StudyGate | undefined;
+  /** LAB_FAILURE_HANDLING: a bench is granted only when it reports this profile (and, unless `off`, a durable journal). */
+  readonly #profile: BenchFailureProfile;
+  /** What the capability summary reports for this deployment (section 12.3). */
+  readonly capabilityOptions: CapabilityOptions;
+  /** The source-failures intents (intents.ts); configuredLab attaches them. */
+  intents: LabIntents | undefined;
+  readonly #ending: ((subject: string, leaseId: string) => void)[] = [];
   #tail: Promise<unknown> = Promise.resolve();
   /** Set once initialize() has reset every bench. The API listens first, and nothing is granted or polled before then. */
   #initialized = false;
-  constructor(options: { client: BenchClient; benches: BenchId[]; gatewayOrigin: string; now?: () => number; leaseMs?: number; queueMax?: number; cap?: AddressCap; studies?: StudyGate }) {
-    this.#client = options.client; this.#studies = options.studies; this.#now = options.now ?? Date.now; this.#leaseMs = options.leaseMs ?? MAX_LEASE_MS; this.#queueMax = options.queueMax ?? 50; this.#origin = options.gatewayOrigin;
+  constructor(options: { client: BenchClient; benches: BenchId[]; gatewayOrigin: string; now?: () => number; leaseMs?: number; queueMax?: number; cap?: AddressCap; studies?: StudyGate; capabilities?: CapabilityOptions }) {
+    this.#client = options.client; this.#studies = options.studies; this.capabilityOptions = options.capabilities ?? { profile: 'off', localExercises: false }; this.#profile = this.capabilityOptions.profile; this.#now = options.now ?? Date.now; this.#leaseMs = options.leaseMs ?? MAX_LEASE_MS; this.#queueMax = options.queueMax ?? 50; this.#origin = options.gatewayOrigin;
     if (this.#leaseMs > MAX_LEASE_MS) throw new RangeError(`A lease can last at most ${MAX_LEASE_MS / 1000} seconds; benches refuse longer ones.`);
     this.#cap = options.cap ?? new AddressCap(); this.#cap.register(this);
     for (const bench of options.benches) this.#slots.set(bench, { state: 'unavailable', resetAt: 0, retryAt: 0, lastSeen: this.#now(), nextPoll: 0 });
@@ -44,8 +55,16 @@ export class LeasePool {
     try { await this.#client.call(bench, '/bench/v1/reset', 'POST', { leaseId: null }); }
     catch { slot.state = 'unavailable'; slot.retryAt = this.#now() + 30_000; }
   }
+  /** Called when a lease ends, before its bench is reset: intents cancel its unfinished operations. */
+  onEnd(listener: (subject: string, leaseId: string) => void): void { this.#ending.push(listener); }
+  /** A bench is eligible only with the deployment's failure-handling profile: an older bench reports none, which is `off`. */
+  #eligible(status: BenchStatus): boolean {
+    const failures = status.failures ?? { profile: 'off', durable: false, handlerBuildId: null };
+    return status.readiness?.cleanLease === true && failures.profile === this.#profile && (this.#profile === 'off' || failures.durable);
+  }
   async #end(place: Place, reason: LabEndReason): Promise<void> {
     this.#places.delete(place.session.subject);
+    if (place.lease) for (const listener of this.#ending) listener(place.session.subject, place.lease.id);
     this.#ended.set(place.session.subject, { status: 'ended', now: iso(this.#now()), reason, endedAt: iso(this.#now()), bench: place.lease?.bench ?? null });
     if (place.lease) await this.#reset(place.lease.bench);
   }
@@ -63,7 +82,7 @@ export class LeasePool {
         if (now < slot.retryAt) continue;
         // A slow reset may have finished since the bench was marked unavailable: one that now reports a clean study is ready, not reset again.
         const status = await this.#client.call<BenchStatus>(bench, '/bench/v1/status').catch(() => null);
-        if (status?.state === 'ready' && status.readiness?.cleanLease === true) { slot.status = status; slot.lastSeen = this.#now(); slot.nextPoll = slot.lastSeen + 5000; slot.state = 'ready'; continue; }
+        if (status?.state === 'ready' && this.#eligible(status)) { slot.status = status; slot.lastSeen = this.#now(); slot.nextPoll = slot.lastSeen + 5000; slot.state = 'ready'; continue; }
         await this.#reset(bench);
       }
       if (now < slot.nextPoll) continue;
@@ -79,7 +98,7 @@ export class LeasePool {
         if (place && (status.state !== 'leased' || status.lease?.leaseId !== place.lease!.id)) { await this.#end(place, 'bench-failed'); continue; }
         // Only a clean-lease-eligible bench is granted (LC11-ADR-02). A leased bench whose source is held stays leased.
         // A ready bench that isn't eligible (its last cleanup didn't finish) is reset again on the usual schedule.
-        if (!place && status.state === 'ready') { if (status.readiness?.cleanLease === true) slot.state = 'ready'; else { slot.state = 'unavailable'; slot.retryAt = at + 30_000; } }
+        if (!place && status.state === 'ready') { if (this.#eligible(status)) slot.state = 'ready'; else { slot.state = 'unavailable'; slot.retryAt = at + 30_000; } }
         else if (status.state === 'failed' || slot.state === 'resetting' && at - slot.resetAt >= 60_000) { slot.state = 'unavailable'; slot.retryAt = at + 30_000; }
       } catch { const at = this.#now(); if (at - slot.lastSeen < 15_000) continue; const place = [...this.#places.values()].find(p => p.lease?.bench === bench); if (place) await this.#end(place, 'bench-failed'); slot.state = 'unavailable'; slot.retryAt = this.#now() + 30_000; }
     }
@@ -125,6 +144,16 @@ export class LeasePool {
   async #call<T>(session: SessionClaims, path: string, body?: unknown): Promise<T> { const lease = this.#lease(session); try { return await this.#client.call<T>(lease.bench, path, body === undefined ? 'GET' : 'POST', body); } catch (error) { if (error instanceof LabError && error.status < 500) throw error; await this.#end(this.#places.get(session.subject)!, 'bench-failed'); throw new LabError('bench-unavailable', 503); } }
   async token(session: SessionClaims): Promise<LabToken> { const lease = this.#lease(session); const token = await this.#call<{ token: string; expiresAt: string }>(session, '/bench/v1/tokens', { leaseId: lease.id }); lease.claimed = true; return { ...token, bench: lease.bench, gatewayOrigin: this.#origin, gatewayPath: `/lab/${lease.bench}/socket.io` }; }
   async action(session: SessionClaims, action: LabAction): Promise<LabActionResult> { const lease = this.#lease(session, true); if (this.#now() < lease.nextAction) throw new LabError('too-many-actions', 429); const result = await this.#call<{ at: string; scenario: BenchStatus['scenario'] }>(session, '/bench/v1/actions', { leaseId: lease.id, action }); lease.nextAction = this.#now() + 1000; this.#slots.get(lease.bench)!.status!.scenario = result.scenario; return { action, at: result.at, nextActionAt: iso(lease.nextAction), benchState: result.scenario }; }
+  /** The intent surface's view of the pool (intents.ts). */
+  intentPool(): IntentPool {
+    const place = (subject: string): Place => { const found = this.#places.get(subject); if (!found?.lease?.claimed) throw new LabError('no-lease', 409); return found; };
+    return {
+      lease: (subject): IntentLease => { const lease = place(subject).lease!; return { id: lease.id, bench: lease.bench, studyId: this.#slots.get(lease.bench)?.status?.study?.studyId ?? null, expires: lease.expires }; },
+      spend: subject => { const lease = place(subject).lease!; if (this.#now() < lease.nextAction) throw new LabError('too-many-actions', 429); lease.nextAction = this.#now() + 1000; },
+      read: (subject, path) => this.#call(place(subject).session, path),
+      bench: (bench, path, method, body) => this.#client.call(bench, path, method, body)
+    };
+  }
   async feed(session: SessionClaims, after?: string): Promise<LabFeedPage> { const lease = this.#lease(session, true); return this.#call(session, `/bench/v1/feed?leaseId=${encodeURIComponent(lease.id)}&after=${encodeURIComponent(after ?? '')}`); }
 }
 /**
@@ -139,7 +168,13 @@ export function benchError(status: number, code: unknown): LabError {
   if (status === 400) return new LabError('invalid-request', 400);
   return new LabError('bench-unavailable', 503);
 }
-export function configuredLab(env: NodeJS.ProcessEnv, gatewayOrigin: string, cap?: AddressCap, studies?: StudyGate): { pool: LeasePool; tokens: string[] } {
+/** The deployment's capability options from the environment: LAB_FAILURE_HANDLING (default `off`) and LAB_LOCAL_EXERCISES (`1`). */
+export function capabilityOptions(env: NodeJS.ProcessEnv): CapabilityOptions {
+  const profile = (env['LAB_FAILURE_HANDLING'] ?? 'off') as BenchFailureProfile;
+  if (!FAILURE_PROFILES.includes(profile)) throw new Error('LAB_FAILURE_HANDLING must be off, retry, or quarantine.');
+  return { profile, localExercises: env['LAB_LOCAL_EXERCISES'] === '1' };
+}
+export function configuredLab(env: NodeJS.ProcessEnv, gatewayOrigin: string, cap?: AddressCap, studies?: LabStudies, sink?: ScenarioSink): { pool: LeasePool; tokens: string[] } {
   const urls = (env['LAB_BENCH_API_URLS'] ?? '').split(',').filter(Boolean).map(value => new URL(value).origin);
   if (urls.length > 3) throw new Error('At most three Lab benches are supported.');
   const tokens = urls.map((_, i) => { const token = env[`LAB_BENCH_${i + 1}_SERVICE_TOKEN`]; if (!token || token.length < 32) throw new Error('Each Lab service token needs 32 characters.'); return token; });
@@ -147,5 +182,13 @@ export function configuredLab(env: NodeJS.ProcessEnv, gatewayOrigin: string, cap
   const client: BenchClient = { async call<T>(bench: BenchId, path: string, method = 'GET', body?: unknown): Promise<T> { const response = await fetch(`${urls[bench - 1]}${path}`, { method, headers: { authorization: `Bearer ${tokens[bench - 1]}`, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(5000) }); if (!response.ok) { const error = benchError(response.status, (await response.json().catch(() => ({})) as { code?: unknown }).code); if (error.code === 'bench-unavailable') console.error(`${new Date().toISOString()} Lab bench ${bench} answered ${response.status} to ${method} ${path.split('?')[0]}.`); throw error; } return await response.json() as T; } };
   const leaseSeconds = positive('LAB_LEASE_SECONDS', MAX_LEASE_MS / 1000);
   if (leaseSeconds * 1000 > MAX_LEASE_MS) throw new Error(`LAB_LEASE_SECONDS must be at most ${MAX_LEASE_MS / 1000}: each bench refuses longer leases.`);
-  return { pool: new LeasePool({ client, benches: urls.map((_, i) => i + 1 as BenchId), gatewayOrigin, leaseMs: leaseSeconds * 1000, queueMax: positive('LAB_QUEUE_MAX', 50), ...(cap ? { cap } : {}), ...(studies ? { studies } : {}) }), tokens };
+  const pool = new LeasePool({ client, benches: urls.map((_, i) => i + 1 as BenchId), gatewayOrigin, leaseMs: leaseSeconds * 1000, queueMax: positive('LAB_QUEUE_MAX', 50), capabilities: capabilityOptions(env), ...(cap ? { cap } : {}), ...(studies ? { studies } : {}) });
+  attachIntents(pool, { ...(studies ? { studies } : {}), ...(sink ? { sink } : {}) });
+  return { pool, tokens };
+}
+/** Gives a pool its source-failures intents: they follow its leases and end with them. */
+export function attachIntents(pool: LeasePool, options: { studies?: LabStudies; sink?: ScenarioSink; now?: () => number; pollMs?: number } = {}): LabIntents {
+  const intents = new LabIntents({ pool: pool.intentPool(), ...options });
+  pool.onEnd((subject, leaseId) => intents.ended(subject, leaseId));
+  pool.intents = intents; return intents;
 }

@@ -26,6 +26,8 @@ const management = createServer((request, response) => {
   const path = new URL(request.url ?? '/', 'http://management.invalid').pathname;
   if (path === '/management/v1/dev/principals') return json(response, 200, { ok: true, data: { items: [] } });
   if (path === '/management/v1/traces') return json(response, 200, { ok: true, data: { items: [], nextCursor: null } });
+  // The running gateway's own configuration, from which the bench counts fixture sources (S3).
+  if (path === '/management/v1/config') return json(response, 200, { ok: true, data: { config: { sources: { field: { kind: 'kafka' } } }, fingerprint: 'stand-in' } });
   if (path === '/management/v1/sources') {
     world.sourcePolls++;
     if (world.sources === 'fail' || world.failPolls.has(world.sourcePolls)) return json(response, 503, { ok: false, error: { code: 'SOURCE_UNAVAILABLE' } });
@@ -58,6 +60,15 @@ async function bench(t: import('node:test').TestContext) {
 }
 
 describe('a bench polling its gateway', () => {
+  test('without failure handling the bench reports profile off, measures fixture sources, and refuses every intent', async t => {
+    const { runtime, at } = await bench(t);
+    assert.deepEqual(runtime.status().failures, { profile: 'off', durable: false, handlerBuildId: null });
+    assert.equal(runtime.status().checks.fixtureSources, 0, 'counted from the running gateway\'s own config');
+    await runtime.run(() => runtime.lease('lease-1', new Date(at() + 120_000).toISOString()));
+    await assert.rejects(runtime.intent({ leaseId: 'lease-1', operationId: `lop_${'a'.repeat(22)}`, intent: 'scenario.start', scenario: 'fouled-sensor' }), { code: 'not-applicable' });
+    assert.equal((await runtime.incident('lease-1')).incident, null);
+  });
+
   test('one failed poll leaves the bench working; only POLL_GRACE_MS of failures fails it', async t => {
     const { runtime, advance } = await bench(t);
     world.sources = 'fail';

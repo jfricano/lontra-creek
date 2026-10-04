@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { test } from 'node:test';
+import { describe, test } from 'node:test';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
-import { INSTALLED_STREAMOTTER, INTENTS, SCENARIOS, labCapabilities, parseIntent, refuseIntent } from '../src/lab/capabilities.ts';
+import { INSTALLED_STREAMOTTER, INTENTS, LAB_CONTRACT, SCENARIOS, VERIFIED_WITH, labCapabilities, parseIntent } from '../src/lab/capabilities.ts';
 import type { LabCapabilities, LabScenarioId } from '../src/lab/contract.ts';
 import { LabError } from '../src/lab/errors.ts';
 import { LeasePool } from '../src/lab/leases.ts';
@@ -84,8 +84,70 @@ test('proposed intents parse only in their closed shape', () => {
   for (const body of bad) assert.throws(() => parseIntent(body), (error: unknown) => error instanceof LabError && error.code === 'invalid-request' && error.status === 400, JSON.stringify(body));
   for (const intent of INTENTS) {
     const body = { intent, requestId: id, ...(intent === 'scenario.start' ? { scenario: 'garbled-reading' } : { expectedRevision: 0 }), ...(intent === 'incident.approve-reprocess' ? { planToken: 'p'.repeat(16) } : {}) };
-    assert.throws(() => refuseIntent(body), (error: unknown) => error instanceof LabError && error.code === 'unsupported-scenario' && error.status === 409, intent);
+    assert.equal(parseIntent(body).intent, intent);
   }
+});
+
+test('0.2.0-rc.1 is verified for no scenario yet: every new scenario is not integrated, whatever the profile', () => {
+  assert.deepEqual([...VERIFIED_WITH.get('0.2.0-rc.1') ?? ['missing']], [], 'a scenario is added only after its real-Kafka test passes');
+  assert.match(LAB_CONTRACT, /W9b/);
+  for (const profile of ['off', 'retry', 'quarantine'] as const) {
+    const summary = labCapabilities({ labEnabled: true, now: 0, version: '0.2.0-rc.1', profile, localExercises: true });
+    for (const id of NEW) assert.equal(scenario(summary, id).reason?.code, 'not-integrated', `${profile} ${id}`);
+    for (const feature of Object.values(summary.features)) assert.equal(feature.reason?.code, 'not-integrated');
+  }
+});
+
+describe('the capability matrix with an injected verified set (section 12.3)', () => {
+  const verified = new Map([['0.2.0-rc.1', new Set<LabScenarioId>(NEW)]]);
+  const summary = (options: { profile: 'off' | 'retry' | 'quarantine'; localExercises?: boolean; labEnabled?: boolean; only?: LabScenarioId[] }) =>
+    labCapabilities({ labEnabled: options.labEnabled ?? true, now: 0, version: '0.2.0-rc.1', profile: options.profile, localExercises: options.localExercises ?? false, verified: options.only ? new Map([['0.2.0-rc.1', new Set(options.only)]]) : verified });
+  // Restated by hand from section 12.2, not read from the implementation.
+  const RETRY_ONLY = ['calibration-blip'];
+  const LOCAL = ['too-many-bad-readings', 'restart-recovery', 'unavailable-evidence'];
+
+  test('hosted (retry, no local exercises) offers only calibration-blip among the new scenarios', () => {
+    const hosted = summary({ profile: 'retry' });
+    for (const id of NEW) {
+      const s = scenario(hosted, id);
+      assert.equal(s.available, RETRY_ONLY.includes(id), id);
+      if (!s.available) assert.equal(s.reason!.code, 'deployment-restricted', id);
+    }
+    assert.match(scenario(hosted, 'bad-projection').reason!.text, /Kafka authorization/);
+    assert.equal(hosted.features.intents.available, true); assert.equal(hosted.features.incidentProjection.available, true);
+    for (const id of EXISTING) assert.equal(scenario(hosted, id).available, true);
+  });
+
+  test('local and CI (quarantine with local exercises) offer every new scenario; without them, the local ones say so', () => {
+    for (const id of NEW) assert.equal(scenario(summary({ profile: 'quarantine', localExercises: true }), id).available, true, id);
+    const shared = summary({ profile: 'quarantine' });
+    for (const id of NEW) {
+      assert.equal(scenario(shared, id).available, !LOCAL.includes(id), id);
+      if (LOCAL.includes(id)) { assert.equal(scenario(shared, id).reason!.code, 'deployment-restricted'); assert.match(scenario(shared, id).reason!.text, /only on a local Lab and in CI/); }
+    }
+  });
+
+  test('profile off offers nothing new, and neither feature', () => {
+    const off = summary({ profile: 'off', localExercises: true });
+    for (const id of NEW) assert.equal(scenario(off, id).reason?.code, 'deployment-restricted', id);
+    for (const feature of Object.values(off.features)) { assert.equal(feature.available, false); assert.equal(feature.reason?.code, 'deployment-restricted'); }
+  });
+
+  test('the reasons come in order: library, verification, the Lab itself, then the deployment', () => {
+    assert.equal(scenario(labCapabilities({ labEnabled: false, now: 0, version: '0.1.0-rc.3', profile: 'off', verified }), 'garbled-reading').reason!.code, 'library-lacks-capability');
+    assert.equal(scenario(summary({ profile: 'off', labEnabled: false, only: [] }), 'garbled-reading').reason!.code, 'not-integrated');
+    assert.equal(scenario(summary({ profile: 'off', labEnabled: false }), 'garbled-reading').reason!.code, 'lab-disabled');
+    assert.equal(scenario(summary({ profile: 'off' }), 'garbled-reading').reason!.code, 'deployment-restricted');
+  });
+
+  test('the features are available exactly when some new scenario is', () => {
+    for (const profile of ['off', 'retry', 'quarantine'] as const) for (const localExercises of [false, true]) for (const only of [[], ['calibration-blip'], ['restart-recovery'], NEW] as LabScenarioId[][]) {
+      const s = summary({ profile, localExercises, only });
+      const any = s.scenarios.some(item => NEW.includes(item.id) && item.available);
+      assert.equal(s.features.intents.available, any, JSON.stringify({ profile, localExercises, only }));
+      assert.equal(s.features.incidentProjection.available, any);
+    }
+  });
 });
 
 test('GET /api/lab/capabilities needs no session, and intents are refused before any bench is touched', async () => {

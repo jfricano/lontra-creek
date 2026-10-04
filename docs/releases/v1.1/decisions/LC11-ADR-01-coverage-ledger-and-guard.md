@@ -35,6 +35,12 @@ In Lontra Creek, the field station is the only application writer and already se
 - The ledger outlives a gateway restart and a bench container restart within a study, and is discarded with the study (LC11-ADR-02).
 - The reference page must say plainly that an integrator's guard is only as true as their own ledger.
 
+## Binding notes (W9b, StreamOtter 0.2.0-rc.1)
+
+- The bench binds item 2 as the source's native recovery guard (`handlers.sources.field.recover`) and item 3 in each channel's `snapshot` handler: with `recovery` present it asks the field station for `?boundary=<barrier>` and returns `recoveryBoundaryId` only when the answer acknowledges exactly that barrier. The barrier travels as the boundary's `context` (`{ barrier, covers }`); the guard refuses a barrier that doesn't cover the prior boundary's.
+- **Boundary retirement is `generation`, not `application`.** The companion plan says the ledger "maps to `application`". The Lab uses `boundaryRetirement: "generation"` instead: a reset always changes the source generation (LC11-ADR-02), and restart recovery (S08) needs the boundary in force for the whole study, across gateway and process restarts. With `generation` the demo still never retires a boundary silently or through an override; the boundary ends only with its study. Recorded in Lab contract section 8b.
+- The installed library refuses to construct a gateway whose `quarantine-resync` source has no guard, and logs a snapshot that doesn't acknowledge the boundary while keeping the view stale; both are covered by the bench's real-library tests on a fixture source (`apps/field-station/test/lab-failures.test.ts`). The Kafka path (coordinates in the guard request, the quarantine topic, the committed offset) is left to the real-Kafka stack tests.
+
 ## Alternatives considered
 
 - **Derive affected instances from the quarantined record.** Rejected: the native spec forbids trusting bytes that may conceal the entity.

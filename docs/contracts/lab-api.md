@@ -219,7 +219,7 @@ export interface LabFeedPage {
   gap: boolean;
 }
 
-// The V1.1 Source failures types (LabCapabilities and the PROPOSED intent, incident, and operation types) are in section 12.
+// The V1.1 Source failures types (LabCapabilities and the intent, incident, and operation types) are in section 12.
 
 export type LabErrorCode =
   | "invalid-request"     // 400
@@ -227,7 +227,7 @@ export type LabErrorCode =
   | "origin-not-allowed"  // 403
   | "no-lease"            // 409: no ready or active lease for this session
   | "not-applicable"      // 409: the action doesn't apply to the bench's current state
-  | "unsupported-scenario" // 409: a proposed intent (section 12) this backend doesn't support
+  | "unsupported-scenario" // 409: an intent or scenario (section 12) this backend or deployment doesn't support
   | "too-many-requests"   // 429: the Lab request budget
   | "too-many-actions"    // 429: more than one action a second
   | "too-many-places"     // 429: this client address already holds two places
@@ -251,7 +251,9 @@ export interface LabError {
 | `GET /api/lab/lease` | Required | The session's place or lease; the heartbeat | 200 `LabLease`; 401 |
 | `POST /api/lab/lease/return` | Required | Leave the line or return the bench early. Empty body. Idempotent. | 200 `LabLease` (`ended` with `left` or `returned`, or `none`); 401 |
 | `POST /api/lab/lease/token` | Required | A bench token for the session's lease. The first one claims the lease (`ready` becomes `active`). | 200 `LabToken`; 409 `no-lease`; 503 `bench-unavailable` |
-| `POST /api/lab/actions` | Required | Body `{ "action": LabAction }`: one scenario action on the session's own bench. A body with `intent` is a PROPOSED `LabIntentRequest` instead (section 12): validated, then refused with 409 `unsupported-scenario` before the pool, the lease, the action budget, or any bench is touched | 200 `LabActionResult`; 400 unknown action or malformed intent; 409 `no-lease`, `not-applicable`, `unsupported-scenario` (any intent, today); 429 `too-many-actions`; 503 `bench-unavailable` (the bench failed to carry it out, for example its relay control didn't answer; the lease ends as `bench-failed`) |
+| `POST /api/lab/actions` | Required | Body `{ "action": LabAction }`: one scenario action on the session's own bench. A body with `intent` is a `LabIntentRequest` instead (section 12.5): validated, then refused with 409 `unsupported-scenario` before the pool, the lease, the action budget, or any bench is touched when the capability summary doesn't offer it, otherwise accepted as an operation | 200 `LabActionResult`; 202 `LabOperation` for an intent; 400 unknown action or malformed intent; 409 `no-lease`, `not-applicable`, `unsupported-scenario`; 429 `too-many-actions`; 503 `bench-unavailable` (the bench failed to carry it out, for example its relay control didn't answer; the lease ends as `bench-failed`) |
+| `GET /api/lab/operations/<operationId>` | Required | An intent's operation (section 12.6). Served only while `features.intents` is available | 200 `LabOperation`; 404 outside the session's current lease (or the one that ended in the last 60 s), or when not served |
+| `GET /api/lab/incident` | Required | The lease's current-incident projection (section 12.7). Served only while `features.incidentProjection` is available | 200 `LabIncidentView`; 409 `no-lease`; 404 when not served |
 | `GET /api/lab/trace?after=<next>` | Required | The redacted feed for the session's active lease; without `after`, from the start of the lease | 200 `LabFeedPage`; 400 malformed `after`; 409 `no-lease` |
 
 Errors carry a `LabError` body. Unknown `/api/lab/*` routes answer 404 `{ "error": "Not found." }` like the rest of `/api`.
@@ -374,12 +376,14 @@ export interface BenchStatus {
     phase: "provisioning" | "clean" | "open";
     restarts: { gateway: number; process: number };
   } | null;
+  /** The bench's failure handling (section 8b); absent from an older bench, which runs as "off". */
+  failures?: { profile: "off" | "retry" | "quarantine"; durable: boolean; handlerBuildId: string | null };
 }
 ```
 
 The study is private: the field station reads it, visitors never see it. `src/lab/contract.ts` is the source of these types, with `StudySummary` and the section 8a types.
 
-**Study identity** (LC11-ADR-02). Every lease runs in a **study**: `studyId`, the source generation `lab-N-<studyId>`, the consumer group `streamotter-lab-N-<studyId>`, and a study directory on the bench's volume. The bench persists the descriptor as `study.json` (`$LAB_STATE_DIR/lab-N/study.json`; `LAB_STATE_DIR` defaults to `/var/lib/lontra` in production and `.data` elsewhere; Compose mounts a `lab-N-state` volume there). A study is `provisioning` until its new gateway has consumed once, `clean` until a lease is bound to it, then `open` until a reset discards it. The lease (never its tokens) and the calibration state are persisted with an open study. StreamOtter 0.1.0-rc.3 has no journal; the study directory (`lab-N/studies/<studyId>/`) is created and removed with the study so the native journal can be bound to it later (W9b).
+**Study identity** (LC11-ADR-02). Every lease runs in a **study**: `studyId`, the source generation `lab-N-<studyId>`, the consumer group `streamotter-lab-N-<studyId>`, and a study directory on the bench's volume. The bench persists the descriptor as `study.json` (`$LAB_STATE_DIR/lab-N/study.json`; `LAB_STATE_DIR` defaults to `/var/lib/lontra` in production and `.data` elsewhere; Compose mounts a `lab-N-state` volume there). A study is `provisioning` until its new gateway has consumed once, `clean` until a lease is bound to it, then `open` until a reset discards it. The lease (never its tokens) and the scenario state its handlers read (calibration, which projection `lab-projection-v2` records go through, and armed calibration blips) are persisted with an open study. The study directory (`lab-N/studies/<studyId>/`) is created and removed with the study; with failure handling on, it holds the study's StreamOtter failure journal (`journal/`, section 8b).
 
 **Restart keeps the study.** `gateway.restart`, a bench process restart, and a container restart with its volume intact resume the same study: same group, generation, directory, and field station ledger. `study.restarts` counts which kind actually ran, so a gateway restart in the same process is never reported as process durability (LC11-A14 versus A15). After a process restart, the lease continues if it hasn't expired; its old tokens are gone and the page fetches new ones. Its feed starts a new epoch with a `gap` item, and the page's old cursor is answered from there (section 6). The bench API listens before the bench boots, so as soon as it has read `study.json` back, a bench resuming an open study with an unexpired lease reports `leased` with that lease, `readiness.control` false until its gateway is up; the field station keeps the lease meanwhile (section 4). On boot, a study that is `provisioning`, unreadable, or `open` with its lease ended is discarded (the reset steps below) and a new one provisioned. Every study directory on the volume that isn't the current study (one a crash mid-reset left, or one an unreadable `study.json` no longer names) is discarded by its ID with the same steps: gate close, delete `streamotter-lab-N-<studyId>`, remove the directory, gate discard. A boot that fails leaves the bench `failed` for the field station to reset; the process doesn't exit, so a held source can't cause a restart loop.
 
@@ -425,13 +429,13 @@ Any failure leaves the bench `failed` and not clean-lease eligible; the field st
 
 **Status.** The E2.0 spike (PR #17, `spike/lab-relay-cut`) proves the relay cut but does not yet meet M4 or M11 (section 10.5): its bench accepts the walkthrough's badge check in `authenticate` instead of lease-bound tokens, and its environment and snapshots come from the field station's production secrets and internal API (`FIELD_STATION_SECRET`, `FIELD_STATION_SERVICE_TOKEN`, `FIELD_STATION_INTERNAL_URL`). E2.1 must close both gaps before any bench faces the public. S11 (section 10.6) checks it at the stack level.
 
-**Field station environment** (names are suggestions for `be-lab` and `devops`): `LAB_BENCH_API_URLS` (the three bench API origins; unset means `enabled: false`), `LAB_BENCH_1_SERVICE_TOKEN` to `LAB_BENCH_3_SERVICE_TOKEN` (32 characters or more, from `deploy/make-secrets.sh`), `LAB_LEASE_SECONDS` (1 to 300; the field station refuses to start with a larger value, since benches refuse longer leases), `LAB_QUEUE_MAX`. Separate from the E2.0 spike's `FIELD_LAB_BENCHES` (`deploy/compose.lab-spike.yaml`): the number of benches whose `lab-N.*` topic copies the field station publishes over its own Kafka connection, unrelated to the Lab API's lease traffic.
+**Field station environment** (names are suggestions for `be-lab` and `devops`): `LAB_BENCH_API_URLS` (the three bench API origins; unset means `enabled: false`), `LAB_BENCH_1_SERVICE_TOKEN` to `LAB_BENCH_3_SERVICE_TOKEN` (32 characters or more, from `deploy/make-secrets.sh`), `LAB_LEASE_SECONDS` (1 to 300; the field station refuses to start with a larger value, since benches refuse longer leases), `LAB_QUEUE_MAX`, `LAB_FAILURE_HANDLING` (the profile every bench must report, section 8b; a bench reporting another is never granted), and `LAB_LOCAL_EXERCISES` (`1` offers the local and CI exercises, section 12.3). Separate from the E2.0 spike's `FIELD_LAB_BENCHES` (`deploy/compose.lab-spike.yaml`): the number of benches whose `lab-N.*` topic copies the field station publishes over its own Kafka connection, unrelated to the Lab API's lease traffic.
 
 ## 8a. The private study and recovery surface
 
 LC11-ADR-01 and LC11-ADR-02, application side. On the field station's internal port (7410), under each bench's existing `/lab-internal/N/` prefix, authenticated with **bench N's own service token** only (the production service token and other benches' tokens get 401). Compose network only; never routed by Caddy. Types are in `src/lab/contract.ts`; the implementation is `src/lab/studies.ts` (registry, gate, served state) and `src/lab/coverage.ts` (ledger, guard, acknowledgment).
 
-**Status: ready for binding, not bound.** StreamOtter 0.1.0-rc.3 has no recovery guard, barrier, journal, or quarantine. Nothing calls `recovery/assess` or passes `?boundary=` today, and nothing here emulates native behavior. W9b adds the thin adapter from the native guard and snapshot-acknowledgment types to these routes once a published release exports them; no name here is assumed to be a native API name.
+**Status: bound (W9b, StreamOtter 0.2.0-rc.1).** With profile `quarantine` (section 8b), the bench's native recovery guard (`handlers.sources.field.recover`) calls `recovery/assess`, and each channel's `snapshot` handler passes `?boundary=` while the library reports a boundary in force. The bench adapter is in `src/lab/bench.ts` (`recoveryGuard`, `snapshotAcknowledges`); nothing here emulates native behavior. With profile `off` or `retry` nothing calls these two routes.
 
 | Route | Body | Does | Answers |
 | --- | --- | --- | --- |
@@ -453,6 +457,140 @@ Derivation facts worth knowing: an LC-03 flow reading affects `station:LC-03` an
 **Acknowledgment.** A snapshot acknowledges a barrier only when the barrier was issued by bench N's open study and the served state is at or past it: the state's tick at or past the barrier's, and for an instance the barrier covers, its revision at or past the barrier's. Otherwise `acknowledged: false` with `lagging`, `unknown-barrier`, `wrong-study`, or `malformed`. Without `?boundary=`, the snapshot carries no `boundary` at all. The bench side counts an acknowledgment only when `boundary.barrier` echoes exactly the barrier it required and `acknowledged` is true (`snapshotAcknowledges` in `src/lab/bench.ts`).
 
 **Integrators.** The reference page must say plainly that an integrator's guard is only as true as their own ledger: this one answers for a demo whose every mutation is predetermined.
+
+## 8b. The private intent surface
+
+V1.1 W9b. On each bench's API (port 7420, section 8), with the same service token, Compose network only. The field station is the only caller; it reaches these routes only for the session's own lease, after the checks in section 12.5. Native identifiers (the library's failure IDs) cross this surface server to server; the field station never forwards them to a browser (section 12.7).
+
+| Route | Body | Does | Answers |
+| --- | --- | --- | --- |
+| `POST /bench/v1/intents` | `BenchIntentRequest` | Records the intent for the current lease and carries it out in the background: `scenario.start` arms the bench's handlers (section 12.5), `scenario.restore-calibration` restores LC-03's calibration and disarms a blip, and `incident.*` call the running gateway's in-process operator API (`getGatewayOperator` from `streamotter/gateway/operator`). A repeated `operationId` within the lease answers the recorded operation | 202 `BenchOperation`; 400 malformed (`operationId` is `lop_` and 22 of `A-Z a-z 0-9 _ -`; `incident` exactly `{ failureId, revision }`, only for `incident.*`; `scenario` a source-failures ID, only for `scenario.start`; `planToken` only for approval); 409 `no-lease` for another lease or a closed study, `not-applicable` when it can't apply (profile `off`; a scenario the profile can't run; a start while the source holds an incident or the gateway is restarting; `fouled-sensor` with calibration already removed; nothing to restore; an operation ID reused for a different request) |
+| `GET /bench/v1/operations/:operationId?leaseId=` | | The recorded operation | 200 `BenchOperation`; 404 `{ error }` unknown; 409 `no-lease` |
+| `GET /bench/v1/incident?leaseId=` | | The facts the field station composes the incident projection from | 200 `BenchIncidentFacts`; 409 `no-lease`; 409 `not-applicable` while the gateway restarts (there is no operator to ask: the field station keeps its last projection) |
+
+All three answer outside the bench's work queue, so they stay available during a gateway restart. `scenario.*` work runs in the queue, since it changes the study's handlers; `incident.*` work doesn't, since the library's retry and reassess wait up to 15 seconds for the source to settle. A refusal the library returns stays a refusal (`refused` with the library's outcome word); a call that throws is `unknown`, or `refused` with `invalid-request` when the library rejected the request's shape; an evaluation refused at the request stage (`stale-revision`, `not-found`, `generation-changed`) is `refused` and records nothing.
+
+Operations and plan tokens live in the bench's memory, scoped to the study: a reset (section 8, step 1) cancels unfinished operations and forgets every token. The bench runs no operator socket and no health listener: the gateway's `operatorSocket` and `health` options stay unset (ADR-03, in-process only).
+
+**Profile, journal, and handler build.** `LAB_FAILURE_HANDLING` (default `off`) picks the bench config's `failureHandling` (`src/lab/bench.ts`, `failureHandlingFor`):
+
+| Profile | `failureHandling.sources.field` | Quarantine |
+| --- | --- | --- |
+| `off` | none (V1 pause only; no journal, no operator API) | |
+| `retry` | `transientMapperRetries: 2`, `replaySafeMapping: true`; every class pauses | |
+| `quarantine` | as `retry`, plus `invalidJson: "quarantine-hold"`, `invalidPublicPayload: "quarantine-resync"`, `automaticAdvanceLimit: { incidents: 5, windowMs: 60000 }`, `boundaryRetirement: "generation"` | `lab-N.quarantine`, `capture: "full-record"`; `limits.maxSourceRecordBytes` is 262 144 so a copy fits the broker's default message size |
+
+With a profile other than `off`, provisioning a study creates its journal at `lab-N/studies/<studyId>/journal/` with the published CLI, in process: `runCli(["init", "--failures", "--config", <file>, "--state-dir", <dir>])` from `streamotter/cli` (`src/lab/journal.ts`). The config file holds secret references only, is written owner-only into the study directory, and is removed afterwards; `init` refuses a directory that already has a journal. Every gateway of the study is created with `stateDirectory` set to that directory and `handlerBuildId` set to `lontra-lab@<version>+projection-v2-<broken|corrected>`, and must report `store.kind: "sqlite"` and `durable: true` from `OperatorApi.status()` after it starts, or the start fails. A gateway restart or a bench process restart reopens the same journal (the library replaces a lock its own process or a dead one left); a reset removes it with the study directory. A study provisioned under `off` is never resumed under another profile: the bench discards it and provisions a new one. `BenchStatus.failures` reports the profile, the running gateway's `durable` self-check, and its handler build; `checks.fixtureSources` counts the fixture sources in the running gateway's own configuration (`GET /management/v1/config`), never the config the bench meant to pass.
+
+**Boundary retirement is `generation`.** The companion plan (section 2) maps the Lab coverage ledger to `application` retirement. The bench uses `generation` instead: a reset always changes the source generation (LC11-ADR-02), so a boundary lives exactly as long as its study, including across gateway and process restarts, which restart recovery (S08) needs. Nothing retires a boundary silently or by override; LC11-ADR-01's binding notes record the same deviation.
+
+**What `scenario.start` arms** (section 12.5): `fouled-sensor` removes LC-03's calibration; `calibration-blip` arms one transient lookup failure on the study's first start and a sustained one (every attempt, until `scenario.restore-calibration`) on later starts; `inspect-old-reading` switches the study to the corrected projection and restarts the gateway in the same study, so incidents record which build ran; the others arm nothing (the field station publishes their records). Each is recorded as an application step in `BenchIncidentFacts.steps`.
+
+```ts
+/**
+ * `LAB_FAILURE_HANDLING`, set alike on the field station and every bench. `off`: no failure
+ * handling (V1 pause only). `retry`: bounded transient-mapper retries, every class pauses.
+ * `quarantine`: quarantine-hold and quarantine-resync with the recovery guard; needs the
+ * bench's quarantine topic and its Kafka grants (section 10.9), so only where authorization is on.
+ */
+export type BenchFailureProfile = "off" | "retry" | "quarantine";
+
+/** The intents a bench carries out. `scenario.prepare-coverage` is the field station's alone (section 8a). */
+export type BenchIntent = Exclude<LabIntent, "scenario.prepare-coverage">;
+
+/** `POST /bench/v1/intents`: 202 `BenchOperation`. */
+export interface BenchIntentRequest {
+  leaseId: string;
+  /** The field station's `LabOperation.operationId`, which is also the bench's idempotency key within the lease. */
+  operationId: string;
+  intent: BenchIntent;
+  /** `scenario.start` only: what the bench arms for it (calibration removed, a calibration blip, or the corrected projection and a same-study restart). Records are published by the field station. */
+  scenario?: LabScenarioId;
+  /** `incident.*` only: the incident and revision the visitor's `expectedRevision` named, as the bench reported them in `BenchIncidentFacts`. */
+  incident?: { failureId: string; revision: number };
+  /** `incident.approve-reprocess` only. */
+  planToken?: string;
+}
+
+/** The bench's record of one intent: the 202 answer and `GET /bench/v1/operations/:operationId?leaseId=`. */
+export interface BenchOperation {
+  operationId: string;
+  intent: BenchIntent;
+  status: LabOperation["status"];
+  /**
+   * The library's outcome word (`OperationResult.outcome`, for example `retried`, `held`,
+   * `advanced`, `stale-revision`, `circuit-open`, `superseded`), `evaluated` for an
+   * evaluation, or the bench's own (`armed`, `restored`, `not-applicable`, `plan-unknown`,
+   * `unexpected-error`). Never the library's message.
+   */
+  outcome: string | null;
+  /** The incident revision the outcome produced, as the library reported it. */
+  incidentRevision: number | null;
+  acceptedAt: string;
+  updatedAt: string;
+}
+
+/** One incident as the installed library reports it, trimmed to what the projection needs. Event details are dropped: they may name native IDs. */
+export interface BenchIncident {
+  /** `f1:…`. Private: stays between the bench and the field station. */
+  failureId: string;
+  revision: number;
+  /** 1-based, in order of first observation within the study. */
+  ordinal: number;
+  failureClass: FailureClass;
+  stage: IncidentSummary["stage"];
+  errorCode: ErrorCode;
+  policy: FailurePolicy;
+  state: IncidentSummary["state"];
+  progress: IncidentProgress;
+  recovery: IncidentRecovery;
+  quarantine: IncidentQuarantine;
+  nextAction: IncidentNextAction;
+  evidence: { location: IncidentSummary["evidence"]["location"]; completeness: IncidentSummary["evidence"]["completeness"]; hash: string };
+  /** The bench's own synthetic coordinates; null for a non-Kafka position. */
+  position: RecordCoordinates | null;
+  generation: string;
+  handlerBuildId: string;
+  firstObservedAt: string;
+  lastObservedAt: string;
+  guard: { decision: "hold" | "recoverable" | "error" | "timeout"; reason: string | null } | null;
+  boundary: "in-force" | "superseded" | "retired" | null;
+  /** Newest last, at most 50 (the library's bound). */
+  history: { at: string; event: IncidentEventName }[];
+}
+
+/** `GET /bench/v1/incident?leaseId=`: what the field station composes `LabIncidentSummary` from. */
+export interface BenchIncidentFacts {
+  profile: BenchFailureProfile;
+  studyId: string;
+  /** Application state the bench's handlers read. `blips`: S06 starts in this study; `blipArmed`: calibration lookups are still set to time out. */
+  app: { calibration: "present" | "removed"; mapping: "broken" | "corrected"; blips: number; blipArmed: boolean };
+  /** The source's held incident, else the study's newest by first observation; null with no operator service (`off`) or no incident. */
+  incident: BenchIncident | null;
+  /** The source's automatic-continuation circuit; null without failure handling. */
+  circuit: { state: "closed" | "open"; recentIncidents: number; limit: number } | null;
+  /** The latest evaluation of `incident`, held by the bench. */
+  evaluation: {
+    at: string;
+    incidentRevision: number;
+    validation: "valid" | "invalid";
+    eligible: boolean;
+    ineligibleReason: string | null;
+    /** The first error's failure class when invalid. */
+    errorClass: FailureClass | null;
+    outputs: number;
+    expiresAt: string | null;
+    /** The bench's single-use token for the plan, while it may still be approved. */
+    planToken: string | null;
+  } | null;
+  /** The latest redrive of `incident`: the library's result and outcome. */
+  reprocess: { at: string; result: "completed" | "refused" | "failed" | "unknown"; outcome: string } | null;
+  /** When the bench first saw the leaseholder's snapshot succeed after `incident` advanced; null otherwise. */
+  resynchronizedAt: string | null;
+  /** Application actions the bench took in this study, newest last, bounded. */
+  steps: { at: string; text: string }[];
+}
+```
 
 ## 9. What the relay cut must do
 
@@ -618,25 +756,27 @@ LC11-ADR-03 decides least privilege per Kafka user; this section is the authorit
 - **The owner** decides section 10.8.
 - **V1.1 study identity (October 3, 2026)** adds study identity and discard (section 8) and the private study and recovery surface (section 8a). Benches and the field station must be deployed together (section 8).
 - **V1.1 W1 (October 3, 2026)** applied the October 2 review's Lab findings ([CODE_REVIEW_2026-10-02.md](../reviews/CODE_REVIEW_2026-10-02.md) S1, L1–L8) and the site evaluation's Lab items 2–4. Observable changes: bench-side failures answer 500 `bench-unavailable` instead of 400 and end the lease (sections 4, 8); a bench's `no-lease` reaches the visitor as `no-lease`, not `not-applicable` (section 8); a failed action doesn't spend the one-a-second budget (section 5); `LAB_LEASE_SECONDS` above 300 is refused at startup (sections 2, 8); `/api` error answers carry CORS (section 3); the page retries transient token failures (section 7) and shows a scenario view of the feed with `processed` records labeled "mapper returned" (section 6). No route, payload type, or error code was added or removed.
-- **V1.1 W4 (October 3, 2026)** added the Source failures track (section 12): `GET /api/lab/capabilities`, the `unsupported-scenario` error code, and the PROPOSED intent, incident, and operation interfaces. Existing routes, actions, and payloads are unchanged.
+- **V1.1 W4 (October 3, 2026)** added the Source failures track (section 12): `GET /api/lab/capabilities`, the `unsupported-scenario` error code, and the then-proposed intent, incident, and operation interfaces. Existing routes, actions, and payloads are unchanged.
+- **V1.1 W9b (October 4, 2026)** serves section 12 against StreamOtter 0.2.0-rc.1: intents answer 202 `LabOperation`, `GET /api/lab/operations/<operationId>` and `GET /api/lab/incident` are served while the capability summary offers them, the private intent surface (section 8b) joins the bench API, and `deployment-restricted`, evidence `not-required`, source `processed`, and `evaluation.planToken` and `summary` are added. Nothing is offered until a scenario's real-Kafka test passes (section 12.3).
+- **V1.1 W9b amendment (October 4, 2026)**, from the bench's real-library tests: an evaluation the library refuses at the request stage is `refused`, not `succeeded`; a garbled record's evaluation is `still-fails`; `calibration-blip`'s later starts fail every lookup until calibration is restored; `BenchIncidentFacts.incident` falls back to the newest incident by first observation. `BenchIncidentFacts.app.blipArmed` reports whether calibration lookups are still set to time out, so the projection offers `scenario.restore-calibration` exactly while there is something to restore. `features.incidentProjection` and `features.intents` are available exactly when some new scenario is, so the page never shows an incident panel or intent with no scenario to reach it.
 
 ## 12. The Source failures track (V1.1)
 
-October 3, 2026 · V1.1 slice W4 · Authority: the [companion plan](../releases/v1.1/LONTRA_CREEK_V1_1_COMPANION_PLAN.md) sections 3, 4, 6, 7, and 9, and acceptance LC11-A01, A04, A36, and A37.
+October 3, 2026 · V1.1 slice W4; served against StreamOtter 0.2.0-rc.1 by W9b, October 4, 2026 · Authority: the [companion plan](../releases/v1.1/LONTRA_CREEK_V1_1_COMPANION_PLAN.md) sections 3, 4, 6, 7, and 9, and acceptance LC11-A01, A04, A36, and A37.
 
-`/lab/` gains a second track, **Source failures**, beside the existing scenarios, which become the **Connections and clients** track. This section fixes what the field station serves for it today and the shape of what it will serve once a published StreamOtter release supplies the native failure APIs.
+`/lab/` has a second track, **Source failures**, beside the existing scenarios, which form the **Connections and clients** track. This section fixes what the field station serves for it.
 
-**Status.** The installed `streamotter@0.1.0-rc.3` has no quarantine, recovery guard, cumulative barrier, evaluation, redrive, or operator service ([BASELINE.md section 3](../releases/v1.1/BASELINE.md#3-native-capability-availability)). So:
+**Status.** StreamOtter 0.2.0-rc.1 publishes the native failure APIs the exercises need: failure policies, quarantine, the recovery guard and cumulative boundary, transient-mapper retries, the automatic-continuation limit, the durable failure journal, and the in-process operator service (`streamotter/gateway/operator`). The field station and the benches serve every interface in this section (benches: section 8b), **gated per scenario** by the capability summary (section 12.3):
 
-- **Served today:** `GET /api/lab/capabilities` (section 12.3) and the refusal of every intent with 409 `unsupported-scenario` (section 12.5).
-- **PROPOSED, not served:** the intents' effects, `GET /api/lab/incident` (section 12.7), and `GET /api/lab/operations/<operationId>` (section 12.6). Both routes answer 404 today. Their types are in `contract.ts` so the page and the future bench binding are written against one shape; they are not backed by any native release, and nothing in this repository fabricates a value of them.
-- **Unchanged:** every route, `LabAction`, payload, timing, and rule in sections 1–11. Fouled sensor (LC11-S01) keeps running on `sensor.foul`, `sensor.restore`, and `source.resume`.
+- A scenario is offered only when the installed release is one this backend was verified against **for that scenario** (`VERIFIED_WITH` in `src/lab/capabilities.ts`: a scenario is added only after its real-Kafka test on `npm run dev:lab` passes) and this deployment's failure-handling profile supports it.
+- Where nothing is available, every intent is refused with 409 `unsupported-scenario`, and `GET /api/lab/incident` and `GET /api/lab/operations/<operationId>` answer 404, exactly as before 0.2.0-rc.1. Nothing is simulated: every incident fact comes from the installed library through its published operator API, and every application fact from the coverage ledger (section 8a).
+- **Unchanged:** every route, `LabAction`, payload, timing, and rule in sections 1–11. Fouled sensor (LC11-S01) keeps running on `sensor.foul`, `sensor.restore`, and `source.resume`, and can also be started as an intent.
 
-The intent names are Lontra Creek demo intents, not StreamOtter API names. When the native APIs ship, W9b maps them to the published functions after their types exist (companion plan section 7) and amends this section.
+The intent names are Lontra Creek demo intents, not StreamOtter API names; section 12.5 maps each to the published function it calls.
 
 ### 12.1 Types
 
-Normative, landed verbatim in `apps/field-station/src/lab/contract.ts`.
+Normative, landed verbatim in `apps/field-station/src/lab/contract.ts`. The private types the field station and the benches exchange are in section 8b.
 
 ```ts
 /** The two tracks on /lab/. */
@@ -660,7 +800,8 @@ export type LabScenarioId =
 export type LabUnavailableCode =
   | "lab-disabled"              // this deployment has no benches
   | "library-lacks-capability"  // the installed StreamOtter release is known not to provide what the scenario needs
-  | "not-integrated";           // the installed release isn't one this backend's Lab has been verified against
+  | "not-integrated"            // the installed release isn't one this backend's Lab has been verified against for the scenario
+  | "deployment-restricted";    // this deployment's Kafka authorization or failure-handling profile isn't verified for it (LC11-ADR-03), or it is a local and CI exercise
 
 export interface LabAvailability {
   available: boolean;
@@ -679,11 +820,11 @@ export interface LabCapabilities {
   backend: { mode: "real-kafka-synthetic"; lab: "enabled" | "disabled" };
   /** Every scenario this backend knows. A scenario missing here is one this backend does not support. */
   scenarios: (LabAvailability & { id: LabScenarioId })[];
-  /** The PROPOSED incident projection and intents below. */
+  /** Whether `GET /api/lab/incident` and the intents below are served. */
   features: { incidentProjection: LabAvailability; intents: LabAvailability };
 }
 
-/** PROPOSED demo intents (companion plan section 9), not StreamOtter API names. Each resolves to a fixed, server-selected incident and action. */
+/** Demo intents (companion plan section 9), not StreamOtter API names. Each resolves to a fixed, server-selected incident and action. */
 export type LabIntent =
   | "scenario.start"               // start a source-failures scenario on the leased bench's study
   | "scenario.restore-calibration" // the application puts LC-03's calibration back
@@ -694,7 +835,7 @@ export type LabIntent =
   | "incident.approve-reprocess";  // approve one evaluated plan for gateway-local reprocessing
 
 /**
- * PROPOSED body of `POST /api/lab/actions` for an intent, in place of `{ action }`.
+ * The body of `POST /api/lab/actions` for an intent, in place of `{ action }`.
  * Bench, source, topic, offset, incident storage IDs, payloads, handler code, and policy
  * objects are never accepted: any other key is 400.
  */
@@ -704,21 +845,26 @@ export interface LabIntentRequest {
   requestId: string;
   /** Required for `scenario.start` and refused otherwise: a source-failures scenario. */
   scenario?: LabScenarioId;
-  /** Required except for `scenario.start`: the `scenarioRevision` the page last showed. A stale one is refused. */
+  /** Required except for `scenario.start` (where it is optional): the `scenarioRevision` the page last showed. A stale one is refused. */
   expectedRevision?: number;
-  /** Required for `incident.approve-reprocess` and refused otherwise: the opaque token of the evaluation the visitor reviewed. */
+  /** Required for `incident.approve-reprocess` and refused otherwise: `evaluation.planToken` from the projection the visitor reviewed. */
   planToken?: string;
 }
 
-/** PROPOSED: the answer to an intent (202) and `GET /api/lab/operations/<operationId>`. */
+/** The answer to an intent (202) and `GET /api/lab/operations/<operationId>`. */
 export interface LabOperation {
-  /** Opaque and scoped to the lease and study; looked up under the session, never trusted as authority. */
+  /** `lop_` and 22 base64url characters. Opaque and scoped to the lease and study; looked up under the session, never trusted as authority. */
   operationId: string;
   intent: LabIntent;
   requestId: string;
   /**
    * `accepted` acknowledges the demo request only: not quarantine success, not business completion.
+   * `running`: the bench or the field station is carrying it out.
+   * `succeeded`: carried out; what it led to is in the projection (a retry that holds again still succeeded).
+   * `refused`: the installed library or the application refused it; nothing changed.
+   * `failed`: it was attempted and failed. `cancelled`: the lease ended first.
    * `unknown` means the outcome couldn't be observed; the page looks it up again and never repeats the request.
+   * Only `accepted` and `running` change; every other status is final.
    */
   status: "accepted" | "running" | "succeeded" | "refused" | "failed" | "unknown" | "cancelled";
   acceptedAt: string;
@@ -730,8 +876,9 @@ export interface LabOperation {
 }
 
 /**
- * PROPOSED: the bounded, lease-scoped current-incident projection. The browser gets this
+ * The bounded, lease-scoped current-incident projection. The browser gets this
  * summary, not the server's internal state, and never derives it from the rolling feed.
+ * It never carries a native failure, boundary, operation, or plan ID, or a path.
  */
 export interface LabIncidentSummary {
   /** Opaque display label such as "Incident 1"; not a journal or storage ID. */
@@ -747,12 +894,30 @@ export interface LabIncidentSummary {
   failure: { stage: string; class: string };
   /** The policy preset the study started with, by its library name. */
   policy: string;
-  /** `saved` only after a positively acknowledged quarantine write. */
-  evidence: "saved" | "unknown" | "unavailable";
-  source: "held" | "advanced" | "uncertain";
+  /**
+   * `saved` only after a positively acknowledged quarantine write; `not-required` when the
+   * policy keeps no evidence (`pause`: the record is retried in place, never skipped).
+   */
+  evidence: "saved" | "unknown" | "unavailable" | "not-required";
+  /** `processed`: the held record was retried and processed normally; nothing was skipped. */
+  source: "held" | "advanced" | "processed" | "uncertain";
   recovery: "none" | "coverage-not-ready" | "coverage-established" | "view-resynchronized";
   /** The latest dry-run evaluation of the retained evidence, if any. */
-  evaluation: { result: "passed" | "failed"; at: string; expiresAt: string | null } | null;
+  evaluation: {
+    /** `passed`: the saved record maps and validates with the current handlers. */
+    result: "passed" | "failed";
+    at: string;
+    /** When `planToken` stops being accepted: the library plan's expiry or the lease's end, whichever is first. */
+    expiresAt: string | null;
+    /**
+     * Opaque and single use, bound to this lease, study, incident revision, and plan. Present
+     * only while `incident.approve-reprocess` may be sent with it; null once used or expired,
+     * or when the evaluation issued no plan.
+     */
+    planToken: string | null;
+    /** One sentence: what the evaluation found, and why it can't be reprocessed when it can't. */
+    summary: string;
+  } | null;
   /** The controlled reprocessing's observed outcome, once there is one. */
   reprocess: "reprocessed" | "superseded" | "failed" | "unknown" | null;
   /** True once a reset discarded this study; the incident was not fixed by it. */
@@ -767,7 +932,7 @@ export interface LabIncidentSummary {
   stepsGap: boolean;
 }
 
-/** PROPOSED: `GET /api/lab/incident`. */
+/** `GET /api/lab/incident`. */
 export type LabIncidentView =
   | { status: "none"; now: string }
   | { status: "open"; now: string; incident: LabIncidentSummary };
@@ -777,22 +942,22 @@ export type LabIncidentView =
 
 One scenario, one implementation: a scenario listed in both tracks has one set of controls. The ID is the `?scenario=` value and the key of the page's catalog (`apps/site/src/lab-catalog.ts`) and the capability summary (`apps/field-station/src/lab/capabilities.ts`); both are `Record<LabScenarioId, …>`, so a new ID fails the typecheck until both describe it.
 
-| ID | Story | Track | Delivery | Today |
+| ID | Story | Track | Delivery | Needs (profile) |
 | --- | --- | --- | --- | --- |
-| `fouled-sensor` | LC11-S01 Fouled sensor: fix and retry | Both | Public (existing, updated) | Runs: `sensor.*`, `source.resume` |
-| `garbled-reading` | LC11-S02 Garbled reading: preserve and hold | Source failures | Public | Unavailable: quarantine |
-| `bad-projection` | LC11-S03 Bad projection: recover from authoritative state | Source failures | Public, headline | Unavailable: quarantine, recovery guard |
-| `inspect-old-reading` | LC11-S04 Inspect the old reading: evaluate, then reprocess | Source failures | Public | Unavailable: evaluation, controlled reprocessing |
-| `conflicting-readings` | LC11-S05 Conflicting readings: stopping is correct | Source failures | Public, advanced | Unavailable: quarantine, recovery guard |
-| `calibration-blip` | LC11-S06 Calibration lookup blip | Source failures | Public, advanced | Unavailable: bounded retry for transient mapper errors |
-| `too-many-bad-readings` | LC11-S07 Too many bad readings | Source failures | Local and CI only | Unavailable: quarantine, continuation limit |
-| `restart-recovery` | LC11-S08 Recovery across restart and a new subscription | Source failures | Local and CI only | Unavailable: durable failure journal, recovery guard |
-| `unavailable-evidence` | LC11-S09 Unavailable evidence or quarantine | Source failures | Local and CI only | Unavailable: quarantine, durable failure journal |
+| `fouled-sensor` | LC11-S01 Fouled sensor: fix and retry | Both | Public (existing, updated) | Runs on `sensor.*`, `source.resume` everywhere; as an intent, any profile but `off` |
+| `garbled-reading` | LC11-S02 Garbled reading: preserve and hold | Source failures | Public | Quarantine (`quarantine`) |
+| `bad-projection` | LC11-S03 Bad projection: recover from authoritative state | Source failures | Public, headline | Quarantine, recovery guard (`quarantine`) |
+| `inspect-old-reading` | LC11-S04 Inspect the old reading: evaluate, then reprocess | Source failures | Public | Evaluation, controlled reprocessing (`quarantine`) |
+| `conflicting-readings` | LC11-S05 Conflicting readings: stopping is correct | Source failures | Public, advanced | Quarantine, recovery guard (`quarantine`) |
+| `calibration-blip` | LC11-S06 Calibration lookup blip | Source failures | Public, advanced | Bounded retry for transient mapper errors (`retry` or `quarantine`) |
+| `too-many-bad-readings` | LC11-S07 Too many bad readings | Source failures | Local and CI only | Quarantine, continuation limit (`quarantine`, `LAB_LOCAL_EXERCISES`) |
+| `restart-recovery` | LC11-S08 Recovery across restart and a new subscription | Source failures | Local and CI only | Durable failure journal, recovery guard (`quarantine`, `LAB_LOCAL_EXERCISES`) |
+| `unavailable-evidence` | LC11-S09 Unavailable evidence | Source failures | Local and CI only | Quarantine, durable failure journal (`quarantine`, `LAB_LOCAL_EXERCISES`) |
 | `relay-cut` | Flash flood takes the relay | Connections and clients | Existing | Runs: `relay.*` |
 | `slow-client` | Laptop on a satellite link | Connections and clients | Existing | Runs: `satellite.start` |
 | `relay-restart` | Relay restart | Connections and clients | Existing | Runs: `gateway.restart` |
 
-"Unavailable: X" is the native capability the scenario needs (companion plan section 4), which the capability summary names in its reason.
+The native capability is what the capability summary names in a `library-lacks-capability` reason (companion plan section 4); the profile is what a `deployment-restricted` reason refers to. The hosted broker runs without Kafka authorization today, so hosted benches use profile `retry` and offer only `calibration-blip` among the new scenarios; local `npm run dev:lab` and CI use `quarantine` with `LAB_LOCAL_EXERCISES=1`. Offering the rest on the hosted Lab needs the owner-approved authorization migration (section 10.7, R2).
 
 ### 12.3 `GET /api/lab/capabilities`
 
@@ -804,47 +969,101 @@ One scenario, one implementation: a scenario listed in both tracks has one set o
 - `backend.mode`: `real-kafka-synthetic`, the only mode the field station's public API runs in. The fixture demo (`npm run dev`) has no Lab API and answers 404.
 - `contract`: this section's revision.
 - `scenarios`: every `LabScenarioId` this backend knows, each `available` or not with a `reason`. Existing scenarios are available exactly when the Lab has benches (`lab-disabled` otherwise); the pool's live state stays in `LabStatus`.
-- `features.incidentProjection` and `features.intents`: whether the PROPOSED routes in sections 12.6 and 12.7 work. Both unavailable today.
+- `features.incidentProjection` and `features.intents`: whether `GET /api/lab/incident` (section 12.7) and the intents and their operations (sections 12.5 and 12.6) are served. Both are available exactly when at least one new scenario is (so never with profile `off`, an unverified release, or no benches); otherwise both carry the reason the new scenarios carry (`library-lacks-capability` or `not-integrated` for the release, else the first new scenario's reason).
 
 **Never**: service or gateway URLs, bench numbers, secrets or tokens, socket or file paths, management or operator routes, Kafka topics, or anything from a lease. A unit test checks the serialized summary for URLs, loopback addresses, sockets, tokens, secrets, management routes, and paths.
 
-**Reasons.** `library-lacks-capability` only for a release whose published source was checked and found to lack the native APIs (`VERIFIED_WITHOUT_FAILURE_HANDLING`, today `0.1.0-rc.3`); its text names the release and what it lacks, for example "This backend's StreamOtter release (0.1.0-rc.3) doesn't provide quarantine." Any other installed version gets `not-integrated`, which says the Lab hasn't been verified against that release rather than claiming what it lacks. `lab-disabled` is for the existing scenarios on a deployment with no benches.
+**Reasons**, the first that applies, for a new scenario:
 
-**How the page uses it.** Fetched once on load (and again on **Check again** until it succeeds). A new scenario is offered only when the summary lists it as available *and* that build of the page has an exercise for it; no build has one yet. Otherwise the page shows the summary's reason, or **This backend does not support this scenario** for a 404 or a summary that doesn't list the scenario (a newer site on an older backend), or that the capability check didn't answer for a network failure, a 5xx, or a body without the summary's shape. There is no mock fallback. An existing scenario says it runs today only when the summary lists it as available; with `lab-disabled` the page shows that reason, and without a usable summary it says the scenario runs on a leased bench when the backend has benches. When the backend's `library.version` differs from the version the site was built for, the page says so.
+1. `library-lacks-capability`: the installed release's published source was checked and found to lack the native APIs (`VERIFIED_WITHOUT_FAILURE_HANDLING`, `0.1.0-rc.3`). The text names the release and what it lacks, for example "This backend's StreamOtter release (0.1.0-rc.3) doesn't provide quarantine."
+2. `not-integrated`: the installed release isn't one this backend's Lab has been verified against for this scenario (`VERIFIED_WITH`, a set of scenarios per release, each added only after its real-Kafka test passes). It says the Lab hasn't been verified rather than claiming what the release lacks. For `0.2.0-rc.1` the set starts empty.
+3. `lab-disabled`: the deployment has no benches.
+4. `deployment-restricted`: this deployment's failure-handling profile (`LAB_FAILURE_HANDLING`, section 8b) doesn't provide what the scenario needs (section 12.2), or the scenario is a local and CI exercise and `LAB_LOCAL_EXERCISES` isn't set. The text says the deployment's Kafka authorization isn't verified for it (LC11-ADR-03) or that it runs only locally and in CI.
+
+Existing scenarios are available exactly when the Lab has benches (`lab-disabled` otherwise).
+
+**How the page uses it.** Fetched once on load (and again on **Check again** until it succeeds). A new scenario is offered only when the summary lists it as available *and* that build of the page has an exercise for it. Otherwise the page shows the summary's reason, or **This backend does not support this scenario** for a 404 or a summary that doesn't list the scenario (a newer site on an older backend), or that the capability check didn't answer for a network failure, a 5xx, or a body without the summary's shape. There is no mock fallback. An existing scenario says it runs today only when the summary lists it as available; with `lab-disabled` the page shows that reason, and without a usable summary it says the scenario runs on a leased bench when the backend has benches. When the backend's `library.version` differs from the version the site was built for, the page says so.
 
 ### 12.4 Deep links
 
 `/lab/#source-failures`, `/lab/#connections`, and `/lab/?scenario=<id>` (optionally with a track hash) select explanatory content only: the track shown and a marked scenario card. They never borrow a bench, start a scenario, inject a record, or approve anything (LC11-A01); a visitor still chooses **Borrow a bench**, and starting a scenario will be its own explicit action. An unknown `scenario` value is ignored. A scenario outside the named track opens its own track; `fouled-sensor` alone opens Source failures. Choosing a track or scenario in the page rewrites the URL in place (`history.replaceState`), so it doesn't reload the page (which would return a lease on `pagehide`) or add history entries. The eight routes and the navigation are unchanged.
 
-### 12.5 PROPOSED intents on `POST /api/lab/actions`
+### 12.5 Intents on `POST /api/lab/actions`
 
-A closed set of demo intents, each resolving to a fixed, server-selected incident and action for the session's current lease and study (companion plan section 9). The body is a `LabIntentRequest` instead of `{ action }`; a body with both is 400.
+A closed set of demo intents, each resolving to a fixed, server-selected incident and action for the session's current lease and study (companion plan section 9). The body is a `LabIntentRequest` instead of `{ action }`; a body with both is 400. The incident is never named by the browser: `expectedRevision` names the projection the visitor saw, and the field station looks up the incident and its library revision it recorded for that projection.
 
-| Intent | Would do | Binding |
-| --- | --- | --- |
-| `scenario.start` | Start a source-failures scenario on the leased bench's study; an incompatible scenario on an existing study first needs a visible reset | `requestId`, `scenario`; `expectedRevision` optional |
-| `scenario.restore-calibration` | The application restores LC-03's calibration (S01) | `requestId`, `expectedRevision` |
-| `scenario.prepare-coverage` | The application releases its predetermined authoritative-state update and coverage evidence (S03) | `requestId`, `expectedRevision` |
-| `incident.retry-current` | Retry the exact held position | `requestId`, `expectedRevision` |
-| `incident.reassess` | Ask the installed library's supported reassessment | `requestId`, `expectedRevision` |
-| `incident.evaluate` | Dry-run the retained evidence against the current mapper; produces a plan token | `requestId`, `expectedRevision` |
-| `incident.approve-reprocess` | Approve exactly one evaluated plan for gateway-local reprocessing | `requestId`, `expectedRevision`, `planToken` |
+| Intent | Does | Carried out by | Binding |
+| --- | --- | --- | --- |
+| `scenario.start` | Starts a source-failures scenario on the leased bench's study (table below) | The bench arms its handlers; the field station publishes the scenario's records through the publisher gate and records each run in the coverage ledger (section 8a) | `requestId`, `scenario`; `expectedRevision` optional |
+| `scenario.restore-calibration` | Puts LC-03's calibration back and disarms a calibration blip. The source stays held until a retry: StreamOtter never resumes on its own | Bench (application state) | `requestId`, `expectedRevision` |
+| `scenario.prepare-coverage` | Releases the predetermined authoritative update of the study's withheld run; coverage is established once the bench's served state reflects it (S03) | Field station, `LabStudies.prepareCoverage` | `requestId`, `expectedRevision` |
+| `incident.retry-current` | `OperatorApi.retryCurrent({ sourceId: "field", failureId, expectedRevision, reason: "Lab visitor" })`: retry the exact held position | Bench, in-process operator API | `requestId`, `expectedRevision` |
+| `incident.reassess` | `OperatorApi.reassess({ sourceId: "field", failureId, expectedRevision })`: a fresh quarantine copy, then the recovery guard again | Bench | `requestId`, `expectedRevision` |
+| `incident.evaluate` | `OperatorApi.evaluate({ failureId, expectedRevision })`: a dry run of the saved bytes through today's handlers. When the library issues a plan, the bench mints the projection's `planToken` | Bench | `requestId`, `expectedRevision` |
+| `incident.approve-reprocess` | `OperatorApi.redrive({ failureId, planId, planFingerprint, expectedRevision, operationId: "lab<N>.<studyId>.<operationId>" })` for the plan the token names; the token is spent | Bench | `requestId`, `expectedRevision`, `planToken` |
 
-**Validation (served today).** Keys are exactly `intent`, `requestId`, `scenario`, `expectedRevision`, and `planToken`; anything else, including `bench`, `sourceId`, `topic`, `partition`, `offset`, an incident ID, a payload, handler code, a policy object, or `action`, is 400 `invalid-request`. `intent` is one of the seven; `requestId` is 8 to 64 of `A-Z a-z 0-9 -`; `scenario` is required for `scenario.start` (a source-failures ID) and refused otherwise; `expectedRevision` is a non-negative safe integer, required except for `scenario.start`; `planToken` is 16 to 512 of `A-Z a-z 0-9 _ -`, required for `incident.approve-reprocess` and refused otherwise. The usual Origin check (403) and session (401) come first.
+**Starting a scenario.** Every scenario record goes to the bench's own `lab-N.field.gauges` with key `station:LC-03` (the creek copies' partition, so order holds) and the revision of the field station's current tick. Its reading differs from the current one, and the ledger derives what it affects (section 8a). A study may hold several runs; a scenario can't start while the study's current incident is open (409 `not-applicable`: the visitor returns the bench to discard the study).
 
-**Refusal (served today).** A well-formed intent is refused with **409 `unsupported-scenario`** before the pool, the lease, the action budget, or any bench is touched, whether or not the session holds a lease and whether or not the Lab has benches. `not-applicable` was not reused: it means "valid here, but not in the bench's current state", which a page may retry after the state changes, while `unsupported-scenario` means this backend can't do it at all, which the page shows as **This backend does not support this scenario** and never retries. A test checks that no intent reaches `/bench/v1/actions`.
+| Scenario | The bench arms | The field station publishes | Coverage |
+| --- | --- | --- | --- |
+| `fouled-sensor` | Removes the calibration table (as `sensor.foul`) | Nothing: the next live LC-03 reading fails | |
+| `garbled-reading` | | A truncated LC-03 record that isn't JSON | `withheld`, for bookkeeping only |
+| `bad-projection` | | A valid LC-03 reading marked for the `lab-projection-v2` mapping, whose broken projection writes `flowCfs` as a string | `withheld` |
+| `inspect-old-reading` | Switches to the corrected projection and restarts its gateway in the same study, so the incident's handler identity is honest | First, when the study has no advanced `bad-projection` incident, the `bad-projection` record with coverage `pending`, waiting (at most 30 s) until StreamOtter advances past it | `pending` |
+| `conflicting-readings` | | One `lab-reading-batch` record whose two LC-03 readings differ at the same revision | `pending` |
+| `calibration-blip` | A transient calibration-lookup failure on the next live LC-03 reading: one attempt on the study's first start (the retry succeeds and no incident opens); on later starts every attempt fails until `scenario.restore-calibration`, so retries run out and a retry before restoring holds again | Nothing | |
+| `too-many-bad-readings` | | Six `lab-projection-v2` readings back to back | `pending` |
+| `restart-recovery` | | Two `lab-projection-v2` readings: LC-03 flow and LC-01 water temperature, for a cumulative barrier; the visitor then restarts the gateway | `pending` |
+| `unavailable-evidence` | | One `lab-projection-v2` reading; the CI harness then deletes its quarantine copy | `pending` |
 
-**When supported (W9b).** The answer becomes 202 `LabOperation`. A repeated `requestId` within the lease returns the same operation rather than running it again. A stale `expectedRevision`, an expired or foreign `planToken`, or an ended lease or study is refused; opaque references are looked up under the session, never trusted as authority. Lease heartbeats, return, and read-only routes stay responsive while an operation waits; the pool's serialized queue is not held across those waits. The action budget (section 2) applies. Approval lifetime is at most the library plan's, the remaining lease, and the current study; back-forward-cache restoration revalidates, never approves.
+**Validation.** Keys are exactly `intent`, `requestId`, `scenario`, `expectedRevision`, and `planToken`; anything else, including `bench`, `sourceId`, `topic`, `partition`, `offset`, an incident ID, a payload, handler code, a policy object, or `action`, is 400 `invalid-request`. `intent` is one of the seven; `requestId` is 8 to 64 of `A-Z a-z 0-9 -`; `scenario` is required for `scenario.start` (a source-failures ID) and refused otherwise; `expectedRevision` is a non-negative safe integer, required except for `scenario.start`; `planToken` is 16 to 512 of `A-Z a-z 0-9 _ -`, required for `incident.approve-reprocess` and refused otherwise.
 
-### 12.6 PROPOSED `GET /api/lab/operations/<operationId>`
+**Answers, in order.**
 
-Session required; 404 for an operation outside the session's current lease. Answers `LabOperation`. `accepted` acknowledges the demo request only, not quarantine success or business completion; the page polls this resource until the outcome is observed. `unknown` means the outcome couldn't be observed: the page looks the result up again and never repeats the request. A callback from an ended study never updates a new visitor's operation; a write completed before cancellation is recorded honestly in the old study. Not served today (404).
+| Answer | When |
+| --- | --- |
+| 400 `invalid-request` | A malformed body (above) |
+| 403 `origin-not-allowed`, 401 `no-session` | As for every route |
+| 409 `unsupported-scenario` | `features.intents` is unavailable, or `scenario.start` names a scenario the capability summary doesn't list as available. Checked before the pool, the lease, the action budget, or any bench; the page shows **This backend does not support this scenario** and never retries |
+| 409 `no-lease` | No active lease for the session |
+| 202 `LabOperation` (the existing one) | The `requestId` was already used in this lease with the same body: the same operation, at its current status. Nothing runs again and no budget is spent |
+| 409 `not-applicable` | The `requestId` was already used in this lease with a different body; `expectedRevision` isn't the current `scenarioRevision`; `planToken` isn't the current projection's; or the intent's precondition is false (no current incident for `incident.*`, nothing to restore, no withheld run to prepare, a start while an incident is open). The page may retry once the state changes |
+| 429 `too-many-actions` | Within a second of the lease's last accepted action or intent (section 2) |
+| 202 `LabOperation`, `accepted` | Recorded. The work runs outside the pool's serialized queue, so heartbeats, return, and reads stay responsive while it waits |
+| 503 `bench-unavailable` | As for actions |
 
-### 12.7 PROPOSED `GET /api/lab/incident`
+**Outcomes.** The operation becomes `running`, then final. A library `OperationResult` maps by its `result`: `completed` → `succeeded` (a retry that holds again still succeeded: the projection shows where the record is), `refused` → `refused`, `failed` → `failed`, `unknown` → `unknown`. An evaluation that returns is `succeeded`, whatever it found, except one the library refuses at the request stage (`stale-revision`, `not-found`, `generation-changed`), which is `refused` and records no evaluation; one that throws is `failed`. Evaluating a record that still fails reports `still-fails` before anything else, so a garbled record's evaluation is `still-fails`, not `not-advanced`. A redrive's `reprocessed` or `superseded` is `succeeded`; a spent, expired, or foreign token is `refused`. `detail` is the application's own sentence for the outcome (for example `stale-revision`, `integrity-class`, `policy-not-resync`, `circuit-open`, `not-held`, `plan-expired`, `evidence-expired`); the library's message is never passed through. Re-sending a redrive's `operationId` to the library returns its recorded result. A bench that doesn't answer leaves the operation `unknown`. Approval lifetime is at most the library plan's (5 minutes), the remaining lease, and the current study: a token is single use and dies with the lease; back-forward-cache restoration revalidates, never approves.
 
-Session and an active lease required (409 `no-lease` otherwise). Answers `LabIncidentView`: `none`, or the bounded current-incident projection `LabIncidentSummary` for the lease's study. The server builds it from the library's incident results and its own scenario ledger; it is never derived from the rolling feed, which drops items. Steps carry their origin (`application` or `library`); a gap stays a gap. Coordinates and fingerprints are the bench's own synthetic values. Not served today (404).
+### 12.6 `GET /api/lab/operations/<operationId>`
 
-**Page binding.** The page fetches it every 2 seconds while a lease is active, and only when `features.incidentProjection.available` is true, which no backend reports today; so today the page never requests it and the panel stays in its empty, explained state.
+Served while `features.intents` is available; 404 otherwise. Session required (401). Answers `LabOperation` for an operation of the session's current lease, or of the lease that ended within the last 60 seconds (as `GET /api/lab/lease` keeps reporting `ended`); 404 for any other. `accepted` acknowledges the demo request only, not quarantine success or business completion; the page polls this resource every second until the status is final. `unknown` means the outcome couldn't be observed: the page looks the result up again and never repeats the request (a lost answer to the intent itself is re-sent with the **same** `requestId`). When a lease ends, its unfinished operations become `cancelled`. A result that arrives after that is recorded only in the old study's summary and never updates a new visitor's operation. Not a heartbeat target of its own: like every Lab request it counts as one.
+
+### 12.7 `GET /api/lab/incident`
+
+Served while `features.incidentProjection` is available; 404 otherwise. Session and an active lease required (409 `no-lease` otherwise), except that a session whose lease ended within the last 60 seconds gets its last projection again with `discarded: true`: the study was discarded, the incident not fixed. Answers `LabIncidentView`: `none` until the study has an incident, then `open` with the bounded projection `LabIncidentSummary` for the lease's study.
+
+The field station composes it from the bench's facts (`BenchIncidentFacts`, section 8b: the installed library's incident as its operator API reports it, and the bench's application state) and its own coverage ledger. It is never derived from the rolling feed, which drops items.
+
+| Field | From |
+| --- | --- |
+| `label` | "Incident N", N its order of first observation in the study |
+| `scenario` | The scenario the visitor last started in this lease |
+| `scenarioRevision` | Starts at 1 for the lease and increments whenever any other field changes. The field station records, for each revision, the library failure ID and incident revision it showed |
+| `reason` | The application's sentence for the failure class |
+| `failure` | The library's `{ stage, class: failureClass }` |
+| `policy` | The library's policy for the incident |
+| `evidence` | `quarantine` `acknowledged` → `saved`; `pending` or `unknown` → `unknown`; `failed`, or evidence `expired` or `unavailable` → `unavailable`; `not-required` → `not-required` |
+| `source` | `progress` `held`, `retrying`, or `advance-pending` → `held`; `advanced` → `advanced`; `processed` → `processed`; `uncertain` → `uncertain` |
+| `recovery` | `none` for an incident with no recovery guard; otherwise the ledger's run for the record: `withheld` → `coverage-not-ready`; `established` → `coverage-established`, and `view-resynchronized` once the bench saw the leaseholder's snapshot succeed after the advance |
+| `evaluation` | The bench's latest evaluation of this incident revision: `passed` when the saved record validates and maps now, with `planToken` while the plan may be approved |
+| `reprocess` | The latest redrive: `reprocessed`, `superseded`, `failed`, or `unknown` |
+| `nextIntent` | From the library's `nextAction` and the application's state: `repair-and-retry` → `scenario.restore-calibration` while calibration is removed or a blip armed, else `incident.retry-current`; `reassess` → `scenario.prepare-coverage` while the run is withheld, else `incident.reassess`; `evaluate` → `incident.approve-reprocess` while a plan token is live, else `incident.evaluate` once the projection is corrected, else none; `reopen-circuit` (no Lab intent: a reset ends it) and `none` → null |
+| `detail` | The record's coordinates, `evidence.hash`, the handler build ID, and the source generation |
+| `steps` | Application steps (records published, coverage released, the bench's own actions) and the library's incident history, at most 50; `stepsGap` when the library's bounded history no longer starts at `detected` |
+
+The serialized projection never contains a native failure ID (`f1:`), boundary ID (`rb1:`), operation ID (`op1:`), plan ID, or a path; a test checks it.
+
+**Page binding.** The page fetches it every 2 seconds while a lease is active, and only when `features.incidentProjection.available` is true.
 
 ### 12.8 The incident panel
 
@@ -856,12 +1075,15 @@ Between **Your bench** and the gateway feed, so a narrow screen reads reading, i
 | Record disposition | Opaque label and reason first; failure class and stage, policy, evidence, source, recovery requirement, evaluation and reprocessing when present, the next supported intent; coordinates, evidence fingerprint, handler identity, source generation, and incident revision behind a disclosure | `LabIncidentSummary` |
 | Observed steps | Chronological, at most 50, each labeled **Application action**, **Library observation**, or **Browser observation** (the page's own SDK state changes since the incident opened); a gap says steps are missing | `LabIncidentSummary.steps` and the page |
 
-Labels follow the companion plan's "Say / Do not imply" table: **Evidence saved** (with "The record isn't repaired, and the view isn't recovered by this."), **Source advanced past quarantined record** ("The browser did not receive the excluded record."), **Snapshot coverage established** ("StreamOtter didn't prove the business data correct."), **View resynchronized** ("intermediate events were not replayed"), **Evaluation passed** ("This evaluation changed no source offset, sent no state, and published no business event. Nothing has been reprocessed."), **Reprocessed / Superseded by a newer snapshot / Reprocessing failed / Reprocessing outcome unknown**, and **Study discarded and reset** ("The held incident was not fixed."). Every mark has an icon and text; held and failed marks also use the stale and failed colors, never color alone.
+Labels follow the companion plan's "Say / Do not imply" table: **Evidence saved** (with "The record isn't repaired, and the view isn't recovered by this."), **Source advanced past quarantined record** ("The browser did not receive the excluded record."), **Record processed on retry** ("Nothing was skipped."), **No evidence kept** (a `pause` policy holds the record in place to be retried), **Snapshot coverage established** ("StreamOtter didn't prove the business data correct."), **View resynchronized** ("intermediate events were not replayed"), **Evaluation passed** ("This evaluation changed no source offset, sent no state, and published no business event. Nothing has been reprocessed."), **Reprocessed / Superseded by a newer snapshot / Reprocessing failed / Reprocessing outcome unknown**, and **Study discarded and reset** ("The held incident was not fixed."). Every mark has an icon and text; held and failed marks also use the stale and failed colors, never color alone.
 
 **Accessibility (LC11-A36).** The chooser is two links with `aria-current`; scenario titles are links; both work by keyboard and keep focus where the visitor put it. Start actions are focusable buttons with `aria-disabled="true"` and `aria-describedby` pointing at the visible reason. Polling changes text inside existing nodes, so focus and the disclosure's open state survive it. Only a changed incident state is announced, through the page's existing polite region (`[data-lab-outcome]`); trace entries are not. No new motion, and a deep link's scroll is instant. Without JavaScript both tracks and all twelve scenario descriptions render as static text, with a `<noscript>` note that nothing can be checked or started.
 
 ### 12.9 Tests
 
-- `apps/field-station/test/lab-capabilities.test.ts`: the version is the installed package's (read independently); every new scenario is unavailable on `0.1.0-rc.3` with its lacking capability; existing scenarios follow the Lab; an unverified release is `not-integrated`; the summary carries no URL, secret, path, or operator capability; intents parse only in their closed shape; the route needs no session and carries CORS; intents are refused with 409 `unsupported-scenario` after Origin and session checks and before any bench; existing actions keep their answers.
+- `apps/field-station/test/lab-capabilities.test.ts`: the version is the installed package's (read independently); every new scenario is unavailable on `0.1.0-rc.3` with its lacking capability; existing scenarios follow the Lab; an unverified release is `not-integrated`; `0.2.0-rc.1`'s verified set is empty, so every new scenario is `not-integrated` under every profile; with an injected verified set, the hosted profile (`retry`) offers only `calibration-blip`, `quarantine` with local exercises offers all, the local exercises say so without them, `off` offers none, the reasons come in order, and the features are available exactly when some new scenario is; the summary carries no URL, secret, path, or operator capability; intents parse only in their closed shape; the route needs no session and carries CORS; intents are refused with 409 `unsupported-scenario` after Origin and session checks and before any bench; existing actions keep their answers.
+- `apps/field-station/test/lab-intents.test.ts` (application level, with a scripted bench): a re-sent `requestId` answers the recorded operation inside the action budget, a different body is `not-applicable`; preconditions and stale revisions are refused before the bench; an incident intent names the library incident and revision the projection showed; a lease's end cancels unfinished operations, a late bench result changes nothing, and operations and the discarded projection stay readable for a minute; `scenarioRevision` moves with the plan token and the evaluation, and the token is offered exactly with `incident.approve-reprocess`; a restarting bench's projection is answered unchanged; composition against hand-written expectations, with no native ID in it; each scenario's records against an expected ledger restated by hand (topic, key, revision, affected instances, coverage, the v2 record's data equal to the served update once coverage is prepared); the public routes' 202, CORS, Origin, session, budget with `Retry-After`, and 404 when not offered; a bench with another failure-handling profile is never granted.
+- `apps/field-station/test/lab-bench-failures.test.ts` (unit; the operator adapter against a typed fake `OperatorApi`, which is fixture-level evidence of the bench's bookkeeping only): each profile's config is valid and constructs under production rules with the bench's own handlers, and the library refuses a resync source without a guard or a journal directory; the map handler's variants; the guard's coordinates, barrier, and every hold reason; the snapshot echoes a boundary only for an exact acknowledgment; plan tokens are single use, bound, bounded, and expire; a closed study cancels operations and ignores late results.
+- `apps/field-station/test/lab-failures.test.ts` (the installed library on a fixture source, with the journal created by `runCli`): the journal is owner-only and reported durable, `init` refuses an existing journal, a second gateway can't open a held one; S02 quarantine-hold, a stale revision refused by the library; S03 guard hold, then reassess advances under a boundary; an unacknowledged snapshot keeps the view stale and an acknowledged one goes live, observed as `resynchronizedAt`; S06 and S01 under `retry`; S05 integrity hold; S07 circuit; S04 restart with corrected handlers, evaluation, single-use approval (`superseded`); a process restart reopens the journal with the same incident and boundary; a reset replaces the journal; the bench API's intent routes. The quarantine topic, the committed offset, and Kafka coordinates in the guard are left to the real-Kafka stack tests.
 - `apps/site/test/lab-catalog.test.ts` and `lab-incident.test.ts`: the catalog covers S01–S09 with their delivery labels; deep-link selection; availability for a summary, a 404, an unreachable or malformed answer, an older and a newer backend; the precise labels and the projection's view model (a rendering fixture).
 - `e2e/lab-source-failures.spec.ts`: deep links fire no `POST` (no lease, action, or token) and no incident request; rc.3 reasons and inert Start buttons; the fixture backend's 404; an older summary; chooser and scenario links by keyboard without reload or focus loss; axe in light and dark; narrow-screen order; no-JavaScript text; a mocked incident projection's labels, disclosure, announcement, and stable focus (a rendering fixture, not evidence that any backend produces it).

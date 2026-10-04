@@ -31,6 +31,8 @@ const management = createServer((request, response) => {
   const path = new URL(request.url ?? '/', 'http://management.invalid').pathname;
   if (path === '/management/v1/dev/principals') return json(response, 200, { ok: true, data: { items: [] } });
   if (path === '/management/v1/traces') return json(response, 200, { ok: true, data: { items: [], nextCursor: null } });
+  // The running gateway's own configuration, from which the bench counts fixture sources (S3).
+  if (path === '/management/v1/config') return json(response, 200, { ok: true, data: { config: { sources: { field: { kind: 'kafka' } } }, fingerprint: 'stand-in' } });
   if (path === '/management/v1/sources') return json(response, 200, { ok: true, data: { items: [{ sourceId: 'field', status: world.sources, ...(world.sources === 'paused' ? { reason: 'HANDLER_FAILED' } : {}) }] } });
   json(response, 404, { ok: false });
 });

@@ -44,7 +44,7 @@ test("a projection becomes the three areas, with coordinates behind disclosure a
 });
 
 test("later states, discarded studies, and gaps are reported as observed", () => {
-  const done = incidentView(incident({ source: "advanced", recovery: "view-resynchronized", evaluation: { result: "passed", at: "2026-10-03T00:01:00.000Z", expiresAt: null }, reprocess: "superseded", nextIntent: null }));
+  const done = incidentView(incident({ source: "advanced", recovery: "view-resynchronized", evaluation: { result: "passed", at: "2026-10-03T00:01:00.000Z", expiresAt: null, planToken: null, summary: "The saved record now maps cleanly." }, reprocess: "superseded", nextIntent: null }));
   assert.equal(done.reprocess?.text, "Superseded by a newer snapshot");
   assert.equal(done.next, "None right now.");
   assert.match(done.announcement, /Evaluation passed; Superseded by a newer snapshot\.$/);

@@ -36,8 +36,10 @@ jobs:
         env:
           ASTRO_TELEMETRY_DISABLED: "1"
 
-      - name: Verify drop and recovery in production bundles
-        run: npx playwright test e2e/home.spec.ts e2e/walkthrough.spec.ts
+      # A production build carries /workbench/'s meta Content-Security-Policy; the dev server does not,
+      # so only this run proves the published workbench mounts and runs under it.
+      - name: Verify drop and recovery, and the workbench under its policy, in production bundles
+        run: npx playwright test e2e/home.spec.ts e2e/walkthrough.spec.ts e2e/workbench.spec.ts
         env:
           ASTRO_TELEMETRY_DISABLED: "1"
           LONTRA_BROWSER_MODE: production

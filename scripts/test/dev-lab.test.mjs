@@ -248,6 +248,31 @@ describe("the workbench sandbox", () => {
   });
 });
 
+describe("the source-failures profile", () => {
+  /** One top-level service's lines in a Compose file (two-space indented keys under `services:`). */
+  const service = (file, name) => {
+    const lines = readFileSync(join(ROOT, file), "utf8").split("\n");
+    const start = lines.indexOf(`  ${name}:`);
+    assert.ok(start >= 0, `${file} has ${name}`);
+    const end = lines.findIndex((line, i) => i > start && /^ {2}\S/.test(line));
+    return lines.slice(start, end < 0 ? undefined : end).join("\n");
+  };
+  const setting = (file, name, key) => service(file, name).match(new RegExp(`^ +${key}: \\$\\{${key}:-([a-z0-9]+)\\}$`, "m"))?.[1];
+
+  test("the hosted overlay defaults to retry with no local exercises, alike on the field station and every bench", () => {
+    assert.equal(setting("deploy/compose.lab.yaml", "field-station", "LAB_FAILURE_HANDLING"), "retry");
+    assert.equal(setting("deploy/compose.lab.yaml", "field-station", "LAB_LOCAL_EXERCISES"), "0");
+    for (const bench of ["lab-1", "lab-2", "lab-3"]) assert.equal(setting("deploy/compose.lab.yaml", bench, "LAB_FAILURE_HANDLING"), "retry", bench);
+  });
+
+  test("the local Lab runs quarantine and the local exercises on an ACL broker", () => {
+    assert.equal(setting("deploy/compose.local-lab.yaml", "kafka", "KAFKA_AUTHORIZATION"), "acl");
+    assert.equal(setting("deploy/compose.local-lab.yaml", "field-station", "LAB_FAILURE_HANDLING"), "quarantine");
+    assert.equal(setting("deploy/compose.local-lab.yaml", "field-station", "LAB_LOCAL_EXERCISES"), "1");
+    for (const bench of ["lab-1", "lab-2", "lab-3"]) assert.equal(setting("deploy/compose.local-lab.yaml", bench, "LAB_FAILURE_HANDLING"), "quarantine", bench);
+  });
+});
+
 describe("waitForReadyBench", () => {
   const reply = body => ({ status: 200, body: JSON.stringify(body) });
 

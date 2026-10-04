@@ -5,6 +5,22 @@ services:
     environment:
       # Least-privilege Kafka ACLs (deploy/kafka/start.sh); set KAFKA_AUTHORIZATION=none to compare.
       KAFKA_AUTHORIZATION: ${KAFKA_AUTHORIZATION:-acl}
+  # Every source-failures exercise (docs/contracts/lab-api.md 12.3): quarantine, which the
+  # ACL broker above provides for, and the local and CI exercises. Set LAB_FAILURE_HANDLING
+  # to retry (or off) with KAFKA_AUTHORIZATION=none.
+  field-station:
+    environment:
+      LAB_FAILURE_HANDLING: ${LAB_FAILURE_HANDLING:-quarantine}
+      LAB_LOCAL_EXERCISES: ${LAB_LOCAL_EXERCISES:-1}
+  lab-1:
+    environment:
+      LAB_FAILURE_HANDLING: ${LAB_FAILURE_HANDLING:-quarantine}
+  lab-2:
+    environment:
+      LAB_FAILURE_HANDLING: ${LAB_FAILURE_HANDLING:-quarantine}
+  lab-3:
+    environment:
+      LAB_FAILURE_HANDLING: ${LAB_FAILURE_HANDLING:-quarantine}
   gateway:
     volumes:
       - ${LOCAL_LAB_DIR:?}/streamotter.production.json:/app/apps/field-station/streamotter.production.json:ro

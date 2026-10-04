@@ -16,6 +16,10 @@ if (role === 'bench') {
   const status = await response.json();
   assert.deepEqual(status.checks, { developmentPrincipals: 0, fixtureSources: 0, managementHost: '127.0.0.1' });
   assert.equal(status.bench, number);
+  // Failure handling as the deployment set it, with the library's own durable journal (section 8b).
+  const profile = process.env.LAB_FAILURE_HANDLING ?? 'off';
+  assert.equal(status.failures.profile, profile);
+  if (profile !== 'off') { assert.equal(status.failures.durable, true); assert.match(status.failures.handlerBuildId, /^lontra-lab@[\d.]+\+projection-v2-(broken|corrected)$/); }
   const headers = { authorization: `Bearer ${process.env[`LAB_BENCH_${number}_SERVICE_TOKEN`]}` };
   assert.equal((await fetch(`http://field-station:7410/lab-internal/${number}/views/station/LC-03`, { headers })).status, 200);
   for (const path of [`/lab-internal/${number % 3 + 1}/views/station/LC-03`, `/lab-internal/${number}/views/holt/A`, '/internal/views/notebook/someone']) {

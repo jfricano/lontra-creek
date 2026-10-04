@@ -82,6 +82,15 @@ resolves to your own machine.
 `npm run dev:lab -- up --no-build` restarts with the existing site build and
 image, skipping both builds.
 
+The local Lab runs Kafka with least-privilege ACLs (`KAFKA_AUTHORIZATION=acl`)
+and the benches with the `quarantine` failure-handling profile and the local
+exercises (`LAB_FAILURE_HANDLING=quarantine`, `LAB_LOCAL_EXERCISES=1`, set by
+`deploy/compose.local-lab.yaml`), so every source-failures scenario, LC11-S01
+to S09, is offered here. The hosted Lab's default is `retry` with no local
+exercises, which offers only the calibration blip (Lab contract 12.2). To try
+that profile locally, export `LAB_FAILURE_HANDLING=retry LAB_LOCAL_EXERCISES=0`
+before `up`; the field station and every bench read the same value.
+
 ## Commands
 
 Pass options after `--`, for example `npm run dev:lab -- logs -f caddy`.

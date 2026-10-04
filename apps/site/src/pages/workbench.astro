@@ -1,6 +1,16 @@
 ---
 import ReferencePage from "../layouts/ReferencePage.astro";
-import {RELEASE,LINKS} from "../site.ts";
+import {LINKS} from "../site.ts";
+import {IN_YOUR_APP,JOB_SEED,STATION_SEED} from "../data/workbench-seed.ts";
+// The recording's own provenance, not the site's build: a later pin must not relabel an older capture.
+import capture from "../../public/recordings/workbench/capture.json" with { type: "json" };
+const capturedOn=new Date(capture.capturedAt).toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric",timeZone:"UTC"});
+const node=capture.node.replace(/^v/,"");
+const json=(value:unknown)=>JSON.stringify(value,null,2);
+const seeds=[
+{id:"seed-station",title:"The creek's station channel",seed:STATION_SEED,record:{topic:"field.gauges",key:STATION_SEED.record.key,value:STATION_SEED.record.value},origin:"From the creek simulation's first tick, mapped by the field station's own Kafka handler."},
+{id:"seed-job",title:"The init example's jobProgress channel",seed:JOB_SEED,record:{source:"jobs (fixture)",key:JOB_SEED.record.key,value:JOB_SEED.record.value},origin:"The first jobs fixture record of the streamotter init scaffold this site pins, mapped by that scaffold's handler."}
+];
 const panels=[
 {key:"connect",title:"Connect",description:"See source health and staged connection checks. This capture uses the installed CLI’s fixture source; no Kafka broker is involved."},
 {key:"define",title:"Define",description:"Inspect channel versions, parameters, payload schemas, and delivery. Candidate configuration edits do not change the running gateway."},
@@ -9,13 +19,81 @@ const panels=[
 {key:"export",title:"Export",description:"Export canonical configuration for review. The workbench never writes files or changes the running gateway; validate and generate locally before restarting it."}
 ];
 ---
-<ReferencePage title="Meet the local workbench" description="Connect, Define, Preview, Inspect, and Export: a tour of the development tools installed with StreamOtter.">
-<p class="notice">Recorded locally on September 27, 2026 with <code>streamotter@{RELEASE}</code>, Node.js 26.9.0, and the CLI-generated fixture project. These are real product captures, not the hosted field station. The workbench and management API exist only in development mode and listen on loopback.</p>
-<section><h2>Recorded session</h2><video controls preload="none" poster="/recordings/workbench/preview.png" aria-label="Recorded local StreamOtter workbench session" aria-describedby="tour-description" width="1280" height="900"><source src="/recordings/workbench/tour.webm" type="video/webm" /><p>Your browser cannot play this recording. The screenshots and text transcript below cover the same steps.</p></video><p id="tour-description">Silent recording: open the workbench using its per-run token; inspect Connect and Define; subscribe to job_1 in Preview; advance one fixture record; inspect the updated state, trace, and Export controls.</p><p><a href="/recordings/workbench/capture.json">Capture provenance</a> · <a href={LINKS.gettingStarted}>Run this tour yourself ↗</a></p></section>
-{panels.map(panel=><section><h2>{panel.title}</h2><p>{panel.description}</p><figure><a href={`/recordings/workbench/${panel.key}.png`} aria-label={`Open full-size ${panel.title} screenshot`}><img src={`/recordings/workbench/${panel.key}.png`} alt={`Recorded ${panel.title} panel in StreamOtter ${RELEASE}: ${panel.description}`} loading="lazy" width="1280" /></a><figcaption>{panel.title} · local fixture capture · September 27, 2026</figcaption></figure></section>)}
+<ReferencePage title="Meet the workbench" description="Open the published StreamOtter workbench in an isolated sandbox when one is available, or follow its Connect, Define, Preview, Inspect, and Export steps in screenshots.">
+<section class="sandbox" data-sandbox data-phase="checking" aria-labelledby="sandbox-heading">
+  <h2 id="sandbox-heading">Workbench sandbox</h2>
+  <div class="sandbox-state" role="status"><p class="sandbox-headline" data-sandbox-headline>Checking the sandbox…</p><p data-sandbox-detail>Asking the field station for the sandbox's status and this browser's session.</p></div>
+  <noscript><p class="notice">The sandbox needs JavaScript. The step-by-step screenshots below work without it.</p></noscript>
+  <p data-sandbox-pool></p>
+  <div class="sandbox-controls">
+    <button type="button" class="button button-primary" data-sandbox-start disabled>Start a sandbox session</button>
+    <button type="button" class="button button-primary" data-sandbox-claim hidden disabled>Claim your slot</button>
+    <button type="button" class="button button-quiet" data-sandbox-reset hidden disabled>Start over with a fresh study</button>
+    <button type="button" class="button button-quiet" data-sandbox-repro hidden disabled>Download reproduction bundle</button>
+    <button type="button" class="button button-quiet" data-sandbox-return hidden disabled>End session</button>
+    <button type="button" class="button button-quiet" data-sandbox-retry>Check again</button>
+  </div>
+  <p class="sandbox-clock" data-sandbox-clock></p>
+  <p class="sandbox-note" aria-live="polite" data-sandbox-note></p>
+  <dl class="sandbox-runtime" aria-label="Sandbox runtime, as the sandbox service reports it">
+    <div><dt>Mode</dt><dd data-sandbox-mode>Not reported</dd></div>
+    <div><dt>Packages</dt><dd data-sandbox-packages>Not reported</dd></div>
+    <div><dt>Workbench seam</dt><dd data-sandbox-contract>Not reported</dd></div>
+  </dl>
+  <p class="sandbox-small" data-sandbox-runtime-note hidden>The sandbox service reports its mode and exact package versions only when it has a runtime to run. This page never fills them in from the site's own build.</p>
+  <p class="sandbox-small" data-sandbox-mount-note></p>
+  <div class="sandbox-mount" data-sandbox-mount hidden></div>
+  <p class="sandbox-small">A session is never started for you: not when this page opens, reloads, or comes back from your browser's history. Leaving the page returns your slot. <a href="#workbench-steps">See the steps in screenshots instead</a>.</p>
+</section>
+<section aria-labelledby="seed-heading">
+  <h2 id="seed-heading">What a session opens with</h2>
+  <p>Each sandbox session runs two channels side by side on synthetic fixture sources: the creek's own <code>station</code> channel and the <code>jobProgress</code> channel from the example <code>streamotter init</code> creates. In each, a source record goes in, and the channel's map handler returns the full state that browsers receive.</p>
+  <p class="notice" data-design-fixture><strong>Design fixture.</strong> The records and states below are written into this page; they are not read from a running sandbox. The site's tests check them against their sources: the creek simulation and the field station's map handler, and the pinned <code>streamotter init</code> scaffold and its map handler.</p>
+  <div class="reference-grid">
+    {seeds.map(item=><article class="reference-card seed" aria-labelledby={item.id}>
+      <h3 id={item.id}>{item.title}</h3>
+      <p class="sandbox-small">{item.origin}</p>
+      <p><span class="badge-soon">Design fixture</span> Source record · {item.seed.source}</p>
+      <pre tabindex="0" aria-label={`${item.seed.channel} source record (design fixture)`}><code>{json(item.record)}</code></pre>
+      <p><span class="badge-soon">Design fixture</span> State the map handler returns · <code>{item.seed.channel}</code> {Object.entries(item.seed.params).map(([k,v])=>`${k}=${v}`).join(", ")}</p>
+      <pre tabindex="0" aria-label={`${item.seed.channel} mapped state (design fixture)`}><code>{json(item.seed.state)}</code></pre>
+    </article>)}
+  </div>
+  <section class="in-your-app" aria-labelledby="in-your-app-heading">
+    <h3 id="in-your-app-heading">In your app</h3>
+    <p>The creek and the scaffold are the same shape. Swap the creek's words for your own:</p>
+    <div class="table-scroll" tabindex="0" aria-label="Lontra Creek and your app"><table><thead><tr><th scope="col">Lontra Creek</th><th scope="col">Your app (the init example)</th><th scope="col">What it is</th></tr></thead>
+    <tbody>{IN_YOUR_APP.map(row=><tr><td><code>{row.creek}</code></td><td><code>{row.app}</code></td><td>{row.meaning}</td></tr>)}</tbody></table></div>
+  </section>
+</section>
+<section id="workbench-steps" aria-labelledby="steps-heading"><h2 id="steps-heading">Step by step</h2>
+<p class="notice" data-recording-provenance><strong>Fallback: screenshots, not a sandbox session.</strong> Captured locally on {capturedOn} with <code>streamotter@{capture.version}</code> and Node.js {node}. Capture source: {capture.source}. These are real product captures of that version, not the hosted field station or a sandbox. That workbench and its management API exist only in development mode and listen on loopback.</p>
+<p><a href="/recordings/workbench/capture.json">Capture provenance</a> · <a href={LINKS.gettingStarted}>Run these steps yourself ↗</a></p></section>
+{panels.map(panel=><section><h2>{panel.title}</h2><p>{panel.description}</p><figure><a href={`/recordings/workbench/${panel.key}.png`} aria-label={`Open full-size ${panel.title} screenshot`}><img src={`/recordings/workbench/${panel.key}.png`} alt={`Recorded ${panel.title} panel in StreamOtter ${capture.version}: ${panel.description}`} loading="lazy" width="1280" /></a><figcaption>{panel.title} · recorded with streamotter@{capture.version} · local fixture capture · {capturedOn}</figcaption></figure></section>)}
 <section><h2>Run it locally</h2><pre tabindex="0"><code>{`npm install streamotter
 npx streamotter init .
 npx streamotter dev --config streamotter.json \\
   --handlers server/handlers.mjs`}</code></pre><p>Open the printed workbench URL and enter its per-run token. The token stays in memory, so reloading asks for it again. Never expose the development workbench publicly.</p></section>
 </ReferencePage>
-<style>video,img {display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);}figure {margin:20px 0;}figcaption {font-size:.85rem;color:var(--ink-3);margin-top:8px;}</style>
+<script>import "../scripts/workbench.ts";</script>
+<style>
+img {display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);}
+figure {margin:20px 0;}
+figcaption {font-size:.85rem;color:var(--ink-3);margin-top:8px;}
+.sandbox {padding:24px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);}
+.sandbox-headline {font-weight:700;font-size:1.1rem;}
+.sandbox-controls {display:flex;gap:12px;flex-wrap:wrap;margin-block:20px;}
+.sandbox-controls button[hidden] {display:none;}
+.sandbox-controls button:disabled {opacity:.6;cursor:not-allowed;transform:none;}
+.sandbox-clock {font:600 .95rem/1.4 var(--mono);}
+.sandbox-clock:empty,.sandbox-note:empty,[data-sandbox-pool]:empty,[data-sandbox-mount-note]:empty {display:none;}
+.sandbox-runtime {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px;margin-block:20px;}
+.sandbox-runtime div {padding:12px;background:var(--surface-2);border-radius:8px;}
+.sandbox-runtime dt {font-size:.8rem;color:var(--ink-2);}
+.sandbox-runtime dd {margin:4px 0 0;font:600 .9rem/1.4 var(--mono);overflow-wrap:anywhere;}
+.sandbox-small {font-size:.9rem;color:var(--ink-2);}
+.sandbox-mount {margin-block:20px;}
+.seed pre {font-size:.8rem;}
+.seed p {margin-block:12px 8px;}
+.in-your-app {margin-top:28px;}
+</style>

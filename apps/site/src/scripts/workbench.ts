@@ -1,0 +1,209 @@
+/**
+ * The /workbench/ sandbox panel (sandbox contract §4, LC11-ADR-04). Allocation is
+ * explicit: only the Start button sends POST /api/sandbox/session. Opening, reloading,
+ * or restoring the page from the back-forward cache only asks for the status and this
+ * browser's session, and shows nothing active until the field station has answered.
+ * The published workbench is mounted only when workbench-model.ts's mountDecision
+ * says so, which no installed release allows yet.
+ */
+import type { SandboxConnection, SandboxLease, SandboxReproDownload, SandboxStatus, WorkbenchDiscovery } from "../../../field-station/src/sandbox/contract.ts";
+import { API_BASE, availabilityView, BOOT_ELEMENT_ID, MOUNT_ELEMENT_ID, mountDecision, problemText, refusal, runtimeLabels, sessionView, type Problem } from "./workbench-model.ts";
+import { PUBLISHED_SEAM } from "./workbench-seam.ts";
+
+const origin = (import.meta.env?.PUBLIC_FIELD_STATION_ORIGIN ?? "").replace(/\/+$/, "");
+const root = document.querySelector<HTMLElement>("[data-sandbox]");
+if (root) mount(root);
+
+type Answer<T> = { ok: true; data: T } | { ok: false; problem: Problem };
+const HEARTBEAT_MS = 5_000;
+const STATUS_MS = 15_000;
+
+function mount(root: HTMLElement): void {
+  function el<T extends HTMLElement = HTMLElement>(selector: string): T { const element = root.querySelector<T>(selector); if (!element) throw new Error(`Missing ${selector}`); return element; }
+  const buttons = {
+    start: el<HTMLButtonElement>("[data-sandbox-start]"), claim: el<HTMLButtonElement>("[data-sandbox-claim]"), return: el<HTMLButtonElement>("[data-sandbox-return]"),
+    reset: el<HTMLButtonElement>("[data-sandbox-reset]"), repro: el<HTMLButtonElement>("[data-sandbox-repro]")
+  };
+  const host = el("[data-sandbox-mount]");
+  let status: SandboxStatus | null = null;
+  let statusProblem: Problem | null = null;
+  let lease: SandboxLease | null = null;
+  let connection: SandboxConnection | null = null;
+  let discovery: WorkbenchDiscovery | null = null;
+  let mountNote = "";
+  let mountedStudy: string | null = null;
+  /** The last action's outcome, and the last failed check-in; shown together, cleared separately. */
+  let note = "";
+  let contact = "";
+  let offset = 0;
+  let checking = true;
+  let busy = false;
+  /** Claim without a second click: only right after this page's own Start or Reset. */
+  let autoClaim = false;
+  /** Bumped on pagehide and pageshow, so answers to requests from before are dropped. */
+  let generation = 0;
+  let poll: ReturnType<typeof setTimeout> | undefined;
+  let clock: ReturnType<typeof setInterval> | undefined;
+  let lastStatusAt = 0;
+
+  async function call<T>(path: string, method: "GET" | "POST" = "GET"): Promise<Answer<T>> {
+    let response: Response;
+    try { response = await fetch(`${origin}/api/sandbox/${path}`, { method, credentials: "include", cache: "no-store", signal: AbortSignal.timeout(8_000) }); }
+    catch (error) { return { ok: false, problem: { kind: "network", message: error instanceof Error && error.name === "TimeoutError" ? "no answer within 8 s" : "the request failed" } }; }
+    const body: unknown = await response.json().catch(() => null);
+    if (!response.ok) return { ok: false, problem: refusal(response.status, body, response.headers.get("retry-after")) };
+    if (body === null) return { ok: false, problem: { kind: "network", message: "the answer was not JSON" } };
+    return { ok: true, data: body as T };
+  }
+  const holding = (): boolean => lease !== null && (lease.status === "queued" || lease.status === "ready" || lease.status === "active" || lease.status === "resetting");
+  const now = (): number => Date.now() + offset;
+
+  function setLease(next: SandboxLease): void {
+    lease = next; offset = Date.parse(next.now) - Date.now();
+    if (next.status !== "active" && next.status !== "ready") connection = null;
+    if (next.status !== "ready" && next.status !== "active" && next.status !== "resetting") autoClaim = false;
+    if (next.status !== "active" || (mountedStudy !== null && mountedStudy !== next.studyId)) unmount();
+  }
+
+  function unmount(): void {
+    if (mountedStudy === null && !host.childElementCount) return;
+    mountedStudy = null; host.replaceChildren(); host.hidden = true;
+    document.getElementById(BOOT_ELEMENT_ID)?.remove();
+  }
+
+  /** WHC-1 §3: the boot block first, then the mount element, then the published stylesheet and app.js. */
+  function mountWorkbench(): void {
+    const decision = mountDecision({ lease, connection, discovery, seam: PUBLISHED_SEAM, apiOrigin: origin, pageOrigin: location.origin });
+    if (!decision.mount) { mountNote = lease?.status === "active" ? decision.reason : ""; return; }
+    if (lease?.status !== "active" || mountedStudy === lease.studyId) return;
+    unmount(); mountNote = "";
+    const boot = document.createElement("script"); boot.type = "application/json"; boot.id = BOOT_ELEMENT_ID; boot.textContent = JSON.stringify(decision.boot);
+    const app = document.createElement("div"); app.id = MOUNT_ELEMENT_ID;
+    const style = document.createElement("link"); style.rel = "stylesheet"; style.href = decision.style; style.integrity = decision.integrity.style;
+    // A new study reloads the module under a new URL so it boots against that study's session.
+    const script = document.createElement("script"); script.type = "module"; script.src = `${decision.script}?study=${encodeURIComponent(lease.studyId)}`; script.integrity = decision.integrity.script;
+    host.append(boot, style, app, script); host.hidden = false; mountedStudy = lease.studyId;
+  }
+
+  function render(): void {
+    const view = sessionView({ status, statusProblem, lease, checking, busy, now: now(), connectedStudy: connection?.studyId ?? null });
+    root.dataset["phase"] = view.phase;
+    el("[data-sandbox-headline]").textContent = view.headline;
+    el("[data-sandbox-detail]").textContent = view.detail;
+    el("[data-sandbox-clock]").textContent = view.clock;
+    el("[data-sandbox-note]").textContent = [note, contact].filter(Boolean).join(" ");
+    el("[data-sandbox-pool]").textContent = checking ? "" : availabilityView(status, statusProblem).pool;
+    const shown: Record<keyof typeof buttons, boolean> = {
+      start: ["checking", "unavailable", "idle", "ended"].includes(view.phase), claim: view.phase === "ready" || (view.phase === "active" && view.enabled.claim),
+      return: ["queued", "ready", "active", "resetting"].includes(view.phase), reset: view.phase === "active", repro: view.phase === "active"
+    };
+    for (const [name, button] of Object.entries(buttons) as [keyof typeof buttons, HTMLButtonElement][]) { button.hidden = !shown[name]; button.disabled = !view.enabled[name]; }
+    buttons.return.textContent = view.returnLabel; buttons.claim.textContent = view.claimLabel;
+    const labels = runtimeLabels(checking ? null : view.runtime);
+    el("[data-sandbox-mode]").textContent = labels?.mode ?? "Not reported";
+    el("[data-sandbox-packages]").textContent = labels?.packages ?? "Not reported";
+    el("[data-sandbox-contract]").textContent = labels?.contract ?? "Not reported";
+    el("[data-sandbox-runtime-note]").hidden = labels !== null || checking;
+    el("[data-sandbox-mount-note]").textContent = view.phase === "active" ? mountNote : "";
+  }
+
+  async function refreshStatus(): Promise<void> {
+    const g = generation; const answer = await call<SandboxStatus>("status"); if (g !== generation) return;
+    lastStatusAt = Date.now();
+    if (answer.ok) { status = answer.data; statusProblem = null; } else { status = null; statusProblem = answer.problem; }
+  }
+  async function refreshLease(): Promise<void> {
+    const g = generation; const answer = await call<SandboxLease>("session"); if (g !== generation) return;
+    if (answer.ok) { setLease(answer.data); contact = ""; return; }
+    const problem = answer.problem;
+    // No session cookie: nothing held. After holding a place, that means the browser session ended.
+    if (problem.kind === "refused" && problem.code === "no-session") { contact = ""; setLease(holding() ? { status: "ended", now: new Date(now()).toISOString(), reason: "session-ended", endedAt: new Date(now()).toISOString() } : { status: "none", now: new Date(now()).toISOString() }); return; }
+    if (problem.kind === "refused" && problem.code === "sandbox-unavailable" && !holding()) return;
+    contact = holding() ? `Could not check in with the field station: ${problemText(problem)}` : problemText(problem);
+  }
+
+  async function claim(): Promise<void> {
+    const g = generation; const answer = await call<SandboxConnection>("session/claim", "POST"); if (g !== generation) return;
+    autoClaim = false;
+    if (!answer.ok) { note = problemText(answer.problem); await refreshLease(); return; }
+    connection = answer.data;
+    await refreshLease(); if (g !== generation) return;
+    discovery = null;
+    // Discovery matters only when this site pins a release with the seam; until then nothing is asked.
+    if (PUBLISHED_SEAM && lease?.status === "active") {
+      try {
+        const response = await fetch(`${origin}${API_BASE}/workbench`, { credentials: "include", cache: "no-store", signal: AbortSignal.timeout(8_000) });
+        const body = await response.json() as { ok?: boolean; data?: WorkbenchDiscovery };
+        if (g === generation && response.ok && body.ok === true && body.data) discovery = body.data;
+      } catch { /* mountDecision reports the missing discovery */ }
+    }
+    if (g === generation) mountWorkbench();
+  }
+
+  /** One lifecycle action from a button: disable the controls, send it, then show the field station's answer. */
+  async function act(action: () => Promise<void>): Promise<void> {
+    if (busy) return;
+    busy = true; note = ""; render();
+    try { await action(); } finally { busy = false; render(); }
+  }
+  buttons.start.addEventListener("click", () => { void act(async () => {
+    const g = generation; const answer = await call<SandboxLease>("session", "POST"); if (g !== generation) return;
+    if (!answer.ok) { note = problemText(answer.problem); if (answer.problem.kind === "refused" && answer.problem.code === "sandbox-unavailable") await refreshStatus(); return; }
+    autoClaim = true; setLease(answer.data);
+    if (lease?.status === "ready") await claim();
+  }); });
+  buttons.claim.addEventListener("click", () => { void act(claim); });
+  buttons.return.addEventListener("click", () => { void act(async () => {
+    const g = generation; const answer = await call<SandboxLease>("session/return", "POST"); if (g !== generation) return;
+    if (answer.ok) setLease(answer.data); else note = problemText(answer.problem);
+  }); });
+  buttons.reset.addEventListener("click", () => { void act(async () => {
+    const g = generation; const answer = await call<SandboxLease>("session/reset", "POST"); if (g !== generation) return;
+    if (answer.ok) { autoClaim = true; setLease(answer.data); } else { note = problemText(answer.problem); await refreshLease(); }
+  }); });
+  buttons.repro.addEventListener("click", () => { void act(async () => {
+    const answer = await call<SandboxReproDownload>("session/repro", "POST");
+    if (!answer.ok) { note = problemText(answer.problem); return; }
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([answer.data.content], { type: "application/json" })); link.download = answer.data.filename;
+    link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 0);
+    note = `Saved ${answer.data.filename}: this study's synthetic scenario, packages, and traces only.`;
+  }); });
+  el("[data-sandbox-retry]").addEventListener("click", () => { void revalidate(); });
+
+  async function tick(): Promise<void> {
+    const g = generation;
+    if (holding()) {
+      await refreshLease(); if (g !== generation) return;
+      if (autoClaim && !busy && (lease?.status === "ready" || (lease?.status === "active" && connection?.studyId !== lease.studyId))) await act(claim);
+    }
+    if (g === generation && Date.now() - lastStatusAt >= STATUS_MS) await refreshStatus();
+    if (g !== generation) return;
+    render(); poll = setTimeout(() => { void tick(); }, HEARTBEAT_MS);
+  }
+
+  /** Status, then this browser's session; nothing is shown as active until both have answered. */
+  async function revalidate(): Promise<void> {
+    const g = ++generation; clearTimeout(poll);
+    const held = holding();
+    checking = true; render();
+    await refreshStatus(); if (g !== generation) return;
+    if (held || status?.availability === "available") await refreshLease();
+    if (g !== generation) return;
+    checking = false; render();
+    poll = setTimeout(() => { void tick(); }, HEARTBEAT_MS);
+  }
+
+  function start(): void { clock = setInterval(render, 1_000); void revalidate(); }
+  function stop(): void { generation++; clearTimeout(poll); clearInterval(clock); }
+
+  window.addEventListener("pagehide", () => {
+    const held = holding();
+    stop(); unmount(); connection = null; discovery = null; autoClaim = false; checking = true;
+    // Leaving the page returns the slot or place; the empty body keeps keepalive preflight-free.
+    if (held) void fetch(`${origin}/api/sandbox/session/return`, { method: "POST", credentials: "include", keepalive: true }).catch(() => undefined);
+  });
+  // A restore from the back-forward cache revalidates and never allocates.
+  window.addEventListener("pageshow", event => { if (event.persisted) start(); });
+  start();
+}

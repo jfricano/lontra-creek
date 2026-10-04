@@ -165,8 +165,16 @@ async function mount(root: HTMLElement): Promise<void> {
   async function leasePoll(): Promise<void> {
     if (lease && lease.status !== "none" && lease.status !== "ended") {
       try { await renderLease(await request<LabLease>("lease")); }
-      catch(error) { heartbeatHealthy = false; message.textContent = explain(error); actions.disabled = true; }
+      catch(error) { heartbeatHealthy = false; actions.disabled = true; await failed(error); }
     }
+  }
+  /** Says why a request failed. A 401 `no-session` means the session cookie lapsed, and the place or lease ended with it: show it ended, as the workbench does. */
+  async function failed(error: unknown): Promise<void> {
+    if (error instanceof HttpStatusError && error.code === "no-session" && lease && lease.status !== "none" && lease.status !== "ended") {
+      const at = new Date(Date.now() + offset).toISOString();
+      await renderLease({ status: "ended", now: at, reason: "session-ended", endedAt: at, bench: null });
+    }
+    message.textContent = explain(error);
   }
   function renderFeed(): void {
     const list = el("[data-lab-feed]");
@@ -202,7 +210,7 @@ async function mount(root: HTMLElement): Promise<void> {
       if (page.items.length || page.gap) renderFeed();
       if (model.retried !== retried) renderOutcome("retried");
       if (run?.disconnected && changed) renderOutcome("satellite");
-    } catch(error) { message.textContent = explain(error); }
+    } catch(error) { await failed(error); }
   }
   /** The capability summary, once per page and on Check again. A 404 (the fixture demo, an older backend) leaves every new exercise unavailable. */
   async function loadCapabilities(): Promise<void> {
@@ -225,14 +233,14 @@ async function mount(root: HTMLElement): Promise<void> {
     } catch { /* The lease poll reports a lost lease; the panel keeps its last served state. */ }
   }
   fullFeed.addEventListener("change", renderFeed);
-  joins.addEventListener("click", () => { joins.disabled = true; void request<LabLease>("lease", {}).then(renderLease).catch(error => { message.textContent = explain(error); joins.disabled = false; }); });
-  returns.addEventListener("click", () => { returns.disabled = true; void request<LabLease>("lease/return", undefined, "POST").then(renderLease).catch(error => { message.textContent = explain(error); returns.disabled = false; }); });
+  joins.addEventListener("click", () => { joins.disabled = true; void request<LabLease>("lease", {}).then(renderLease).catch(async error => { await failed(error); joins.disabled = false; }); });
+  returns.addEventListener("click", () => { returns.disabled = true; void request<LabLease>("lease/return", undefined, "POST").then(renderLease).catch(async error => { returns.disabled = false; await failed(error); }); });
   el("[data-lab-retry]").addEventListener("click", () => { void status(); if (capabilities.kind !== "summary") void loadCapabilities(); });
   root.querySelectorAll<HTMLButtonElement>("[data-lab-action]").forEach(button => button.addEventListener("click", () => {
     if (actionBusy) return; actionBusy = true; actions.disabled = true;
     const action = button.dataset["labAction"] as LabAction; const from = revision;
     void request<LabActionResult>("actions", { action }).then(result => { nextActionAt = Date.parse(result.nextActionAt); benchState(result.benchState); if (action === "satellite.start") { satelliteFrom = from; outcome.textContent = ""; } })
-      .catch(error => { message.textContent = explain(error); }).finally(() => { actionBusy = false; });
+      .catch(failed).finally(() => { actionBusy = false; });
   }));
   let pollTick = 0;
   async function poll(): Promise<void> {

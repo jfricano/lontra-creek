@@ -160,3 +160,45 @@ test("an error answer without a JSON body reads as a sentence, not a parser erro
   await expect(page.locator("[data-lab-message]")).toHaveText("The Lab isn't answering right now. Trying again.");
   await expect(page.locator("[data-lab-join]")).toBeEnabled();
 });
+
+test("a session that lapses mid-lease ends the lease view and offers Borrow again", async ({ page }) => {
+  let session = true;
+  await page.route("**/api/lab/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/status")) return route.fulfill({ json:{ enabled:true, now:now(), benches:[{ bench:1, state:"leased" }], queueLength:0, nextFreeAt:null } });
+    if (!session) return route.fulfill({ status:401, json:{ error:"No session.", code:"no-session" } });
+    if (path.endsWith("/lease/token")) return route.fulfill({ json:token });
+    if (path.endsWith("/trace")) return route.fulfill({ json:{ items:[], next:"", gap:false } });
+    return route.fulfill({ json:ready() });
+  });
+  await page.goto("/lab/"); await page.locator("[data-lab-join]").click();
+  await expect(page.locator("[data-lab-clock]")).toContainText("left on your lease");
+  await expect(page.locator("[data-lab-state]")).toContainText("Gateway running");
+  session = false; // the lc_session cookie expired: every Lab request answers 401 no-session
+  await expect(page.locator("[data-lab-join]")).toBeEnabled({ timeout:5_000 });
+  await expect(page.locator("[data-lab-message]")).toHaveText("Your Lab session has ended. Borrow a bench to start again.");
+  await expect(page.locator("[data-lab-return]")).toBeDisabled();
+  await expect(page.locator("[data-lab-clock]")).toHaveText("");
+  await expect(page.locator("[data-lab-state]")).toHaveText("Not leased.");
+  await expect(page.locator("[data-lab-action]").first()).toBeDisabled();
+});
+
+test("a Return refused with no-session ends the lease view instead of leaving Return pressable", async ({ page }) => {
+  let session = true;
+  await page.route("**/api/lab/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/status")) return route.fulfill({ json:{ enabled:true, now:now(), benches:[{ bench:1, state:"leased" }], queueLength:0, nextFreeAt:null } });
+    if (path.endsWith("/lease/return")) { session = false; return route.fulfill({ status:401, json:{ error:"No session.", code:"no-session" } }); }
+    if (!session) return route.fulfill({ status:401, json:{ error:"No session.", code:"no-session" } });
+    if (path.endsWith("/lease/token")) return route.fulfill({ json:token });
+    if (path.endsWith("/trace")) return route.fulfill({ json:{ items:[], next:"", gap:false } });
+    return route.fulfill({ json:ready() });
+  });
+  await page.goto("/lab/"); await page.locator("[data-lab-join]").click();
+  await expect(page.locator("[data-lab-clock]")).toContainText("left on your lease");
+  await page.locator("[data-lab-return]").click();
+  await expect(page.locator("[data-lab-message]")).toHaveText("Your Lab session has ended. Borrow a bench to start again.");
+  await expect(page.locator("[data-lab-return]")).toBeDisabled();
+  await expect(page.locator("[data-lab-join]")).toBeEnabled();
+  await expect(page.locator("[data-lab-clock]")).toHaveText("");
+});

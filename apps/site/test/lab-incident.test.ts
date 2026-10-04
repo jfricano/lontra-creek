@@ -42,7 +42,10 @@ test("a projection becomes the three areas, with coordinates behind disclosure a
     "Application action: Scenario record published", "Library observation: Quarantine write acknowledged", "Browser observation: LC-03 subscription stale (SOURCE_UNAVAILABLE)"
   ]);
   assert.deepEqual(view.detail[0], ["Source coordinates", "lab-1.field.gauges · partition 0 · offset 246"]);
-  assert.deepEqual(view.detail[2], ["Handler identity", "Not reported"]);
+  assert.deepEqual(view.detail[2], ["Handler build", "Not reported"]);
+  // The build covers the whole bench, so it says so rather than reading as this record's handler.
+  const built = incidentView(incident({ detail: { topic: "lab-1.field.gauges", partition: 0, offset: "246", evidenceFingerprint: null, handlerIdentity: "lontra-lab@1.1.0+projection-v2-broken", sourceGeneration: null } }));
+  assert.match(built.detail[2]![1], /^lontra-lab@1\.1\.0\+projection-v2-broken\. This names the bench's whole handler set/);
   assert.equal(view.announcement, "Incident 1: Evidence saved; Source held at this record; Saved, but not safe to continue: snapshot coverage not ready.");
 });
 

@@ -140,7 +140,8 @@ export function incidentView(incident: LabIncidentSummary, browser: readonly Bro
     detail: [
       ["Source coordinates", `${detail.topic} · partition ${detail.partition} · offset ${detail.offset}`],
       ["Evidence fingerprint", detail.evidenceFingerprint ?? "Not reported"],
-      ["Handler identity", detail.handlerIdentity ?? "Not reported"],
+      // One build per bench gateway, so a record that never reached the v2 projection still names the projection loaded.
+      ["Handler build", detail.handlerIdentity === null ? "Not reported" : `${detail.handlerIdentity}. This names the bench's whole handler set, including which version of the v2 projection it runs, even when this record never reached that projection.`],
       ["Incident revision", String(incident.scenarioRevision)]
     ],
     steps,

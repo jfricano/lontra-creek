@@ -11,9 +11,9 @@ import { isErrorCode, isPlainObject, streamError, type Json, type StreamError } 
 import { AddressCap } from '../places.ts';
 import type { SessionClaims } from '../sessions.ts';
 import type { SandboxConnection, SandboxEndReason, SandboxErrorCode, SandboxLease, SandboxOperation, SandboxReproDownload, SandboxRuntime, SandboxServiceStatus, SandboxStatus, SlotId, WorkbenchDiscovery } from './contract.ts';
-import { CONFIG_BODY_BYTES, HOST_CONTRACT, SANDBOX_OPERATIONS, SandboxFault } from './operations.ts';
+import { CONFIG_BODY_BYTES, HOST_CONTRACT, invalid, SANDBOX_OPERATIONS, SandboxFault } from './operations.ts';
 
-/** The sandbox service's private API (service.ts); throws only when it cannot be reached. */
+/** The sandbox service's private API (service.ts); throws a SandboxFault for a request it cannot encode, and otherwise only when the service cannot be reached. */
 export interface SandboxClient { request(path: string, method?: string, body?: unknown): Promise<{ status: number; body: unknown }>; }
 export interface SandboxTimings {
   leaseMs: number; claimMs: number; idleMs: number; queueIdleMs: number; endedMs: number; queueMax: number; opsPerSecond: number; opsBurst: number;
@@ -21,15 +21,33 @@ export interface SandboxTimings {
 }
 /** LC11-ADR-04 defaults; the queue idle limit and the poll, failure, and reset timings are the Lab's. */
 export const SANDBOX_DEFAULTS: SandboxTimings = { leaseMs: 600_000, claimMs: 30_000, idleMs: 60_000, queueIdleMs: 90_000, endedMs: 60_000, queueMax: 30, opsPerSecond: 2, opsBurst: 8, pollMs: 5000, failMs: 15_000, resetDeadlineMs: 60_000, retryMs: 30_000 };
+/**
+ * How long the field station waits for the sandbox service. A status poll or lifecycle
+ * call, which the service answers at once, waits 3 s, so a hung service delays no visitor
+ * request and the 15 s outage rule still applies. A slot operation or a reproduction
+ * bundle waits 15 s: longer than the service's own wait for the slot (seam.ts,
+ * CALL_TIMEOUT_MS), so a slow slot call comes back as the slot's TIMEOUT and keeps the
+ * lease; only no answer at all ends it.
+ */
+export const SANDBOX_CALL_TIMEOUT_MS = 3000;
+export const SANDBOX_OPS_TIMEOUT_MS = 15_000;
 /** How often the field station sweeps the pool: the service poll interval while a slot or study resets. A sweep polls only when the poll is due. */
 export const SANDBOX_SWEEP_MS = 1000;
 interface Lease { id: string; studyId: string; slot: SlotId; granted: number; expires: number; claimed: boolean; resetting: boolean; resetAt: number; ops: { tokens: number; at: number }; runtime: SandboxRuntime; }
-interface Place { session: SessionClaims; address: string; joined: number; heartbeat: number; lease?: Lease; }
-interface Slot { state: SandboxStatus['slots'][number]['state']; resetAt: number; retryAt: number; }
+/** `offer` is a lease the service has been asked to grant and has not yet answered; until it does, the place is still in line. */
+interface Place { session: SessionClaims; address: string; joined: number; heartbeat: number; lease?: Lease; offer?: { lease: Lease; done: Promise<void> }; }
+/** `version` counts the calls that change the slot, `busy` those in flight: a status poll is applied to a slot only if neither moved since it was sent. */
+interface Slot { state: SandboxStatus['slots'][number]['state']; resetAt: number; retryAt: number; version: number; busy: number; }
 const iso = (n: number): string => new Date(n).toISOString();
 const CODES: readonly SandboxErrorCode[] = ['invalid-request', 'field-not-editable', 'candidate-too-large', 'no-session', 'origin-not-allowed', 'operation-not-allowed', 'no-lease', 'stale-study', 'too-many-requests', 'too-many-places', 'queue-full', 'sandbox-unavailable', 'slot-unavailable'];
 
-/** All state transitions are serialized, including remote calls; operations hold the lock only before and after the slot answers. */
+/**
+ * Every state transition is synchronous, and nothing waits on the sandbox service while
+ * holding anything: a sweep starts the calls it needs (returns, at most one status poll,
+ * grants) and applies each answer when it arrives, checked against the state as it is
+ * then. A visitor's request waits only for its own call, so a hung service never makes
+ * one request wait for another's.
+ */
 export class SandboxPool {
   readonly #client: SandboxClient;
   readonly #slots = new Map<SlotId, Slot>();
@@ -39,35 +57,48 @@ export class SandboxPool {
   readonly #origin: string;
   readonly #cap: AddressCap;
   readonly #t: SandboxTimings;
+  readonly #pending = new Set<Promise<void>>();
   #service: SandboxServiceStatus | null = null;
   #bootId: string | null = null;
   #lastSeen: number;
   #nextPoll = 0;
+  #polling = false;
   #initialized = false;
-  #tail: Promise<unknown> = Promise.resolve();
   constructor(options: { client: SandboxClient; slots: SlotId[]; gatewayOrigin: string; cap?: AddressCap; now?: () => number; timings?: Partial<SandboxTimings> }) {
     this.#client = options.client; this.#now = options.now ?? Date.now; this.#origin = options.gatewayOrigin; this.#t = { ...SANDBOX_DEFAULTS, ...options.timings };
     this.#cap = options.cap ?? new AddressCap(); this.#cap.register(this); this.#lastSeen = this.#now();
-    for (const slot of options.slots) this.#slots.set(slot, { state: 'unavailable', resetAt: 0, retryAt: 0 });
+    for (const slot of options.slots) this.#slots.set(slot, { state: 'unavailable', resetAt: 0, retryAt: 0, version: 0, busy: 0 });
   }
-  run<T>(operation: () => Promise<T>): Promise<T> { const next = this.#tail.then(operation); this.#tail = next.catch(() => undefined); return next; }
   placesFor(address: string): number { let n = 0; for (const place of this.#places.values()) if (place.address === address) n++; return n; }
   /** Every slot is returned before anything is granted, which also ends whatever an earlier field station left behind. Until then the pool is unavailable. */
-  async initialize(): Promise<void> { await this.run(async () => { for (const slot of this.#slots.keys()) await this.#return(slot, null); this.#initialized = true; }); }
+  async initialize(): Promise<void> { await Promise.all([...this.#slots.keys()].map(slot => this.#return(slot, null))); this.#initialized = true; }
+  /** Settles once no call to the service is in flight (tests and shutdown). */
+  async settled(): Promise<void> { while (this.#pending.size) await Promise.all([...this.#pending]); }
 
-  async #return(slot: SlotId, leaseId: string | null): Promise<void> {
-    const s = this.#slots.get(slot)!; s.state = 'resetting'; s.resetAt = this.#now(); this.#nextPoll = 0;
-    try { const r = await this.#client.request(`/sandbox/v1/slots/${slot}/return`, 'POST', { leaseId }); if (r.status >= 300) throw new Error('refused'); }
-    catch { s.state = 'unavailable'; s.retryAt = this.#now() + this.#t.retryMs; }
+  /** One call to the service about a slot, counted while in flight; `apply` runs on its answer (null when there was none). */
+  #slotCall(slot: Slot, path: string, method: string, body: unknown, apply: (response: { status: number; body: unknown } | null) => void): Promise<void> {
+    slot.version++; slot.busy++;
+    const work = this.#client.request(path, method, body).catch(() => null).then(response => { slot.busy--; apply(response); });
+    this.#pending.add(work); void work.finally(() => this.#pending.delete(work));
+    return work;
   }
-  async #end(place: Place, reason: SandboxEndReason): Promise<void> {
+  #return(slot: SlotId, leaseId: string | null): Promise<void> {
+    const s = this.#slots.get(slot)!; s.state = 'resetting'; s.resetAt = this.#now(); this.#nextPoll = 0;
+    const version = s.version + 1;
+    return this.#slotCall(s, `/sandbox/v1/slots/${slot}/return`, 'POST', { leaseId }, r => {
+      if ((r === null || r.status >= 300) && s.version === version) { s.state = 'unavailable'; s.retryAt = this.#now() + this.#t.retryMs; }
+    });
+  }
+  #end(place: Place, reason: SandboxEndReason): void {
     this.#places.delete(place.session.subject);
     this.#ended.set(place.session.subject, { status: 'ended', now: iso(this.#now()), reason, endedAt: iso(this.#now()) });
-    if (place.lease) await this.#return(place.lease.slot, place.lease.id);
+    // An offer still unanswered is returned when its answer arrives (#grant).
+    if (place.lease) void this.#return(place.lease.slot, place.lease.id);
   }
-  #holder(slot: SlotId): Place | undefined { for (const place of this.#places.values()) if (place.lease?.slot === slot) return place; return undefined; }
+  #holder(slot: SlotId): Place | undefined { for (const place of this.#places.values()) if (place.lease?.slot === slot || place.offer?.lease.slot === slot) return place; return undefined; }
 
-  async sweep(): Promise<void> {
+  /** Ends what is due, retries failed slots, polls the service when due (one poll at a time), and offers free slots to the line. Never waits. */
+  sweep(): void {
     if (!this.#initialized) return;
     const now = this.#now(); const t = this.#t;
     for (const [subject, ended] of this.#ended) if (now - Date.parse(ended.endedAt) >= t.endedMs) this.#ended.delete(subject);
@@ -75,46 +106,64 @@ export class SandboxPool {
       const lease = place.lease;
       const reason = now >= place.session.exp ? 'session-ended' : lease && now >= lease.expires ? 'expired' : lease && !lease.claimed && now - lease.granted >= t.claimMs ? 'unclaimed'
         : now - place.heartbeat >= (lease ? t.idleMs : t.queueIdleMs) ? 'idle' : lease?.resetting && now - lease.resetAt >= t.resetDeadlineMs ? 'slot-failed' : null;
-      if (reason) await this.#end(place, reason);
+      if (reason) this.#end(place, reason);
     }
-    for (const [slot, s] of this.#slots) if (s.state === 'unavailable' && this.#service?.availability === 'available' && now >= s.retryAt && !this.#holder(slot)) await this.#return(slot, null);
-    const busy = [...this.#places.values()].some(p => p.lease?.resetting) || [...this.#slots.values()].some(s => s.state === 'resetting');
-    if (now >= this.#nextPoll) {
-      this.#nextPoll = now + (busy ? SANDBOX_SWEEP_MS : t.pollMs);
-      let status: SandboxServiceStatus | null = null;
-      try { const r = await this.#client.request('/sandbox/v1/status'); if (r.status === 200 && isPlainObject(r.body)) status = r.body as unknown as SandboxServiceStatus; } catch { /* below */ }
-      if (status) await this.#reconcile(status, now);
-      else if (now - this.#lastSeen >= t.failMs) {
-        this.#service = null;
-        for (const place of [...this.#places.values()]) if (place.lease) await this.#end(place, 'slot-failed');
-        for (const s of this.#slots.values()) { s.state = 'unavailable'; s.retryAt = now + t.retryMs; }
-      }
-    }
-    if (this.#service?.availability !== 'available') return;
-    for (const [slot, s] of this.#slots) {
-      if (s.state !== 'ready') continue;
-      const place = [...this.#places.values()].find(p => !p.lease);
-      if (!place) break;
-      const lease: Lease = { id: randomUUID(), studyId: randomUUID(), slot, granted: now, expires: Math.min(now + t.leaseMs, place.session.exp), claimed: false, resetting: false, resetAt: 0, ops: { tokens: t.opsBurst, at: now }, runtime: this.#service.runtime! };
-      try { const r = await this.#client.request(`/sandbox/v1/slots/${slot}/lease`, 'PUT', { leaseId: lease.id, studyId: lease.studyId, expiresAt: iso(lease.expires) }); if (r.status !== 200) throw new Error('refused'); place.lease = lease; s.state = 'leased'; }
-      catch { s.state = 'unavailable'; s.retryAt = now + t.retryMs; }
-    }
+    for (const [slot, s] of this.#slots) if (s.state === 'unavailable' && this.#service?.availability === 'available' && now >= s.retryAt && !this.#holder(slot)) void this.#return(slot, null);
+    if (now >= this.#nextPoll && !this.#polling) this.#poll(now);
+    this.#grant(now);
   }
-  async #reconcile(status: SandboxServiceStatus, now: number): Promise<void> {
+  #poll(now: number): void {
+    const busy = [...this.#places.values()].some(p => p.lease?.resetting) || [...this.#slots.values()].some(s => s.state === 'resetting');
+    this.#nextPoll = now + (busy ? SANDBOX_SWEEP_MS : this.#t.pollMs); this.#polling = true;
+    const sent = new Map([...this.#slots].map(([slot, s]) => [slot, s.busy ? -1 : s.version]));
+    const work = this.#client.request('/sandbox/v1/status').catch(() => null).then(r => {
+      this.#polling = false; const at = this.#now();
+      if (r?.status === 200 && isPlainObject(r.body)) this.#reconcile(r.body as unknown as SandboxServiceStatus, at, sent);
+      else if (at - this.#lastSeen >= this.#t.failMs) {
+        this.#service = null;
+        for (const place of [...this.#places.values()]) if (place.lease) this.#end(place, 'slot-failed');
+        for (const s of this.#slots.values()) { s.state = 'unavailable'; s.retryAt = at + this.#t.retryMs; }
+      }
+      this.#grant(at);
+    });
+    this.#pending.add(work); void work.finally(() => this.#pending.delete(work));
+  }
+  /** Applies a status answer, except to a slot whose state the field station changed after the poll was sent. */
+  #reconcile(status: SandboxServiceStatus, now: number, sent: ReadonlyMap<SlotId, number>): void {
     const restarted = this.#bootId !== null && status.bootId !== this.#bootId;
     this.#service = status; this.#bootId = status.bootId; this.#lastSeen = now;
     for (const [slot, s] of this.#slots) {
+      if (sent.get(slot) !== s.version) continue;
       const remote = status.slots.find(r => r.slot === slot); const place = this.#holder(slot); const lease = place?.lease;
       if (place && lease) {
-        if (!remote || remote.state === 'failed' || remote.lease?.leaseId !== lease.id) { await this.#end(place, restarted ? 'sandbox-restarted' : 'slot-failed'); continue; }
+        if (!remote || remote.state === 'failed' || remote.lease?.leaseId !== lease.id) { this.#end(place, restarted ? 'sandbox-restarted' : 'slot-failed'); continue; }
         if (lease.resetting && remote.state === 'leased' && remote.lease.studyId === lease.studyId) lease.resetting = false;
         continue;
       }
+      if (place) continue;
       if (!remote || remote.state === 'failed') { if (s.state !== 'unavailable') { s.state = 'unavailable'; s.retryAt = now + this.#t.retryMs; } continue; }
       if (remote.state === 'ready' && s.state !== 'unavailable') s.state = 'ready';
-      else if (remote.state === 'leased' || remote.lease) await this.#return(slot, null);
+      else if (remote.state === 'leased' || remote.lease) void this.#return(slot, null);
       else if (s.state === 'resetting' && now - s.resetAt >= this.#t.resetDeadlineMs) { s.state = 'unavailable'; s.retryAt = now + this.#t.retryMs; }
       else if (remote.state === 'ready' && s.state === 'unavailable' && now >= s.retryAt) s.state = 'ready';
+    }
+  }
+  /** Offers each ready slot to the head of the line. The place holds the lease once the service has granted it; a grant for a place that has gone meanwhile is returned. */
+  #grant(now: number): void {
+    const service = this.#service;
+    if (service?.availability !== 'available') return;
+    for (const [slot, s] of this.#slots) {
+      if (s.state !== 'ready') continue;
+      const place = [...this.#places.values()].find(p => !p.lease && !p.offer);
+      if (!place) break;
+      const lease: Lease = { id: randomUUID(), studyId: randomUUID(), slot, granted: now, expires: Math.min(now + this.#t.leaseMs, place.session.exp), claimed: false, resetting: false, resetAt: 0, ops: { tokens: this.#t.opsBurst, at: now }, runtime: service.runtime! };
+      s.state = 'leased';
+      const done = this.#slotCall(s, `/sandbox/v1/slots/${slot}/lease`, 'PUT', { leaseId: lease.id, studyId: lease.studyId, expiresAt: iso(lease.expires) }, r => {
+        if (place.offer?.lease === lease) delete place.offer;
+        if (r?.status !== 200) { s.state = 'unavailable'; s.retryAt = this.#now() + this.#t.retryMs; return; }
+        if (this.#places.get(place.session.subject) === place) place.lease = lease; else void this.#return(slot, lease.id);
+      });
+      place.offer = { lease, done };
     }
   }
 
@@ -142,13 +191,18 @@ export class SandboxPool {
   }
   /** Explicit allocation: the only way a session gets a place or a slot. Idempotent. */
   async join(session: SessionClaims, address: string): Promise<SandboxLease> {
-    if (this.#places.has(session.subject)) return this.view(session);
-    if (this.status().availability !== 'available') throw new SandboxFault('sandbox-unavailable');
-    if (this.#cap.full(address)) throw new SandboxFault('too-many-places');
-    if ([...this.#places.values()].filter(p => !p.lease).length >= this.#t.queueMax) throw new SandboxFault('queue-full');
-    this.#ended.delete(session.subject); this.#places.set(session.subject, { session, address, joined: this.#now(), heartbeat: this.#now() }); await this.sweep(); return this.view(session);
+    let place = this.#places.get(session.subject);
+    if (!place) {
+      if (this.status().availability !== 'available') throw new SandboxFault('sandbox-unavailable');
+      if (this.#cap.full(address)) throw new SandboxFault('too-many-places');
+      if ([...this.#places.values()].filter(p => !p.lease).length >= this.#t.queueMax) throw new SandboxFault('queue-full');
+      this.#ended.delete(session.subject); place = { session, address, joined: this.#now(), heartbeat: this.#now() }; this.#places.set(session.subject, place); this.sweep();
+    }
+    // A slot offered to this place: answer once the service has granted it (or not), so a free slot is `ready` at once.
+    await place.offer?.done;
+    return this.view(session);
   }
-  async leave(session: SessionClaims): Promise<SandboxLease> { const place = this.#places.get(session.subject); if (place) await this.#end(place, place.lease ? 'returned' : 'left'); await this.sweep(); return this.view(session); }
+  async leave(session: SessionClaims): Promise<SandboxLease> { const place = this.#places.get(session.subject); if (place) this.#end(place, place.lease ? 'returned' : 'left'); this.sweep(); return this.view(session); }
   #lease(session: SessionClaims, active = false): Lease {
     const lease = this.#places.get(session.subject)?.lease;
     if (!lease || active && (!lease.claimed || lease.resetting)) throw new SandboxFault('no-lease');
@@ -161,19 +215,23 @@ export class SandboxPool {
    */
   async #call(session: SessionClaims, lease: Lease, studyId: string, path: string, body: unknown): Promise<{ status: number; body: unknown } | null> {
     let response: { status: number; body: unknown } | null = null;
-    try { response = await this.#client.request(`/sandbox/v1/slots/${lease.slot}/${path}`, 'POST', body); } catch { /* below */ }
+    // A request the field station itself cannot send (SandboxFault) is refused as such; it says nothing about the slot.
+    try { response = await this.#client.request(`/sandbox/v1/slots/${lease.slot}/${path}`, 'POST', body); } catch (error) { if (error instanceof SandboxFault) throw error; }
     // 5xx answers the slot gave on purpose (a native SOURCE_UNAVAILABLE, a withheld download) pass through; only an unreachable or failed slot ends the lease.
     const answer = response?.body; const error = isPlainObject(answer) && isPlainObject(answer['error']) ? answer['error'] : null;
     const details = error && isPlainObject(error['details']) ? error['details'] : null;
     if (response && isPlainObject(answer) && (response.status < 500 || answer['code'] !== 'slot-unavailable' && details?.['code'] !== 'slot-unavailable' && (error !== null || answer['code'] !== undefined))) return response;
     const place = this.#places.get(session.subject);
     if (place?.lease !== lease || lease.studyId !== studyId) return null;
-    await this.#end(place, 'slot-failed');
+    this.#end(place, 'slot-failed');
     throw new SandboxFault('slot-unavailable');
   }
   async claim(session: SessionClaims): Promise<SandboxConnection> {
     const lease = this.#lease(session); const r = await this.#call(session, lease, lease.studyId, 'claim', { leaseId: lease.id, studyId: lease.studyId });
-    if (r?.status !== 200) throw fault(r?.body);
+    // The lease may have ended, or its study been reset, while the slot answered.
+    if (this.#places.get(session.subject)?.lease !== lease) throw new SandboxFault('no-lease');
+    if (!r) throw new SandboxFault('stale-study');
+    if (r.status !== 200) throw fault(r.body);
     lease.claimed = true;
     return { leaseId: lease.id, studyId: lease.studyId, expiresAt: iso(lease.expires), gatewayOrigin: this.#origin, gatewayPath: `/sandbox/${lease.slot}/socket.io` };
   }
@@ -183,7 +241,7 @@ export class SandboxPool {
     if (lease.resetting) return this.view(session);
     const studyId = randomUUID(); lease.studyId = studyId; lease.resetting = true; lease.resetAt = this.#now(); this.#nextPoll = 0;
     const r = await this.#call(session, lease, studyId, 'reset', { leaseId: lease.id, studyId });
-    if (!r || r.status >= 300) { const place = this.#places.get(session.subject); if (place?.lease === lease) await this.#end(place, 'slot-failed'); throw new SandboxFault('slot-unavailable'); }
+    if (!r || r.status >= 300) { const place = this.#places.get(session.subject); if (place?.lease === lease && lease.studyId === studyId) this.#end(place, 'slot-failed'); throw new SandboxFault('slot-unavailable'); }
     return this.view(session);
   }
   /** A token bucket: the published workbench sends several reads at once when it mounts, so a burst is allowed and the rate holds over time. */
@@ -192,32 +250,27 @@ export class SandboxPool {
     ops.tokens = Math.min(this.#t.opsBurst, ops.tokens + ((now - ops.at) / 1000) * this.#t.opsPerSecond); ops.at = now;
     if (ops.tokens < 1) throw new SandboxFault('too-many-requests'); ops.tokens -= 1;
   }
-  /**
-   * One allowlisted operation on the session's own slot, in its current study. Call
-   * outside `run`: the lock is held to check the lease and again to check the answer,
-   * never while the slot works, and an answer for a study that has since been reset
-   * or ended is discarded.
-   */
+  /** The session's active lease and current study for one slot call, after a sweep and a heartbeat, within the operation budget. */
+  #ticket(session: SessionClaims): { lease: Lease; studyId: string } {
+    this.sweep(); this.heartbeat(session); const lease = this.#lease(session, true); this.#throttle(lease); return { lease, studyId: lease.studyId };
+  }
+  /** One allowlisted operation on the session's own slot, in its current study. An answer for a study that has since been reset or ended is discarded. */
   async operate(session: SessionClaims, op: SandboxOperation, input: unknown): Promise<unknown> {
-    const ticket = await this.run(async () => { await this.sweep(); this.heartbeat(session); const lease = this.#lease(session, true); this.#throttle(lease); return { lease, studyId: lease.studyId }; });
+    const ticket = this.#ticket(session);
     const r = await this.#call(session, ticket.lease, ticket.studyId, 'ops', { leaseId: ticket.lease.id, studyId: ticket.studyId, op, input });
-    return this.run(async () => {
-      const current = this.#places.get(session.subject)?.lease;
-      if (!r || current !== ticket.lease || current.studyId !== ticket.studyId) throw new SandboxFault('stale-study', undefined, op === 'traces' ? { wbCode: 'TRACE_CURSOR_EXPIRED', wbStatus: 410 } : {});
-      const body = r.body as { ok?: unknown; data?: unknown; error?: unknown };
-      if (r.status === 200 && isPlainObject(body) && body.ok === true) return body.data;
-      throw new WorkbenchFailure(r.status, isPlainObject(body) ? body.error : undefined);
-    });
+    const current = this.#places.get(session.subject)?.lease;
+    if (!r || current !== ticket.lease || current.studyId !== ticket.studyId) throw new SandboxFault('stale-study', undefined, op === 'traces' ? { wbCode: 'TRACE_CURSOR_EXPIRED', wbStatus: 410 } : {});
+    const body = r.body as { ok?: unknown; data?: unknown; error?: unknown };
+    if (r.status === 200 && isPlainObject(body) && body.ok === true) return body.data;
+    throw new WorkbenchFailure(r.status, isPlainObject(body) ? body.error : undefined);
   }
   async repro(session: SessionClaims): Promise<SandboxReproDownload> {
-    const ticket = await this.run(async () => { await this.sweep(); this.heartbeat(session); const lease = this.#lease(session, true); this.#throttle(lease); return { lease, studyId: lease.studyId }; });
+    const ticket = this.#ticket(session);
     const r = await this.#call(session, ticket.lease, ticket.studyId, 'repro', { leaseId: ticket.lease.id, studyId: ticket.studyId });
-    return this.run(async () => {
-      const current = this.#places.get(session.subject)?.lease;
-      if (!r || current !== ticket.lease || current.studyId !== ticket.studyId) throw new SandboxFault('stale-study');
-      if (r.status !== 200) throw fault(r.body);
-      return r.body as SandboxReproDownload;
-    });
+    const current = this.#places.get(session.subject)?.lease;
+    if (!r || current !== ticket.lease || current.studyId !== ticket.studyId) throw new SandboxFault('stale-study');
+    if (r.status !== 200) throw fault(r.body);
+    return r.body as SandboxReproDownload;
   }
 }
 
@@ -256,11 +309,23 @@ export function configuredSandbox(env: NodeJS.ProcessEnv, gatewayOrigin: string,
   if (!token || token.length < 32) throw new Error('SANDBOX_SERVICE_TOKEN needs 32 characters.');
   const positive = (key: string, fallback: number): number => { const n = Number(env[key] ?? fallback); if (!Number.isSafeInteger(n) || n < 1) throw new Error(`${key} must be a positive integer.`); return n; };
   const count = positive('SANDBOX_SLOTS', 3); if (count > 3) throw new Error('At most three sandbox slots are supported.');
-  const client: SandboxClient = {
+  return new SandboxPool({ client: sandboxClient(origin, token), slots: Array.from({ length: count }, (_, i) => i + 1 as SlotId), gatewayOrigin, ...(cap ? { cap } : {}), timings: { leaseMs: positive('SANDBOX_LEASE_SECONDS', 600) * 1000, queueMax: positive('SANDBOX_QUEUE_MAX', 30) } });
+}
+
+/**
+ * The HTTP client for the sandbox service's private API at `origin`, with the service token.
+ * Each call opens its own connection (`Connection: close`): after a hang, a server runs its
+ * overdue keep-alive timers before it reads waiting requests, so a call sent on a pooled
+ * connection meanwhile would be reset and end its lease as if the slot had failed.
+ */
+export function sandboxClient(origin: string, token: string): SandboxClient {
+  return {
     async request(path, method = 'GET', body) {
-      const response = await fetch(`${origin}${path}`, { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(10_000) });
+      let payload: string | undefined;
+      try { payload = body === undefined ? undefined : JSON.stringify(body); } catch { throw invalid('The request could not be encoded.'); }
+      const timeout = /\/(?:ops|repro)$/.test(path) ? SANDBOX_OPS_TIMEOUT_MS : SANDBOX_CALL_TIMEOUT_MS;
+      const response = await fetch(`${origin}${path}`, { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', connection: 'close' }, ...(payload === undefined ? {} : { body: payload }), signal: AbortSignal.timeout(timeout) });
       return { status: response.status, body: await response.json() as unknown };
     }
   };
-  return new SandboxPool({ client, slots: Array.from({ length: count }, (_, i) => i + 1 as SlotId), gatewayOrigin, ...(cap ? { cap } : {}), timings: { leaseMs: positive('SANDBOX_LEASE_SECONDS', 600) * 1000, queueMax: positive('SANDBOX_QUEUE_MAX', 30) } });
 }

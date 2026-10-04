@@ -180,14 +180,63 @@ backend and Origin assertions still run.
 
 The workbench sandbox suite runs against the same stack: status and versions,
 a session through every allowlisted operation, a 64 KB candidate through Caddy,
-previews of `station` and `jobProgress` through `/sandbox/N/socket.io/`, closed
-edge paths, and a reset ending the old study's previews:
+a candidate between 64 and 72 KB refused by the field station (413) and one
+over 72 KB refused at the edge, a candidate nested deeper than 64 levels refused
+without ending the lease, previews of `station` and `jobProgress` through
+`/sandbox/N/socket.io/`, closed edge paths, and a reset ending the old study's
+previews:
 
 ```sh
 SANDBOX_API_ORIGIN=https://localhost:8443 SANDBOX_SITE_ORIGIN=https://localhost:8443 \
   NODE_EXTRA_CA_CERTS="$PWD/.local/lab/secrets/origin/ca.pem" \
   node --test --test-force-exit deploy/test/sandbox.test.ts
 ```
+
+With `SANDBOX_PAUSE_COMMAND` and `SANDBOX_UNPAUSE_COMMAND` set to shell commands
+that pause and unpause the `sandbox` container (such as `"$C pause sandbox"` and
+`"$C unpause sandbox"`, with `C` as below), it also checks that a hung sandbox
+service holds up nothing: status and session keep answering within a second
+while an operation waits, and the lease survives the pause. Without them that
+test skips.
+
+### Browser specs against the real sandbox
+
+`e2e/real/workbench-sandbox.spec.ts` drives `https://localhost:8443/workbench/`
+on this stack with the published workbench mounted, in each engine of
+`playwright.real.config.ts` (Chromium, Firefox, WebKit, one worker). Nothing is
+stubbed: every answer comes from the field station and the sandbox service.
+Without `SANDBOX_REAL_ORIGIN` every spec skips. On a stack with the default
+settings five of its eight specs run:
+
+```sh
+SANDBOX_REAL_ORIGIN=https://localhost:8443 npx playwright test -c playwright.real.config.ts
+```
+
+Add `--project chromium` (or `firefox`, `webkit`) for one engine. The other
+three specs skip, each saying why, unless the stack is set up for them:
+
+| Spec | Needs |
+| --- | --- |
+| with every slot taken, Start queues with a position, and leaving the line returns the place | Exactly one free slot: `SANDBOX_SLOTS=1`. A client address holds at most two places, so one machine can fill the pool and still queue only when it has one slot. |
+| a lease that runs out ends the session honestly and offers a new start | A lease of 90 s or less, such as `SANDBOX_LEASE_SECONDS=75` |
+| stopping the sandbox service ends the session and says so; nothing is simulated | `SANDBOX_REAL_STOP_COMMAND` and `SANDBOX_REAL_START_COMMAND`, shell commands that stop and start the `sandbox` service |
+
+Compose reads `SANDBOX_SLOTS` and `SANDBOX_LEASE_SECONDS` from the shell (or
+from `.local/lab/.env`) when the stack starts, so restart it with them, run
+those three, then restart it with the defaults. A 75 s lease is too short for
+the other specs, so run them in two passes:
+
+```sh
+C="docker compose -p lontra-local-lab -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.sandbox.yaml -f deploy/compose.local-lab.yaml --env-file .local/lab/.env"
+SANDBOX_SLOTS=1 SANDBOX_LEASE_SECONDS=75 npm run dev:lab -- up --no-build
+SANDBOX_REAL_ORIGIN=https://localhost:8443 SANDBOX_REAL_STOP_COMMAND="$C stop sandbox" SANDBOX_REAL_START_COMMAND="$C start sandbox" \
+  npx playwright test -c playwright.real.config.ts -g "every slot taken|lease that runs out|stopping the sandbox service"
+npm run dev:lab -- up --no-build
+```
+
+With your own `--dir` and `--project`, use them in `up` and in `C`. Run
+`deploy/test/sandbox.test.ts` on the default settings: it expects a free slot
+and the full lease.
 
 ## The workbench sandbox
 
@@ -210,8 +259,10 @@ Kafka. `https://localhost:8443/workbench/` mounts the published
 The field station and the sandbox share `SANDBOX_SERVICE_TOKEN`, a 32-byte random
 value in `.local/lab/.env`. `deploy/make-secrets.sh` writes it into a new env
 file; for an env file made before the sandbox existed, `up` appends one once.
-The sandbox refuses to start with any `FIELD_STATION_*` value, Kafka credential,
-or `LAB_*_TOKEN` in its environment, and it publishes no port.
+The sandbox starts only with an allowlisted environment (`SANDBOX_*`,
+`SITE_ORIGIN`, `NODE_ENV`, and what the container sets), so no
+`FIELD_STATION_*` value, Kafka credential, or Lab token reaches it, and it
+publishes no port.
 
 Lab benches and sandbox slots share one place limit: a client address holds at
 most two places across both (`too-many-places` otherwise). A session ends after
@@ -279,7 +330,7 @@ runs only with `LAB_EXPIRY_TEST=1`.
 | `npm ci` in the image build fails with `SELF_SIGNED_CERT_IN_CHAIN` | Your network re-signs HTTPS; use `--extra-ca` (below). |
 | Compose says `SANDBOX_SERVICE_TOKEN` is required | A hand-made env file without it. Append one as `deploy/OPERATIONS.md` (Workbench sandbox overlay) shows, then recreate `field-station` and `sandbox` together. `npm run dev:lab` does this for you. |
 | `/workbench/` says the sandbox is not enabled | The field station has no `SANDBOX_API_URL`: the stack was started without `deploy/compose.sandbox.yaml`. Start it with `npm run dev:lab`, or add that file to a manual `docker compose` command. |
-| `/api/sandbox/status` reports `seam-unavailable` | The installed StreamOtter has no WHC-1 manifest. Run `npm ci`, then `up` (with builds). |
+| `/api/sandbox/status` reports `seam-unavailable`, or `up` stops on an unhealthy `sandbox` | The installed StreamOtter has no WHC-1 manifest (the sandbox's health check fails until the seam is available and a slot can serve). Run `npm ci`, then `up` (with builds). |
 | The site build fails with `Workbench assets: … Re-pin apps/site/src/scripts/workbench-seam.ts` | The installed `@streamotter/workbench` differs from the version and integrity the site pins. Re-pin from the installed `workbench-host.json`, as the file's comment says. |
 | Every source-failure story is listed as unavailable | See the capability summary's reason (above). With Lab benches running, that is the backend's answer, not a fault. |
 | `npm test` reports eight cancelled tests in `lab-coverage.test.ts` | It ran on Node 22. Use Node 24.15 or later. |
@@ -339,6 +390,17 @@ station, and `deploy/test/kafka-acls.test.ts`. A bench container restarted in
 place resumed its study; one recreated after being killed failed on its
 journal lock, which names the old container's host name, and the field
 station's reset replaced its study within a minute (Lab contract 8b).
+
+On October 4, 2026, after the W9a review fixes, a cold `up` of the same kind
+(its own `--dir` and `--project`) passed all seven tests of
+`deploy/test/sandbox.test.ts`, including the hung-service test with
+`SANDBOX_PAUSE_COMMAND` and `SANDBOX_UNPAUSE_COMMAND` (status and session
+answered in under 20 ms while the service was paused), and all eight specs of
+`e2e/real/workbench-sandbox.spec.ts` in Chromium, in the two passes described
+in [Browser specs against the real sandbox](#browser-specs-against-the-real-sandbox):
+five on the default settings, then the queue, expiry and outage specs with
+`SANDBOX_SLOTS=1`, `SANDBOX_LEASE_SECONDS=75` and the stop and start commands.
+Firefox and WebKit have not been run against the real sandbox yet.
 
 ## What the launcher runs (manual recipe)
 

@@ -10,6 +10,8 @@ import type { SandboxErrorCode, SandboxOperation, SandboxRequest, WorkbenchOpera
 export const HOST_CONTRACT = 1;
 export const API_BASE = '/api/sandbox/wb/v1';
 export const CONFIG_BODY_BYTES = 65_536;
+/** How deeply a candidate may nest objects and arrays. The slot's base needs far fewer; a deeper one would fail to serialize later. */
+export const CONFIG_DEPTH = 64;
 export const BODY_BYTES = 4_096;
 export const DOWNLOAD_BYTES = 262_144;
 /** The most traces one page serves; a larger `limit` (the workbench asks for up to 500) is narrowed to it. */
@@ -79,13 +81,29 @@ function exact(value: unknown, required: readonly string[], optional: readonly s
 }
 const id = (value: unknown, name: string, max = 64): string => { if (typeof value !== 'string' || value.length === 0 || value.length > max || !/^[\w.:-]+$/.test(value)) throw invalid(`${name} must be an identifier of at most ${max} characters.`); return value; };
 
+/** Whether a JSON value nests objects and arrays deeper than `limit` (the value itself is level 1). Iterative, so any depth is safe to check. */
+function deeper(value: unknown, limit: number): boolean {
+  const stack: [unknown, number][] = [[value, 1]];
+  while (stack.length) {
+    const [item, level] = stack.pop()!;
+    if (item === null || typeof item !== 'object') continue;
+    if (level > limit) return true;
+    for (const child of Object.values(item)) stack.push([child, level + 1]);
+  }
+  return false;
+}
+
 /** Bounds every operation's input in its canonical object form; anything else is refused. */
 export function checkInput<O extends SandboxOperation>(op: O, input: unknown): SandboxRequest<O> {
   const checked = ((): unknown => {
     switch (op as SandboxOperation) {
       case 'capabilities': case 'health': case 'sources': case 'channels': case 'config': case 'dev.principals':
         if (input !== null) throw invalid('This operation takes no input.'); return null;
-      case 'config.validate': case 'config.export': { const { config } = exact(input, ['config']); if (!isPlainObject(config)) throw invalid('config must be a JSON object.'); return { config }; }
+      case 'config.validate': case 'config.export': {
+        const { config } = exact(input, ['config']); if (!isPlainObject(config)) throw invalid('config must be a JSON object.');
+        if (deeper(config, CONFIG_DEPTH)) throw invalid(`config nests more than ${CONFIG_DEPTH} levels deep.`);
+        return { config };
+      }
       case 'source-checks': case 'sources.resume': return { sourceId: id(exact(input, ['sourceId'])['sourceId'], 'sourceId') };
       case 'preview-sessions': return { fixturePrincipalRef: id(exact(input, ['fixturePrincipalRef'])['fixturePrincipalRef'], 'fixturePrincipalRef') };
       case 'dev.disconnect': return { previewSessionId: id(exact(input, ['previewSessionId'])['previewSessionId'], 'previewSessionId', 128) };

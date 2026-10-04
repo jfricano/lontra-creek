@@ -205,9 +205,12 @@ not describe the hosted broker as Kafka least privilege until it has.
 `compose.sandbox.yaml` adds the `sandbox` service (LC11-ADR-04, sandbox contract
 §§9–10): three synthetic workbench slots on the published StreamOtter seam, run
 from the same image with `node src/sandbox/sandbox-main.ts`. Its environment is
-`NODE_ENV`, `SANDBOX_SERVICE_TOKEN`, `SANDBOX_SLOTS`, and `SITE_ORIGIN` only; the
-service refuses to start with any `FIELD_STATION_*` value, Kafka credential, or
-`LAB_*_TOKEN`. It publishes no port. The field station reaches its API at
+`NODE_ENV`, `SANDBOX_SERVICE_TOKEN`, `SANDBOX_SLOTS`, and `SITE_ORIGIN` only, and
+the service checks that against an allowlist: any variable but `SANDBOX_*`,
+`SITE_ORIGIN`, `NODE_ENV`, and what the Node image and the container runtime set
+(`PATH`, `HOME`, `HOSTNAME`, `PWD`, `TERM`, `TZ`, `LANG`, `NODE_VERSION`,
+`YARN_VERSION`) stops it at startup, so no `FIELD_STATION_*` value, Kafka
+credential, or Lab token can reach it. It publishes no port. The field station reaches its API at
 `sandbox:7620` with the shared token; slot N's development gateway listens on
 `sandbox:760N`, and each slot's management handler listens on loopback inside
 the container only. `deploy/Caddyfile` routes `/sandbox/1/socket.io/*` through

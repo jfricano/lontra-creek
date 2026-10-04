@@ -45,6 +45,8 @@ export class FixtureRuntime implements SlotRuntime {
   hold: { release: () => void } | null = null;
   holdNext = false;
   #fail: ((error: unknown) => void) | null = null;
+  /** When set, the next call fails with this error, as the slot's handler or the seam would. */
+  failNext: unknown = null;
   /** Overrides the export content, to test the download guard. */
   exportContent: string | null = null;
   readonly #backend: FixtureBackend;
@@ -55,6 +57,7 @@ export class FixtureRuntime implements SlotRuntime {
     if (this.closed) throw new Error('Runtime closed.');
     this.calls.push({ op, input });
     if (this.holdNext) { this.holdNext = false; await new Promise<void>((release, fail) => { this.hold = { release }; this.#fail = fail; }); }
+    if (this.failNext !== null) { const error = this.failNext; this.failNext = null; throw error; }
     const sources = Object.entries(this.base.sources).map(([sourceId, s]) => ({ sourceId, kind: s.kind, status: 'healthy' as const }));
     const answer = ((): unknown => {
       switch (op as SandboxOperation) {

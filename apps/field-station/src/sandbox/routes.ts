@@ -55,15 +55,10 @@ export async function sandboxRoute(request: IncomingMessage, response: ServerRes
     if (session) pool.heartbeat(session);
     if (route === 'POST /api/sandbox/session/repro') return send(response, 200, await pool.repro(session!), cors);
     const s = session as SessionClaims;
-    const result = await pool.run(async () => {
-      await pool.sweep(); if (session) pool.heartbeat(session);
-      if (route === 'GET /api/sandbox/status') return pool.status();
-      if (route === 'POST /api/sandbox/session') return pool.join(s, context.address);
-      if (route === 'GET /api/sandbox/session') return pool.view(s);
-      if (route === 'POST /api/sandbox/session/claim') return pool.claim(s);
-      if (route === 'POST /api/sandbox/session/reset') return pool.reset(s);
-      return pool.leave(s);
-    });
+    // A request waits only for its own call to the sandbox service, never for another's (leases.ts).
+    pool.sweep(); if (session) pool.heartbeat(session);
+    const result = route === 'GET /api/sandbox/status' ? pool.status() : route === 'POST /api/sandbox/session' ? await pool.join(s, context.address) : route === 'GET /api/sandbox/session' ? pool.view(s)
+      : route === 'POST /api/sandbox/session/claim' ? await pool.claim(s) : route === 'POST /api/sandbox/session/reset' ? await pool.reset(s) : await pool.leave(s);
     return send(response, route === 'POST /api/sandbox/session/reset' ? 202 : 200, result, setCookie ? { ...cors, 'set-cookie': setCookie } : cors);
   } catch (error) {
     const problem = error instanceof SandboxFault ? error : invalid('The request is malformed.');
@@ -93,7 +88,8 @@ async function workbenchRoute(request: IncomingMessage, response: ServerResponse
     if (op === 'workbench') {
       if ([...url.searchParams.keys()].length) throw invalid('No query parameters are accepted.');
       const pool = context.pool;
-      const discovery = pool ? await pool.run(async () => { await pool.sweep(); pool.heartbeat(session); return pool.discovery(); }) : { hostContract: HOST_CONTRACT, operations: ['workbench'], limits: { maxRequestBytes: CONFIG_BODY_BYTES } };
+      if (pool) { pool.sweep(); pool.heartbeat(session); }
+      const discovery = pool ? pool.discovery() : { hostContract: HOST_CONTRACT, operations: ['workbench'], limits: { maxRequestBytes: CONFIG_BODY_BYTES } };
       return send(response, 200, { ok: true, requestId, data: discovery }, headers);
     }
     if (!isSandboxOperation(op)) throw new SandboxFault('operation-not-allowed', `The "${op}" operation is not available in this environment.`);

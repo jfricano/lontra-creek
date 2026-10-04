@@ -13,7 +13,8 @@ import { createClient } from 'streamotter/client';
 import { WORKBENCH_OPERATIONS } from 'streamotter/contracts';
 import type { SlotId } from '../src/sandbox/contract.ts';
 import { SANDBOX_OPERATIONS, TRACE_LIMIT } from '../src/sandbox/operations.ts';
-import { publishedBackend, type PublishedRuntime } from '../src/sandbox/seam.ts';
+import { CALL_TIMEOUT_MS, publishedBackend, SlotError, slotRequest, type PublishedRuntime } from '../src/sandbox/seam.ts';
+import { SANDBOX_OPS_TIMEOUT_MS } from '../src/sandbox/leases.ts';
 import type { SlotBackend } from '../src/sandbox/service.ts';
 import { harness, wb } from './support/sandbox-harness.ts';
 
@@ -187,4 +188,16 @@ test('A43: the workbench may ask for 500 traces; a page serves at most 100', asy
     const repro = JSON.parse((await h.pool.repro(s)).content) as { traces: unknown[]; gaps: { tracesTruncated: boolean } };
     assert.equal(repro.traces.length, 500); assert.equal(repro.gaps.tracesTruncated, true, 'a full native page may not be the whole study');
   } finally { await h.service.close(); }
+});
+
+test('A44: a slot call with no answer in time is StreamOtter\'s TIMEOUT, inside the field station\'s own wait', async () => {
+  assert.ok(CALL_TIMEOUT_MS < SANDBOX_OPS_TIMEOUT_MS, 'the service gives up on the slot before the field station gives up on the service');
+  const silent = http.createServer(() => undefined);
+  await new Promise<void>(r => silent.listen(0, '127.0.0.1', r));
+  try {
+    const started = Date.now();
+    await assert.rejects(slotRequest(`http://127.0.0.1:${(silent.address() as { port: number }).port}/health`, { method: 'GET' }, 100),
+      (error: unknown) => error instanceof SlotError && error.code === 'TIMEOUT' && error.retryable && /within 0.1 s/.test(error.message));
+    assert.ok(Date.now() - started < 2000);
+  } finally { silent.closeAllConnections(); silent.close(); }
 });

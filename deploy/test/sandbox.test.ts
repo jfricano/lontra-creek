@@ -5,8 +5,12 @@
  *
  *   NODE_EXTRA_CA_CERTS=$PWD/.local/lab/secrets/origin/ca.pem SANDBOX_API_ORIGIN=https://localhost:8443 \
  *   SANDBOX_SITE_ORIGIN=https://localhost:8443 node --test --test-force-exit deploy/test/sandbox.test.ts
+ *
+ * Optional: SANDBOX_PAUSE_COMMAND and SANDBOX_UNPAUSE_COMMAND (shell commands that freeze and
+ * thaw the sandbox container, for example `docker compose ... pause sandbox`) run the hung-service test.
  */
 import assert from 'node:assert/strict';
+import { execSync } from 'node:child_process';
 import http from 'node:http';
 import https from 'node:https';
 import { createRequire } from 'node:module';
@@ -104,7 +108,21 @@ describe('the real workbench sandbox', { skip: !API && 'SANDBOX_API_ORIGIN not s
     const body = JSON.stringify({ config: candidate }); assert.ok(body.length > 8192 * 7 && body.length <= 65_536, String(body.length));
     const answer = await wb<{ valid: boolean }>('/config/validate', body);
     assert.equal(answer.status, 200, JSON.stringify(answer.body).slice(0, 300)); assert.equal(answer.body.ok, true);
-    assert.equal((await wb('/config/validate', JSON.stringify({ config: { ...candidate, pad: 'x'.repeat(70_000) } }))).status, 413, 'over 64 KB is refused');
+    // Between the field station's 64 KB and Caddy's 72 KB: Caddy passes it, and the field station refuses it with its own error.
+    const over = JSON.stringify({ config: { ...candidate, pad: 'x'.repeat(68_000 - body.length) } }); assert.ok(over.length > 65_536 && over.length < 72 * 1024, String(over.length));
+    const refused = await wb('/config/validate', over);
+    assert.equal(refused.status, 413); assert.equal(refused.body.error?.code, 'INVALID_REQUEST'); assert.equal(refused.body.error?.details?.code, 'candidate-too-large', 'the field station\'s refusal, not Caddy\'s');
+    assert.equal((await wb('/config/validate', JSON.stringify({ config: { ...candidate, pad: 'x'.repeat(70_000) } }))).status, 413, 'over 72 KB is refused');
+  });
+
+  test('a candidate nested too deep is refused as invalid and the session keeps its slot', async () => {
+    const { config } = await ok<{ config: { schemas: Record<string, unknown> } }>('/config');
+    const body = `{"config":${JSON.stringify(config).replace(/^\{"/, () => `{"deepSchema":${'['.repeat(7000)}1${']'.repeat(7000)},"`)}}`;
+    assert.ok(body.length > 14_000 && body.length < 65_536, String(body.length));
+    const answer = await wb('/config/validate', body);
+    assert.equal(answer.status, 400, JSON.stringify(answer.body).slice(0, 300)); assert.equal(answer.body.error?.details?.code, 'invalid-request');
+    assert.equal((await life<SandboxLease>('session')).status, 'active');
+    assert.equal((await ok<{ ready: boolean }>('/health')).ready, true);
   });
 
   test('previews reach live through /sandbox/N/socket.io; edge routes stay closed', async () => {
@@ -135,5 +153,25 @@ describe('the real workbench sandbox', { skip: !API && 'SANDBOX_API_ORIGIN not s
     await assert.rejects(preview(volunteer.token, 'station', { stationId: 'LC-03' }).ready({ timeoutMs: 5000 }), 'the old token means nothing to the new study');
     const fresh = await ok<{ token: string }>('/preview-sessions', { fixturePrincipalRef: 'creek-volunteer' });
     await preview(fresh.token, 'station', { stationId: 'LC-03' }).ready({ timeoutMs: 15_000 });
+  });
+
+  test('a hung sandbox service delays no other request, and a short hang ends nothing', { skip: !(process.env['SANDBOX_PAUSE_COMMAND'] && process.env['SANDBOX_UNPAUSE_COMMAND']) && 'Set SANDBOX_PAUSE_COMMAND and SANDBOX_UNPAUSE_COMMAND' }, async () => {
+    await until(async () => (await life<SandboxLease>('session')).status === 'active', 'the session is active');
+    execSync(process.env['SANDBOX_PAUSE_COMMAND']!, { stdio: 'inherit' });
+    let pending: Promise<{ status: number }> | undefined;
+    try {
+      pending = wb('/health');
+      // About 8 s: past several 3 s status polls, inside the 15 s outage limit; paced under the request budget.
+      for (let i = 0; i < 8; i++) {
+        const started = Date.now();
+        assert.equal((await life<SandboxStatus>('status')).availability, 'available');
+        assert.equal((await life<SandboxLease>('session')).status, 'active');
+        assert.ok(Date.now() - started < 1500, `status and session answered in ${Date.now() - started} ms while the service hung`);
+        await sleep(1000);
+      }
+    } finally { execSync(process.env['SANDBOX_UNPAUSE_COMMAND']!, { stdio: 'inherit' }); }
+    await pending;
+    await sleep(1000); assert.equal((await life<SandboxLease>('session')).status, 'active', 'a hang shorter than the outage limit ends nothing');
+    assert.equal((await ok<{ ready: boolean }>('/health')).ready, true);
   });
 });

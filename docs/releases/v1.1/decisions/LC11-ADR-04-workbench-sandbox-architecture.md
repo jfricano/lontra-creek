@@ -1,6 +1,6 @@
 # LC11-ADR-04 — Workbench sandbox architecture
 
-Status: **Accepted for implementation of the session layer** (October 3, 2026). The runtime binding is finalized against the published seam: see the [W9a amendment](#amendment-w9a-binding-to-streamotter-020-rc1-october-4-2026), which supersedes the slot ports, the "never listened on" management service, and the single development principal below. · Slices: W2, W3, W9a · Companion plan §3 "Workbench sandbox on the existing route" · Acceptance: LC11-A41–A46
+Status: **Accepted for implementation of the session layer** (October 3, 2026). The runtime binding is finalized against the published seam: see the [W9a amendment](#amendment-w9a-binding-to-streamotter-020-rc1-october-4-2026), which supersedes the slot ports, the "never listened on" management service, and the single development principal of the original decision. The diagram below shows the amended ports and listener. · Slices: W2, W3, W9a · Companion plan §3 "Workbench sandbox on the existing route" · Acceptance: LC11-A41–A46
 
 ## Context
 
@@ -14,13 +14,13 @@ Status: **Accepted for implementation of the session layer** (October 3, 2026). 
 browser, https://streamotter.dev/workbench/
   ├─ published workbench UI (WHC-1 boot block written after allocation, then app.js)
   │    └─ fetch, credentials ──▶ /api/sandbox/* and /api/sandbox/wb/v1/*      Caddy ─▶ field-station:7402   sessions, queue, op allowlist
-  └─ preview SDK WebSocket ─────────────────────────────▶ /sandbox/N/socket.io/ Caddy (Origin check) ─▶ sandbox:76N0
+  └─ preview SDK WebSocket ─────────────────────────────▶ /sandbox/N/socket.io/ Caddy (Origin check) ─▶ sandbox:760N
 
 field-station ──service token──▶ sandbox:7620   sandbox API, Compose network only
 
 sandbox (one container, K slots, default K = 3)
-  slot N gateway        :76N0          createGateway({ mode: "development" }) on synthetic fixture sources
-  slot N management     in-process     the seam's management service; never listened on, never routed
+  slot N gateway        :760N          createGateway({ mode: "development" }) on synthetic fixture sources
+  slot N management     127.0.0.1:any  createManagementHandler per study, per-study key; never published or routed
   sandbox API           :7620          slot lease, credential minting, operation execution, reset
 ```
 
@@ -60,6 +60,8 @@ StreamOtter 0.2.0-rc.1 publishes the seam: `@streamotter/workbench` with a WHC-1
 3. **Two development principals per slot** (decisions 4 and 7). Gateway routing includes the verified tenant, and the creek's records are tenant `lontra-creek` while the init scaffold's `jobProgress` is tenant `local`, so one principal cannot preview both channels. Each slot registers `creek-volunteer` (tenant `lontra-creek`, role volunteer) for `station` and the scaffold's own `developer` (tenant `local`, verbatim) for `jobProgress`; previews are minted only for these two, each reads only its own channel, and revocation covers both.
 
 Also recorded: WHC-1 has no unmount and reads its boot block once per evaluation of `app.js`, so the page runs one workbench instance per document and reloads to remount after a reset. Trace pages are narrowed to 100 items while the workbench may ask for up to 500 (WHC-1 lets a host narrow results). The operation budget is a token bucket that allows a burst of 8: the published workbench reads seven operations within a few milliseconds when it mounts (five at once, then its first view's two), which a strict 2 a second refused. The sandbox contract (draft 0.3) carries the details; the session layer (W2) did not change.
+
+Review fixes (October 4, 2026), within decision 2: the field station never waits on the sandbox service while holding a lock, so a hung service delays no other visitor's request; its sweeps start at most one status poll at a time and apply each answer only to slots it has not called about since. Waits are ordered so a slow slot is never mistaken for a failed one: 3 s for a status poll or lifecycle call, 10 s for the service's call to a slot (then StreamOtter's `TIMEOUT`, and the lease is kept), 15 s for the field station's wait on an operation.
 
 ## Open questions
 

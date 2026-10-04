@@ -9,7 +9,8 @@
 #
 # Environment: DEMO_HOST (default demo.streamotter.dev), HTTPS_PORT (default 443),
 # GATEWAY_UPSTREAM, FIELD_STATION_UPSTREAM, LAB_N_UPSTREAM, and SANDBOX_N_UPSTREAM (the
-# compose service addresses), SITE_ORIGIN (default https://streamotter.dev), and
+# compose service addresses), SITE_ORIGIN (one exact origin, matched literally; default
+# https://streamotter.dev; the field station and sandbox refuse a list), and
 # ORIGIN_CERT_DIR (cert.pem and key.pem, default /etc/caddy/origin).
 {
 	# Certificates come from files (the Cloudflare origin certificate), not ACME,

@@ -40,20 +40,23 @@ export interface SlotBackend {
 
 export interface SandboxSettings { serviceToken: string; slots: SlotId[]; host: string; port: number; siteOrigins: string[]; gatewayHost: string; portBase: number }
 
-/** The service's settings. Production and other services' secrets are refused, as for Lab benches. */
+/** What Node's image and the container runtime set; with SANDBOX_*, SITE_ORIGIN and NODE_ENV, the only variables the service runs with. */
+export const RUNTIME_ENV: readonly string[] = ['PATH', 'HOME', 'HOSTNAME', 'PWD', 'TERM', 'TZ', 'LANG', 'NODE_VERSION', 'YARN_VERSION'];
+/** The service's settings. Its environment is an allowlist: anything else, a production or Lab secret above all, stops it. */
 export function sandboxEnvironment(env: NodeJS.ProcessEnv): SandboxSettings {
   for (const key of Object.keys(env)) {
-    if (key.startsWith('FIELD_STATION_') || /^KAFKA_.*(PASSWORD|USERNAME)$/.test(key) || /^LAB_\w+_TOKEN$/.test(key)) throw new Error(`Production or Lab secret forbidden: ${key}`);
+    if (!/^SANDBOX_[A-Z0-9_]+$/.test(key) && key !== 'SITE_ORIGIN' && key !== 'NODE_ENV' && !RUNTIME_ENV.includes(key)) throw new Error(`Setting forbidden in the sandbox environment: ${key.slice(0, 64)}`);
   }
   const serviceToken = env['SANDBOX_SERVICE_TOKEN'];
   if (!serviceToken || serviceToken.length < 32) throw new Error('SANDBOX_SERVICE_TOKEN needs 32 characters.');
   const count = Number(env['SANDBOX_SLOTS'] ?? 3);
   if (![1, 2, 3].includes(count)) throw new Error('SANDBOX_SLOTS must be 1, 2, or 3.');
   const slots = Array.from({ length: count }, (_, i) => i + 1 as SlotId);
-  const origins = env['SITE_ORIGIN'] ?? (env['NODE_ENV'] === 'production' ? '' : 'https://localhost:8443');
-  if (!origins) throw new Error('SITE_ORIGIN is required in production.');
-  const siteOrigins = origins.split(',').map(origin => origin.trim()).filter(Boolean);
-  for (const origin of siteOrigins) if (!URL.canParse(origin) || new URL(origin).origin !== origin) throw new Error(`SITE_ORIGIN must list exact origins; got ${origin.slice(0, 80)}.`);
+  const origin = env['SITE_ORIGIN'] ?? (env['NODE_ENV'] === 'production' ? '' : 'https://localhost:8443');
+  if (!origin) throw new Error('SITE_ORIGIN is required in production.');
+  // Caddy routes a slot's Socket.IO only for SITE_ORIGIN, matched as one literal Origin, so the gateways allow exactly that one.
+  if (!URL.canParse(origin) || new URL(origin).origin !== origin) throw new Error(`SITE_ORIGIN must be one exact origin; got ${origin.slice(0, 80)}.`);
+  const siteOrigins = [origin];
   const port = (key: string, fallback: number): number => { const n = Number(env[key] ?? fallback); if (!Number.isSafeInteger(n) || n < 1 || n > 65_535) throw new Error(`${key} must be a port number.`); return n; };
   const apiPort = port('SANDBOX_API_PORT', 7620); const portBase = port('SANDBOX_GATEWAY_PORT_BASE', 7600);
   if (portBase + 3 > 65_535) throw new Error('SANDBOX_GATEWAY_PORT_BASE leaves no room for three slots.');
@@ -118,6 +121,12 @@ export class SandboxService {
     return described.available
       ? { bootId: this.bootId, availability: 'available', runtime: described.runtime, operations: SANDBOX_OPERATIONS.filter(op => described.operations.includes(op)), slots }
       : { bootId: this.bootId, availability: 'unavailable', reason: described.reason, runtime: null, operations: [], slots };
+  }
+
+  /** Healthy while the seam is available and at least one slot can serve (ready, leased, or resetting); `slots` counts those. */
+  health(): { healthy: boolean; availability: SandboxServiceStatus['availability']; slots: number } {
+    const status = this.status(); const slots = status.slots.filter(slot => slot.state === 'ready' || slot.state === 'leased' || slot.state === 'resetting').length;
+    return { healthy: status.availability === 'available' && slots > 0, availability: status.availability, slots };
   }
 
   async lease(id: SlotId, input: { leaseId: string; studyId: string; expiresAt: string }): Promise<SandboxServiceStatus> {
@@ -268,7 +277,11 @@ export class SandboxService {
       if (method !== 'POST') return { status: 404, body: { error: 'Not found.' } };
       if (action === 'claim') return { status: 200, body: this.claim(slot, { leaseId: body['leaseId'], studyId: body['studyId'] }) };
       if (action === 'reset') return { status: 202, body: this.reset(slot, { leaseId: body['leaseId'], studyId: body['studyId'] }) };
-      if (action === 'return') return { status: 202, body: this.return(slot, { leaseId: body['leaseId'] ?? null }) };
+      if (action === 'return') {
+        // Reclaiming whatever is on the slot takes an explicit null; a body without a lease ID is refused.
+        if (!Object.hasOwn(body, 'leaseId') || body['leaseId'] !== null && typeof body['leaseId'] !== 'string') throw invalid('Invalid lease.');
+        return { status: 202, body: this.return(slot, { leaseId: body['leaseId'] }) };
+      }
       if (action === 'repro') return { status: 200, body: await this.repro(slot, { leaseId: body['leaseId'], studyId: body['studyId'] }) };
       return { status: 200, body: { ok: true, data: await this.operate(slot, { leaseId: body['leaseId'], studyId: body['studyId'], op: body['op'], input: body['input'] ?? null }) } };
     } catch (error) {
@@ -285,7 +298,10 @@ export class SandboxService {
     return createServer(async (request, response) => {
       const send = (status: number, value: unknown) => { response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); response.end(JSON.stringify(value)); };
       const url = new URL(request.url ?? '/', 'http://sandbox.invalid');
-      if (url.pathname === '/healthz') return send(200, { availability: this.status().availability });
+      if (url.pathname === '/healthz') {
+        if (request.method !== 'GET') { response.setHeader('allow', 'GET'); return send(405, { error: 'Method not allowed.' }); }
+        const health = this.health(); return send(health.healthy ? 200 : 503, { availability: health.availability, slots: health.slots });
+      }
       const provided = Buffer.from(request.headers.authorization ?? '');
       if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return send(401, { error: 'Unauthorized.' });
       try {

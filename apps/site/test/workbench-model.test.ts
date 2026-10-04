@@ -63,6 +63,7 @@ describe("labels", () => {
   test("every end reason has its own sentence", () => {
     const reasons: SandboxEndReason[] = ["left", "returned", "expired", "idle", "unclaimed", "session-ended", "slot-failed", "sandbox-restarted"];
     assert.equal(new Set(reasons.map(endedText)).size, reasons.length);
+    assert.match(endedText("idle"), /stopped checking in, which can happen when a browser slows a tab left in the background\./);
   });
   test("formatRemaining never goes negative", () => {
     assert.equal(formatRemaining(61_001), "1:02"); assert.equal(formatRemaining(-5_000), "0:00");
@@ -90,6 +91,8 @@ describe("sessionView", () => {
   test("a place in line shows its position and can be left", () => {
     const view = sessionView(input({ lease: { status: "queued", now: NOW, position: 2, queueLength: 3, joinedAt: NOW, nextFreeAt: at(90), sessionExpiresAt: at(3600) } }));
     assert.equal(view.phase, "queued"); assert.match(view.headline, /number 2 of 3/); assert.match(view.detail, /within 2 min/);
+    // It checks in for the visitor, but a browser may slow a background tab: the copy doesn't promise more than a page can do.
+    assert.match(view.detail, /A browser can slow a tab left in the background enough to miss check-ins\./);
     assert.equal(view.returnLabel, "Leave the line"); assert.deepEqual(view.enabled, { start: false, claim: false, return: true, reset: false, repro: false });
   });
   test("a ready slot shows its claim window and the lease's runtime", () => {

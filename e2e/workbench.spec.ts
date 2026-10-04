@@ -371,3 +371,15 @@ test("keyboard focus follows a lifecycle action instead of falling to the page",
   await expect(ui.headline).toHaveText("You returned your slot. Its study was discarded.");
   await expect(ui.start).toBeFocused();
 });
+
+test("coming back to the page checks in at once, without starting a second heartbeat", async ({ page }) => {
+  const seen = await stubSandbox(page, ({ path }) => path === "status" ? { json: available() } : path === "session" ? { json: lease("active") } : path === "session/claim" ? { json: connection() } : undefined);
+  const beats = () => seen.filter(entry => entry === "GET session").length;
+  await page.goto("/workbench/");
+  await expect(panel(page).root).toHaveAttribute("data-phase", "active");
+  const before = beats(); // the next timed heartbeat is 5 s away
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await expect.poll(beats, { timeout: 1_500 }).toBe(before + 1);
+  await page.waitForTimeout(5_500);
+  expect(beats()).toBe(before + 2);
+});

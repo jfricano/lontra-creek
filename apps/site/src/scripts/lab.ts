@@ -150,7 +150,11 @@ async function mount(root: HTMLElement): Promise<void> {
     else if (next.status === "ready" || next.status === "active") {
       message.textContent = `Your isolated bench: ${next.bench}.`; benchState(next.benchState); nextActionAt = Date.parse(next.nextActionAt);
       if (leaseId !== next.leaseId && connectingLeaseId !== next.leaseId) await connect(next);
-    } else { message.textContent = next.status === "ended" ? `Your lease ended: ${next.reason}. You can join again.` : "Choose Borrow a bench to begin."; await disconnect(); resetPanel(); el("[data-lab-clock]").textContent = ""; }
+    } else {
+      // A background tab's timers can be slowed past the 30 s idle limit; the visibility poll then shows why the lease ended.
+      message.textContent = next.status !== "ended" ? "Choose Borrow a bench to begin." : next.reason === "idle" ? "Your lease ended because this page stopped checking in, which can happen when a browser slows a tab left in the background. You can join again." : `Your lease ended: ${next.reason}. You can join again.`;
+      await disconnect(); resetPanel(); el("[data-lab-clock]").textContent = "";
+    }
     // The pool changes whenever this visitor's place does: show it now, not at the next 10 s poll.
     if (changed) void status();
   }

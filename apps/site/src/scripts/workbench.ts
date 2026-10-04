@@ -47,6 +47,8 @@ function mount(root: HTMLElement): void {
   let poll: ReturnType<typeof setTimeout> | undefined;
   let clock: ReturnType<typeof setInterval> | undefined;
   let lastStatusAt = 0;
+  /** True while a heartbeat is in flight, so a visibility change doesn't start a second one. */
+  let ticking = false;
 
   async function call<T>(path: string, method: "GET" | "POST" = "GET"): Promise<Answer<T>> {
     let response: Response;
@@ -188,19 +190,24 @@ function mount(root: HTMLElement): void {
   el("[data-sandbox-retry]").addEventListener("click", () => { void revalidate(); });
 
   async function tick(): Promise<void> {
-    const g = generation;
-    if (holding()) {
-      await refreshLease(); if (g !== generation) return;
-      if (autoClaim && !busy && (lease?.status === "ready" || (lease?.status === "active" && connection?.studyId !== lease.studyId))) await act(claim);
-    }
-    if (g === generation && Date.now() - lastStatusAt >= STATUS_MS) await refreshStatus();
-    if (g !== generation) return;
-    render(); poll = setTimeout(() => { void tick(); }, HEARTBEAT_MS);
+    const g = generation; ticking = true;
+    try {
+      if (holding()) {
+        await refreshLease(); if (g !== generation) return;
+        if (autoClaim && !busy && (lease?.status === "ready" || (lease?.status === "active" && connection?.studyId !== lease.studyId))) await act(claim);
+      }
+      if (g === generation && Date.now() - lastStatusAt >= STATUS_MS) await refreshStatus();
+      if (g !== generation) return;
+      render(); poll = setTimeout(() => { void tick(); }, HEARTBEAT_MS);
+    } finally { if (g === generation) ticking = false; }
   }
+  // A browser can slow a background tab's timers to one wake-up a minute, as long as the idle limit,
+  // so check in as soon as the page is visible again rather than at the next timer.
+  document.addEventListener("visibilitychange", () => { if (document.hidden || checking || ticking || !holding()) return; clearTimeout(poll); void tick(); });
 
   /** Status, then this browser's session; nothing is shown as active until both have answered. */
   async function revalidate(): Promise<void> {
-    const g = ++generation; clearTimeout(poll);
+    const g = ++generation; clearTimeout(poll); ticking = false; // a heartbeat in flight is now stale
     const held = holding();
     checking = true; render();
     await refreshStatus(); if (g !== generation) return;
@@ -211,7 +218,7 @@ function mount(root: HTMLElement): void {
   }
 
   function start(): void { clock = setInterval(render, 1_000); void revalidate(); }
-  function stop(): void { generation++; clearTimeout(poll); clearInterval(clock); }
+  function stop(): void { generation++; ticking = false; clearTimeout(poll); clearInterval(clock); }
 
   window.addEventListener("pagehide", () => {
     const held = holding() || starting;

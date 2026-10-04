@@ -292,8 +292,9 @@ async function mount(root: HTMLElement): Promise<void> {
     if (current.nextIntent !== "incident.approve-reprocess") { const body = nextRequest(current, newRequestId()); if (body) sendIntent(body); return; }
     const review = reviewFrom(current);
     if (review === null) { incident.operation("The incident offers approval, but its evaluation has no plan this page can approve. Evaluate again."); return; }
-    approval.show(review, button, current, Date.now() + offset, {
+    approval.show(review, button, {
       fallback: () => root.querySelector<HTMLElement>("[data-lab-incident-title]"),
+      latest: () => ({ current: incident.incident, nowMs: Date.now() + offset }),
       // One approval, one request: the reviewed plan's token and revision, never the latest ones.
       approve: reviewed => { if (!intentBusy && leaseId) sendIntent(approveRequest({ expectedRevision: reviewed.revision, planToken: reviewed.planToken }, newRequestId())); }
     });

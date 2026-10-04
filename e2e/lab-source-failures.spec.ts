@@ -525,6 +525,28 @@ test("an approval whose plan expired or whose incident moved on sends nothing (f
   expect(lab.intents).toEqual([]);
 });
 
+test("Approve checks the plan's expiry again when pressed, not only at the last clock tick (fixture)", async ({ page }) => {
+  await page.clock.install();
+  const expiresAt = Date.now() + 120_000;
+  const evaluation = { result: "passed" as const, at: ago(60), expiresAt: new Date(expiresAt).toISOString(), planToken: "pt_fixture_reviewed_0123", summary: "The saved record maps." };
+  const lab = await exercise(page, [], { incident: projection({ scenario: "inspect-old-reading", scenarioRevision: 5, source: "advanced", recovery: "view-resynchronized", evaluation, nextIntent: "incident.approve-reprocess" }) });
+  await borrow(page);
+  await act(page).click();
+  const dialog = page.locator("[data-lab-approval]");
+  const approve = dialog.getByRole("button", { name: "Approve reprocessing" });
+  await expect(approve).toHaveAttribute("aria-disabled", "false");
+  // Stop the page's timers, then let the plan expire: the dialog's periodic check can't have seen it.
+  await page.clock.pauseAt(Date.now() + 100);
+  await page.clock.setSystemTime(expiresAt + 1_000);
+  await expect(approve).toHaveAttribute("aria-disabled", "false");
+  await approve.evaluate((button: HTMLElement) => button.click());
+  await expect(dialog.locator("[data-lab-approval-problem]")).toHaveText(/^This approval expired at \d\d:\d\d:\d\d UTC\. Cancel, then evaluate again for a new plan\.$/);
+  await expect(approve).toHaveAttribute("aria-disabled", "true");
+  await expect(dialog).toBeVisible();
+  await page.waitForTimeout(300);
+  expect(lab.intents).toEqual([]);
+});
+
 test("LC11-S05: conflicting readings stay held, and a refused reassessment says so (fixture)", async ({ page }) => {
   const conflict = projection({ scenario: "conflicting-readings", reason: "Two LC-03 readings claim the same revision with different values.", failure: { stage: "queue", class: "revision-conflict" }, policy: "pause", evidence: "not-required", recovery: "none", nextIntent: "incident.reassess" });
   await exercise(page, [{ incident: conflict }, { statuses: ["accepted", "refused"], detail: "An integrity failure can't be continued past; the source stays held until the study is reset." }]);

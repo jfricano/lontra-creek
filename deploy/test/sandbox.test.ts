@@ -108,7 +108,11 @@ describe('the real workbench sandbox', { skip: !API && 'SANDBOX_API_ORIGIN not s
     const body = JSON.stringify({ config: candidate }); assert.ok(body.length > 8192 * 7 && body.length <= 65_536, String(body.length));
     const answer = await wb<{ valid: boolean }>('/config/validate', body);
     assert.equal(answer.status, 200, JSON.stringify(answer.body).slice(0, 300)); assert.equal(answer.body.ok, true);
-    assert.equal((await wb('/config/validate', JSON.stringify({ config: { ...candidate, pad: 'x'.repeat(70_000) } }))).status, 413, 'over 64 KB is refused');
+    // Between the field station's 64 KB and Caddy's 72 KB: Caddy passes it, and the field station refuses it with its own error.
+    const over = JSON.stringify({ config: { ...candidate, pad: 'x'.repeat(68_000 - body.length) } }); assert.ok(over.length > 65_536 && over.length < 72 * 1024, String(over.length));
+    const refused = await wb('/config/validate', over);
+    assert.equal(refused.status, 413); assert.equal(refused.body.error?.code, 'INVALID_REQUEST'); assert.equal(refused.body.error?.details?.code, 'candidate-too-large', 'the field station\'s refusal, not Caddy\'s');
+    assert.equal((await wb('/config/validate', JSON.stringify({ config: { ...candidate, pad: 'x'.repeat(70_000) } }))).status, 413, 'over 72 KB is refused');
   });
 
   test('a candidate nested too deep is refused as invalid and the session keeps its slot', async () => {

@@ -20,6 +20,7 @@ services:
       SANDBOX_API_URL: http://sandbox:7620
       SANDBOX_SERVICE_TOKEN: ${SANDBOX_SERVICE_TOKEN:?}
       SANDBOX_SLOTS: ${SANDBOX_SLOTS:-3}
+      SANDBOX_LEASE_SECONDS: ${SANDBOX_LEASE_SECONDS:-600}
   caddy:
     environment:
       SITE_ORIGIN: ${SITE_ORIGIN:-https://streamotter.dev}

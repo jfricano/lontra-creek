@@ -49,6 +49,9 @@ test('A42/A43: lifecycle and WHC-1 routes enforce Origin, the workbench header, 
     assert.equal(join.status, 200); assert.equal(join.headers.get('access-control-allow-origin'), SITE);
     const cookie = join.headers.get('set-cookie')!.split(';')[0]!; assert.match(join.headers.get('set-cookie')!, /HttpOnly/);
     const lease = await join.json() as { status: string; slot: number }; assert.equal(lease.status, 'ready');
+    const joinFrom = (ip: string) => fetch(`${origin}/api/sandbox/session`, { method: 'POST', headers: { origin: SITE, 'x-client-ip': ip } });
+    for (let i = 0; i < 2; i++) assert.ok((await joinFrom('192.0.2.9')).headers.get('set-cookie'));
+    const capped = await joinFrom('192.0.2.9'); assert.equal(capped.status, 429); assert.equal(capped.headers.get('set-cookie'), null, 'a refused join starts no session');
     assert.equal((await fetch(`${origin}/api/sandbox/session`, { method: 'POST', headers: { origin: SITE, cookie, 'content-type': 'application/json' }, body: JSON.stringify({ slot: 3 }) })).status, 400, 'a request cannot name a slot');
     assert.equal((await fetch(`${origin}/api/sandbox/session?slot=3`, { headers: { cookie } })).status, 400);
     const call = (path: string, init: RequestInit = {}) => fetch(`${origin}/api/sandbox/wb/v1${path}`, { ...init, headers: { ...WB, cookie, ...(init.headers as Record<string, string> ?? {}) } });
@@ -96,7 +99,9 @@ test('A44/A46: the rc.3 production backend reports seam-unavailable and allocate
   assert.deepEqual(h.pool.discovery().operations, ['workbench'], 'nothing but discovery while the seam is unavailable');
   await serving(api(h.pool), async origin => {
     const join = await fetch(`${origin}/api/sandbox/session`, { method: 'POST', headers: { origin: SITE } });
-    assert.equal(join.status, 503); assert.equal((await join.json() as { code: string }).code, 'sandbox-unavailable');
+    assert.equal(join.status, 503); assert.equal((await join.json() as { code: string }).code, 'sandbox-unavailable'); assert.equal(join.headers.get('set-cookie'), null, 'no session is started');
+    const body = await fetch(`${origin}/api/sandbox/session`, { method: 'POST', headers: { origin: SITE }, body: 'x' });
+    assert.equal(body.status, 400); assert.equal(body.headers.get('set-cookie'), null);
   });
 });
 

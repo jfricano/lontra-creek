@@ -140,7 +140,7 @@ export interface SandboxReproDownload { filename: "lontra-creek-sandbox-repro.js
 | Route | Session | Does | Answers |
 | --- | --- | --- | --- |
 | `GET /api/sandbox/status` | Not needed | Availability, runtime identity, pool | 200 `SandboxStatus` (unconfigured: `unavailable`, `disabled`) |
-| `POST /api/sandbox/session` | Started if missing | Explicit allocation: a slot at once or a place in line. Idempotent. | 200 `SandboxLease`; 429 `too-many-places`; 503 `queue-full`, `sandbox-unavailable` (no session is started then) |
+| `POST /api/sandbox/session` | Started if missing | Explicit allocation: a slot at once or a place in line. Idempotent. | 200 `SandboxLease`; 429 `too-many-places`; 503 `queue-full`, `sandbox-unavailable`. A new session's cookie is set only with the 200; no refusal starts a session. |
 | `GET /api/sandbox/session` | Required | Heartbeat and state | 200 `SandboxLease`; 401 |
 | `POST /api/sandbox/session/claim` | Required | Claims a `ready` lease (becomes `active`) | 200 `SandboxConnection`; 409 `no-lease`; 503 `slot-unavailable` |
 | `POST /api/sandbox/session/reset` | Required | Discards this session's synthetic study (candidate, runtime state, traces, previews) and starts a new `studyId` on the same slot and lease. Idempotent while resetting. | 202 `SandboxLease` (`resetting`); 409 `no-lease`; 503 `slot-unavailable` |
@@ -283,7 +283,7 @@ The service refuses to start with production or Lab secrets in its environment (
 
 ## Changes
 
-- **Draft 0.2, review fixes (October 4, 2026).** §§6 and 8: a call from a study that was reset while it ran is answered `stale-study` whether it succeeded or failed, and never ends the lease.
+- **Draft 0.2, review fixes (October 4, 2026).** §§6 and 8: a call from a study that was reset while it ran is answered `stale-study` whether it succeeded or failed, and never ends the lease. §4: a refused `POST /api/sandbox/session` sets no cookie.
 - **Draft 0.2, W3 clarification (October 3, 2026).** §4 records how the page uses the lifecycle routes (no allocation on open, reload, or restore; heartbeat; `pagehide` return; 404 status as not enabled), that unconfigured lifecycle routes other than `status` answer 503 `sandbox-unavailable` (as W2 implements), and the conditions under which the page mounts the published workbench. No route, payload, or type changed.
 - **Draft 0.2 (October 3, 2026, W2).** §6's single `POST /api/sandbox/ops` replaced by the WHC-1 rev 0.1 host API at `/api/sandbox/wb/v1` (discovery, WHC-1 operation names and paths, `Result<T>` envelope, StreamOtter error codes, `X-StreamOtter-Workbench` header on `POST`), aligned with rev 0.2 §9 (`workbench` in discovery, discovery behind the session check, `createManagementHandler`'s check order, `Authorization` ignored). `requestId`/`studyId` request fields removed: the study is bound to the session on the server. `repro.export` became `POST /api/sandbox/session/repro`. §3 adds the WHC-1 types; `stale-study` is now "a study the session has since reset or ended". §5 says how refusals are reported. §§7–10 add the bundle contents, the download guard, the timings table, the private service API, and configuration.
 - **Draft 0.1 (October 3, 2026, P0).** First draft.

@@ -40,9 +40,11 @@ export async function sandboxRoute(request: IncomingMessage, response: ServerRes
     if (request.method === 'POST' && origin !== undefined && !context.siteOrigins.includes(origin)) throw new SandboxFault('origin-not-allowed');
     if ([...url.searchParams.keys()].length) throw invalid('No query parameters are accepted.');
     let session = readSession(request.headers.cookie, context.secret);
+    // A new session's cookie goes only on a successful join; a refused one starts nothing.
+    let setCookie: string | undefined;
     if (!session && route === 'POST /api/sandbox/session' && pool) {
       const badge = badgeFor({ cookieHeader: undefined, role: 'volunteer', secret: context.secret, secure: context.secure });
-      cors['set-cookie'] = badge.setCookie!; session = readSession(badge.setCookie!, context.secret);
+      setCookie = badge.setCookie!; session = readSession(setCookie, context.secret);
     }
     if (!pool && route !== 'GET /api/sandbox/status') throw new SandboxFault('sandbox-unavailable');
     if (route !== 'GET /api/sandbox/status' && !session) throw new SandboxFault('no-session');
@@ -61,7 +63,7 @@ export async function sandboxRoute(request: IncomingMessage, response: ServerRes
       if (route === 'POST /api/sandbox/session/reset') return pool.reset(s);
       return pool.leave(s);
     });
-    return send(response, route === 'POST /api/sandbox/session/reset' ? 202 : 200, result, cors);
+    return send(response, route === 'POST /api/sandbox/session/reset' ? 202 : 200, result, setCookie ? { ...cors, 'set-cookie': setCookie } : cors);
   } catch (error) {
     const problem = error instanceof SandboxFault ? error : invalid('The request is malformed.');
     return send(response, problem.status, { error: problem.message, code: problem.code }, { ...cors, ...(problem.status === 429 ? { 'retry-after': '1' } : {}) });

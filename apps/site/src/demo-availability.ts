@@ -5,20 +5,18 @@
  * Nothing here is hand-typed where a real source exists: the library version is the site's
  * exact pin (`RELEASE`, which a test holds equal to the installed package and the
  * lockfile), the recording's version and date come from its `capture.json`, the count of
- * unavailable source-failure exercises comes from the Lab catalog, and whether the sandbox
+ * new source-failure stories comes from the Lab catalog, and whether the sandbox
  * has a published seam to mount comes from `scripts/workbench-seam.ts`. What the running
- * field station reports is read in the browser (`scripts/release-service.ts`), never assumed.
+ * field station reports is read in the browser (`scripts/release-service.ts`), never assumed:
+ * that includes which source-failure stories run, which depends on the deployment.
  */
 import capture from "../public/recordings/workbench/capture.json" with { type: "json" };
-import { SCENARIOS, TRACKS } from "./lab-catalog.ts";
+import { NEW_SOURCE_EXERCISES } from "./lab-catalog.ts";
 import { PUBLISHED_SEAM } from "./scripts/workbench-seam.ts";
 import { RELEASE, SITE } from "./site.ts";
 
 /** The recorded workbench tour's own provenance, so a later version pin can't relabel it. */
 export const RECORDING = { version: capture.version, install: capture.install, capturedOn: capture.capturedAt.slice(0, 10) } as const;
-
-/** Source-failure stories the Lab lists but the current bench can't run (every one except Fouled sensor). */
-export const WAITING_EXERCISES = TRACKS["source-failures"].filter(id => SCENARIOS[id].controls === null);
 
 export const SITE_RELEASE = {
   name: "streamotter.dev: StreamOtter's home site and the fictional Lontra Creek demo",
@@ -59,7 +57,7 @@ export const SURFACES: readonly Surface[] = [
   },
   {
     name: "Failure Lab: Source failures", href: "/lab/#source-failures", state: "partial",
-    runs: `Fouled sensor, on the same benches. The other ${WAITING_EXERCISES.length} stories are listed with the reason each one can't run.`,
+    runs: `Fouled sensor, on the same benches, and ${NEW_SOURCE_EXERCISES.length} more stories, each only where this field station's backend reports it can run it. The Lab gives the reason for each one it can't; the report below counts how many it can.`,
     needs: `streamotter@${RELEASE} provides quarantine, the recovery guard, evaluation, and reprocessing. Each exercise also needs a bench whose backend reports it can run it; what this field station reports is below.`
   },
   {

@@ -5,8 +5,12 @@
  *
  *   NODE_EXTRA_CA_CERTS=$PWD/.local/lab/secrets/origin/ca.pem SANDBOX_API_ORIGIN=https://localhost:8443 \
  *   SANDBOX_SITE_ORIGIN=https://localhost:8443 node --test --test-force-exit deploy/test/sandbox.test.ts
+ *
+ * Optional: SANDBOX_PAUSE_COMMAND and SANDBOX_UNPAUSE_COMMAND (shell commands that freeze and
+ * thaw the sandbox container, for example `docker compose ... pause sandbox`) run the hung-service test.
  */
 import assert from 'node:assert/strict';
+import { execSync } from 'node:child_process';
 import http from 'node:http';
 import https from 'node:https';
 import { createRequire } from 'node:module';
@@ -145,5 +149,25 @@ describe('the real workbench sandbox', { skip: !API && 'SANDBOX_API_ORIGIN not s
     await assert.rejects(preview(volunteer.token, 'station', { stationId: 'LC-03' }).ready({ timeoutMs: 5000 }), 'the old token means nothing to the new study');
     const fresh = await ok<{ token: string }>('/preview-sessions', { fixturePrincipalRef: 'creek-volunteer' });
     await preview(fresh.token, 'station', { stationId: 'LC-03' }).ready({ timeoutMs: 15_000 });
+  });
+
+  test('a hung sandbox service delays no other request, and a short hang ends nothing', { skip: !(process.env['SANDBOX_PAUSE_COMMAND'] && process.env['SANDBOX_UNPAUSE_COMMAND']) && 'Set SANDBOX_PAUSE_COMMAND and SANDBOX_UNPAUSE_COMMAND' }, async () => {
+    await until(async () => (await life<SandboxLease>('session')).status === 'active', 'the session is active');
+    execSync(process.env['SANDBOX_PAUSE_COMMAND']!, { stdio: 'inherit' });
+    let pending: Promise<{ status: number }> | undefined;
+    try {
+      pending = wb('/health');
+      // About 8 s: past several 3 s status polls, inside the 15 s outage limit; paced under the request budget.
+      for (let i = 0; i < 8; i++) {
+        const started = Date.now();
+        assert.equal((await life<SandboxStatus>('status')).availability, 'available');
+        assert.equal((await life<SandboxLease>('session')).status, 'active');
+        assert.ok(Date.now() - started < 1500, `status and session answered in ${Date.now() - started} ms while the service hung`);
+        await sleep(1000);
+      }
+    } finally { execSync(process.env['SANDBOX_UNPAUSE_COMMAND']!, { stdio: 'inherit' }); }
+    await pending;
+    await sleep(1000); assert.equal((await life<SandboxLease>('session')).status, 'active', 'a hang shorter than the outage limit ends nothing');
+    assert.equal((await ok<{ ready: boolean }>('/health')).ready, true);
   });
 });

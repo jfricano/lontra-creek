@@ -15,7 +15,7 @@ import type { FieldStation } from '../src/server/station.ts';
 import type { Notebooks } from '../src/server/notebooks.ts';
 import { publishedBackend } from '../src/sandbox/seam.ts';
 import { SandboxService, sandboxEnvironment } from '../src/sandbox/service.ts';
-import { configuredSandbox, SANDBOX_CALL_TIMEOUT_MS, SANDBOX_DEFAULTS, SANDBOX_OPS_TIMEOUT_MS } from '../src/sandbox/leases.ts';
+import { configuredSandbox, sandboxClient, SANDBOX_CALL_TIMEOUT_MS, SANDBOX_DEFAULTS, SANDBOX_OPS_TIMEOUT_MS } from '../src/sandbox/leases.ts';
 import { CALL_TIMEOUT_MS } from '../src/sandbox/seam.ts';
 import { harness, SERVICE_TOKEN } from './support/sandbox-harness.ts';
 
@@ -194,4 +194,15 @@ test('A44: /healthz is 200 only while the seam is available and a slot can serve
     await h.advance(30_000); await h.advance(30_000);
     assert.deepEqual(await health(), [200, { availability: 'available', slots: 1 }], 'healthy again once a cleanup succeeds');
   });
+});
+
+test('A44: every call to the sandbox service opens its own connection, so a call is never sent on one a hung service will reset', async () => {
+  const seen: (string | undefined)[] = [];
+  const server = createServer((request, response) => { seen.push(request.headers.connection); response.writeHead(200, { 'content-type': 'application/json' }); response.end('{}'); });
+  await new Promise<void>(r => server.listen(0, '127.0.0.1', r));
+  try {
+    const client = sandboxClient(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, SERVICE_TOKEN);
+    await client.request('/sandbox/v1/status'); await client.request('/sandbox/v1/slots/1/ops', 'POST', { op: 'health' });
+    assert.deepEqual(seen, ['close', 'close']);
+  } finally { server.closeAllConnections(); server.close(); }
 });

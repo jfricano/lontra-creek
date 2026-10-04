@@ -312,14 +312,19 @@ export function configuredSandbox(env: NodeJS.ProcessEnv, gatewayOrigin: string,
   return new SandboxPool({ client: sandboxClient(origin, token), slots: Array.from({ length: count }, (_, i) => i + 1 as SlotId), gatewayOrigin, ...(cap ? { cap } : {}), timings: { leaseMs: positive('SANDBOX_LEASE_SECONDS', 600) * 1000, queueMax: positive('SANDBOX_QUEUE_MAX', 30) } });
 }
 
-/** The HTTP client for the sandbox service's private API at `origin`, with the service token. */
+/**
+ * The HTTP client for the sandbox service's private API at `origin`, with the service token.
+ * Each call opens its own connection (`Connection: close`): after a hang, a server runs its
+ * overdue keep-alive timers before it reads waiting requests, so a call sent on a pooled
+ * connection meanwhile would be reset and end its lease as if the slot had failed.
+ */
 export function sandboxClient(origin: string, token: string): SandboxClient {
   return {
     async request(path, method = 'GET', body) {
       let payload: string | undefined;
       try { payload = body === undefined ? undefined : JSON.stringify(body); } catch { throw invalid('The request could not be encoded.'); }
       const timeout = /\/(?:ops|repro)$/.test(path) ? SANDBOX_OPS_TIMEOUT_MS : SANDBOX_CALL_TIMEOUT_MS;
-      const response = await fetch(`${origin}${path}`, { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(payload === undefined ? {} : { body: payload }), signal: AbortSignal.timeout(timeout) });
+      const response = await fetch(`${origin}${path}`, { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', connection: 'close' }, ...(payload === undefined ? {} : { body: payload }), signal: AbortSignal.timeout(timeout) });
       return { status: response.status, body: await response.json() as unknown };
     }
   };

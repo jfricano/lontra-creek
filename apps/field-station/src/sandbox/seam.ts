@@ -76,10 +76,11 @@ export class SlotError extends Error {
 /**
  * One request to a slot's management listener: the handler's `data`, or a SlotError with
  * its public fields. No answer within the timeout is StreamOtter's TIMEOUT (retryable).
+ * Each request opens its own connection, as the field station's do (leases.ts, sandboxClient).
  */
 export async function slotRequest<T>(url: string, init: RequestInit, timeoutMs = CALL_TIMEOUT_MS): Promise<T> {
   let result: unknown;
-  try { const response = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) }); result = await response.json(); }
+  try { const response = await fetch(url, { ...init, headers: { ...init.headers as Record<string, string>, connection: 'close' }, signal: AbortSignal.timeout(timeoutMs) }); result = await response.json(); }
   catch (error) {
     if (error instanceof Error && error.name === 'TimeoutError') throw new SlotError({ code: 'TIMEOUT', message: `The sandbox slot did not answer within ${timeoutMs / 1000} s.`, retryable: true });
     throw error;

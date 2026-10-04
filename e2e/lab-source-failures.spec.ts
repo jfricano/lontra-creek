@@ -368,10 +368,13 @@ test("LC11-S03: hold, make coverage ready, reassess, each bound to the revision 
   await act(page).focus(); await page.keyboard.press("Enter");
   await expect(operation(page)).toHaveText("Make snapshot coverage ready: running on your bench.");
   await expect(act(page)).toHaveAttribute("aria-disabled", "true");
+  // While it waits, the button is described by the operation line that says why, then the line beside it.
+  await expect(act(page)).toHaveAccessibleDescription(/^Make snapshot coverage ready: running on your bench\. Lontra Creek's application releases/);
   await expect(operation(page)).toContainText("Make snapshot coverage ready: done. The application released its snapshot coverage. The source is still held");
   await expect(act(page)).toHaveText("Reassess continuation");
   await expect(act(page)).toBeFocused();
   await expect(act(page)).toHaveAttribute("aria-disabled", "false");
+  await expect(act(page)).toHaveAttribute("aria-describedby", "incident-next");
   await page.keyboard.press("Enter");
   await expect(operation(page)).toHaveText("Reassess: done. The gateway asked the recovery guard again. Current incident shows its decision.", { timeout: 10_000 });
   await expect(panel(page).locator("[data-lab-incident-source]")).toContainText("Source advanced past quarantined record");

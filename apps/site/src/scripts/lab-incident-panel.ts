@@ -47,10 +47,11 @@ export class IncidentPanel {
   /** Called when the visitor presses the next-intent button, with the projection it was drawn from. */
   onAct(handler: (incident: LabIncidentSummary, button: HTMLButtonElement) => void): void { this.#act = handler; }
 
-  /** While an intent waits for the bench, the button stays where it is but sends nothing. */
+  /** While an intent waits for the bench, the button stays where it is but sends nothing, and is described by the operation line that says why as well as the line beside it. */
   busy(on: boolean): void {
     this.#busy = on;
     this.#button.setAttribute("aria-disabled", String(on));
+    this.#button.setAttribute("aria-describedby", on ? "incident-operation incident-next" : "incident-next");
   }
 
   /** The operation line: what the bench reported for the visitor's latest request. */

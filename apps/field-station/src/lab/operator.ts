@@ -68,11 +68,16 @@ export class PlanTokens {
     for (const [token, plan] of this.#tokens) if (plan.failureId === failureId && plan.incidentRevision === incidentRevision && plan.expiresAt > this.#now()) found = { token, expiresAt: plan.expiresAt };
     return found;
   }
-  /** Spends a token: its plan, or why it can't be used. A token from another lease, study, or incident is unknown here. */
-  take(token: string, scope: { leaseId: string; studyId: string; failureId: string }): PlanBinding | 'plan-unknown' | 'plan-expired' {
+  /**
+   * Spends a token: its plan, or why it can't be used. A token from another lease, study, or
+   * incident is unknown here; one evaluated at another revision of the incident is stale, and
+   * is spent too, since a revision never comes back.
+   */
+  take(token: string, scope: { leaseId: string; studyId: string; failureId: string; incidentRevision: number }): PlanBinding | 'plan-unknown' | 'plan-expired' | 'stale-revision' {
     const plan = this.#tokens.get(token);
     if (!plan || plan.leaseId !== scope.leaseId || plan.studyId !== scope.studyId || plan.failureId !== scope.failureId) return 'plan-unknown';
     this.#tokens.delete(token);
+    if (plan.incidentRevision !== scope.incidentRevision) return 'stale-revision';
     return plan.expiresAt <= this.#now() ? 'plan-expired' : plan;
   }
   clear(): void { this.#tokens.clear(); }
@@ -193,12 +198,13 @@ export class BenchFailures {
         return { status: 'succeeded', outcome: 'evaluated', incidentRevision: revision };
       }
       case 'incident.approve-reprocess': {
-        const plan = this.tokens.take(request.planToken ?? '', { leaseId: request.leaseId, studyId: this.studyId, failureId });
+        const plan = this.tokens.take(request.planToken ?? '', { leaseId: request.leaseId, studyId: this.studyId, failureId, incidentRevision: revision });
         if (typeof plan === 'string') return { status: 'refused', outcome: plan, incidentRevision: null };
         this.step('Reprocessing approved');
         let result;
         // The bench's own operation ID makes a re-sent approval return the library's recorded result instead of running twice.
-        try { result = await api.redrive({ failureId, planId: plan.planId, planFingerprint: plan.fingerprint, expectedRevision: revision, operationId: `lab${this.#number}.${this.studyId}.${request.operationId}` }); } catch (error) { return thrown(error); }
+        // The revision is the one the plan was evaluated at, never one the request carries.
+        try { result = await api.redrive({ failureId, planId: plan.planId, planFingerprint: plan.fingerprint, expectedRevision: plan.incidentRevision, operationId: `lab${this.#number}.${this.studyId}.${request.operationId}` }); } catch (error) { return thrown(error); }
         if (!this.#closed) this.#reprocess = { failureId, at: iso(this.#now()), result: result.result, outcome: result.outcome };
         return fromResult(result);
       }

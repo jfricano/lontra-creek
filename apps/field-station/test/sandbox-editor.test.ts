@@ -119,6 +119,18 @@ test('A43: the service applies the editor before validating, never applies a can
   await assert.rejects(h.opSlow(s, 'failures.list' as never), wb('FORBIDDEN', 'operation-not-allowed'));
 });
 
+test('A43: an export refused for many issues keeps details.code and a bounded, flagged issues list', async () => {
+  const h = await harness({ slots: 1 }); const s = h.session('s'); await h.join(s); await h.claim(s);
+  const candidate = edit(c => { const properties: Mutable = {}; for (let i = 0; i < 400; i++) properties[`p${i}`] = { type: 'bogus' }; c.schemas.station = { type: 'object', properties }; });
+  const all = await h.opSlow(s, 'config.validate', { config: candidate }) as { valid: boolean; issues: unknown[] };
+  assert.equal(all.valid, false); assert.ok(JSON.stringify(all.issues).length > 16_384, 'more issues than fit in 16 KB');
+  const error = await h.opSlow(s, 'config.export', { config: candidate }).then(() => assert.fail('exported'), (e: { status: number; error: { code: string; details?: { code?: string; issues?: unknown[]; issuesTruncated?: boolean } } }) => e);
+  assert.equal(error.status, 400); assert.equal(error.error.code, 'CONFIG_INVALID');
+  const details = error.error.details!; assert.equal(details.code, 'invalid-request', 'refused and invalid stay distinguishable');
+  assert.ok(details.issues!.length > 0 && details.issues!.length < all.issues.length); assert.deepEqual(details.issues, all.issues.slice(0, details.issues!.length));
+  assert.equal(details.issuesTruncated, true); assert.ok(JSON.stringify(details).length <= 16_384);
+});
+
 test('A43: an operation the installed release does not support is left out of discovery and refused', async () => {
   const h = await harness({ slots: 1 }); h.fixture.operations = ['capabilities', 'health', 'config', 'config.validate']; await h.advance(5000);
   assert.deepEqual(h.pool.discovery(), { hostContract: 1, operations: ['workbench', 'capabilities', 'health', 'config', 'config.validate'], limits: { maxRequestBytes: 65_536 } });

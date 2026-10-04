@@ -228,9 +228,21 @@ export class WorkbenchFailure extends Error {
   readonly error: StreamError;
   constructor(status: number, raw: unknown) {
     super('Workbench operation failed.'); this.status = status >= 400 && status < 600 ? status : 502;
-    const e = isPlainObject(raw) ? raw : {}; const details = isPlainObject(e['details']) && JSON.stringify(e['details']).length <= 16_384 ? e['details'] as Record<string, Json> : undefined;
+    const e = isPlainObject(raw) ? raw : {}; const details = bounded(e['details']);
     this.error = streamError(isErrorCode(e['code']) ? e['code'] : 'INTERNAL', { message: typeof e['message'] === 'string' ? e['message'].slice(0, 300) : 'The sandbox could not answer.', ...(typeof e['retryable'] === 'boolean' ? { retryable: e['retryable'] } : {}), ...(details ? { details } : {}) });
   }
+}
+
+const DETAILS_BYTES = 16_384;
+/** The slot's error details, at most 16 KB: a long `issues` list is cut and flagged (`issuesTruncated`), and `code` is always kept. */
+function bounded(raw: unknown): Record<string, Json> | undefined {
+  if (!isPlainObject(raw)) return undefined;
+  if (JSON.stringify(raw).length <= DETAILS_BYTES) return raw as Record<string, Json>;
+  const code = typeof raw['code'] === 'string' ? { code: raw['code'].slice(0, 64) } : {};
+  if (!Array.isArray(raw['issues'])) return 'code' in code ? code : undefined;
+  const issues: Json[] = []; let size = 256;
+  for (const issue of raw['issues'] as Json[]) { size += JSON.stringify(issue).length + 1; if (size > DETAILS_BYTES) break; issues.push(issue); }
+  return { ...code, issues, issuesTruncated: true };
 }
 
 export function configuredSandbox(env: NodeJS.ProcessEnv, gatewayOrigin: string, cap?: AddressCap): SandboxPool | undefined {

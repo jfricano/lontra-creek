@@ -168,7 +168,7 @@ Everything else is server-owned: `configVersion`, `projectId`, `gateway`, `conne
 How a refusal is reported:
 
 - `config.validate`: 200 `{ valid: false, issues: [{ path, code, message }] }` with code `FIELD_NOT_EDITABLE` (outside the allowlist) or `VALUE_OUT_OF_BOUNDS` (an editable field out of its bounds), so the workbench shows it beside the field like any other issue.
-- `config.export`: 400 `CONFIG_INVALID` with `details.code` `field-not-editable` (refused) or `invalid-request` (invalid), and `details.issues`, as the native export does for an invalid configuration.
+- `config.export`: 400 `CONFIG_INVALID` with `details.code` `field-not-editable` (refused) or `invalid-request` (invalid), and `details.issues`, as the native export does for an invalid configuration. Details are at most 16 KB: a longer `details.issues` keeps the first issues that fit and sets `details.issuesTruncated: true` (`config.validate` returns them all).
 - Over 64 KB: 413 `INVALID_REQUEST`, `details.code` `candidate-too-large`.
 
 ## 6. Operations: the WHC-1 host API
@@ -283,7 +283,7 @@ The service refuses to start with production or Lab secrets in its environment (
 
 ## Changes
 
-- **Draft 0.2, review fixes (October 4, 2026).** §§6 and 8: a call from a study that was reset while it ran is answered `stale-study` whether it succeeded or failed, and never ends the lease. §4: a refused `POST /api/sandbox/session` sets no cookie. §8: nothing is granted, and joins are refused, until startup has returned every slot. §2: `Retry-After` and `X-Request-Id` are exposed to the cross-origin page.
+- **Draft 0.2, review fixes (October 4, 2026).** §§6 and 8: a call from a study that was reset while it ran is answered `stale-study` whether it succeeded or failed, and never ends the lease. §4: a refused `POST /api/sandbox/session` sets no cookie. §8: nothing is granted, and joins are refused, until startup has returned every slot. §2: `Retry-After` and `X-Request-Id` are exposed to the cross-origin page. §5: an export refused for more issues than fit in 16 KB keeps `details.code` and a cut, flagged `details.issues`.
 - **Draft 0.2, W3 clarification (October 3, 2026).** §4 records how the page uses the lifecycle routes (no allocation on open, reload, or restore; heartbeat; `pagehide` return; 404 status as not enabled), that unconfigured lifecycle routes other than `status` answer 503 `sandbox-unavailable` (as W2 implements), and the conditions under which the page mounts the published workbench. No route, payload, or type changed.
 - **Draft 0.2 (October 3, 2026, W2).** §6's single `POST /api/sandbox/ops` replaced by the WHC-1 rev 0.1 host API at `/api/sandbox/wb/v1` (discovery, WHC-1 operation names and paths, `Result<T>` envelope, StreamOtter error codes, `X-StreamOtter-Workbench` header on `POST`), aligned with rev 0.2 §9 (`workbench` in discovery, discovery behind the session check, `createManagementHandler`'s check order, `Authorization` ignored). `requestId`/`studyId` request fields removed: the study is bound to the session on the server. `repro.export` became `POST /api/sandbox/session/repro`. §3 adds the WHC-1 types; `stale-study` is now "a study the session has since reset or ended". §5 says how refusals are reported. §§7–10 add the bundle contents, the download guard, the timings table, the private service API, and configuration.
 - **Draft 0.1 (October 3, 2026, P0).** First draft.

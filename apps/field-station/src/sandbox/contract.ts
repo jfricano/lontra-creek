@@ -1,9 +1,9 @@
 /**
- * Workbench sandbox types. See docs/contracts/sandbox-api.md (draft 0.2), which
- * implements StreamOtter's workbench host contract WHC-1 (revision 0.1). Type-only:
- * the site imports this module with `import type`.
+ * Workbench sandbox types. See docs/contracts/sandbox-api.md (draft 0.3), which
+ * implements StreamOtter's workbench host contract WHC-1 as published in
+ * streamotter 0.2.0-rc.1. Type-only: the site imports this module with `import type`.
  */
-import type { ManagementOperations, Result } from "streamotter/contracts";
+import type { ManagementOperations, Result, WorkbenchDiscovery as PublishedWorkbenchDiscovery, WorkbenchOperation as PublishedWorkbenchOperation } from "streamotter/contracts";
 
 // §3 Session lifecycle (/api/sandbox/status and /api/sandbox/session*).
 
@@ -14,7 +14,7 @@ export interface SandboxRuntime {
   /** Exact installed packages, from the running service, not the site build. */
   packages: { streamotter: string; workbench: string };
   mode: SandboxMode;
-  /** The seam's contract version, once a release defines one. */
+  /** The seam's contract version: the installed workbench's `hostContract`, "1" for WHC-1; null only from a service that reports none. */
   contractVersion: string | null;
 }
 
@@ -77,29 +77,19 @@ export type SandboxErrorCode =
 
 export interface SandboxError { error: string; code: SandboxErrorCode }
 
-// §6 WHC-1 host API at /api/sandbox/wb/v1. Provisional: WHC-1 (rev 0.1, clarified by
-// rev 0.2 §9) is not published, so these names and shapes are taken from its text and
-// from the rc.3 `ManagementOperations` types until @streamotter/contracts exports its own.
+// §6 WHC-1 host API at /api/sandbox/wb/v1: the published WHC-1 names and shapes from
+// @streamotter/contracts, and its `ManagementOperations` request and response types.
 
-/** WHC-1 rev 0.1 §4 and rev 0.2 §9: the closed operation vocabulary, `workbench` (discovery) included; `sources.retire-boundary` is deliberately absent. */
-export type WorkbenchOperation =
-  | "workbench" | "capabilities" | "health" | "sources" | "channels" | "config" | "config.validate" | "config.export" | "traces"
-  | "source-checks" | "sources.resume" | "preview-sessions" | "dev.principals" | "dev.fixtures.advance" | "dev.disconnect"
-  | "operator.status" | "failures.list" | "failures.show" | "failures.export" | "failures.evaluate" | "failures.redrive"
-  | "sources.retry-current" | "sources.reassess" | "sources.reopen-circuit";
+/** WHC-1 §4: the closed operation vocabulary, `workbench` (discovery) included; `sources.retire-boundary` is deliberately absent. */
+export type WorkbenchOperation = PublishedWorkbenchOperation;
 
 /** The operations the sandbox may serve (contract §6). Every other WHC-1 operation is 403 FORBIDDEN. */
 export type SandboxOperation = Extract<WorkbenchOperation,
   | "capabilities" | "health" | "sources" | "channels" | "config" | "config.validate" | "config.export" | "traces"
   | "source-checks" | "sources.resume" | "preview-sessions" | "dev.principals" | "dev.fixtures.advance" | "dev.disconnect">;
 
-/** `GET /api/sandbox/wb/v1/workbench`, wrapped in `Result<T>`. */
-export interface WorkbenchDiscovery {
-  hostContract: 1;
-  /** `workbench`, plus the allowlisted operations the running release supports (none while the sandbox is unavailable). */
-  operations: (SandboxOperation | "workbench")[];
-  limits: { maxRequestBytes: number };
-}
+/** `GET /api/sandbox/wb/v1/workbench`, wrapped in `Result<T>`: `workbench`, plus the allowlisted operations the running release supports (none while the sandbox is unavailable). */
+export type WorkbenchDiscovery = PublishedWorkbenchDiscovery;
 
 type M = ManagementOperations;
 type Op<Method extends "GET" | "POST", Path extends string, Native extends keyof M> = { method: Method; path: Path; request: M[Native]["request"]; response: M[Native]["response"] };
@@ -115,14 +105,14 @@ export interface SandboxOperations {
   "config.validate": Op<"POST", "/config/validate", "POST /management/v1/config/validate">;
   /** Candidate allowlist (§5), then 400 CONFIG_INVALID unless valid; content at most 256 KB. */
   "config.export": Op<"POST", "/config/export", "POST /management/v1/config/export">;
-  /** Query parameters; `limit` at most 100; cursors are bound to the study. */
+  /** Query parameters; `limit` from 1 to 500, each page at most 100 items; cursors are bound to the study. */
   "traces": Op<"GET", "/traces", "GET /management/v1/traces">;
   "source-checks": Op<"POST", "/source-checks", "POST /management/v1/source-checks">;
   /** Fixture sources only. */
   "sources.resume": Op<"POST", "/sources/resume", "POST /management/v1/sources/resume">;
-  /** The slot's own principal only; `expiresAt` is capped at the lease's end. */
+  /** The slot's own principals only (`creek-volunteer`, `developer`); `expiresAt` is capped at the lease's end. */
   "preview-sessions": Op<"POST", "/preview-sessions", "POST /management/v1/preview-sessions">;
-  /** Lists only the slot's synthetic principal. */
+  /** Lists only the slot's synthetic principals. */
   "dev.principals": Op<"GET", "/dev/principals", "GET /management/v1/dev/principals">;
   /** `count` from 1 to 10. */
   "dev.fixtures.advance": Op<"POST", "/dev/fixtures/advance", "POST /management/v1/dev/fixtures/advance">;

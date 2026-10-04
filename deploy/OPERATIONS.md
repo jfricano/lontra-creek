@@ -198,6 +198,38 @@ or production topics. Public bench deployment and any hosted quarantine
 exercise stay gated on the owner approving and running the migration below. Do
 not describe the hosted broker as Kafka least privilege until it has.
 
+## Workbench sandbox overlay (W9a)
+
+`compose.sandbox.yaml` adds the `sandbox` service (LC11-ADR-04, sandbox contract
+§§9–10): three synthetic workbench slots on the published StreamOtter seam, run
+from the same image with `node src/sandbox/sandbox-main.ts`. Its environment is
+`NODE_ENV`, `SANDBOX_SERVICE_TOKEN`, `SANDBOX_SLOTS`, and `SITE_ORIGIN` only; the
+service refuses to start with any `FIELD_STATION_*` value, Kafka credential, or
+`LAB_*_TOKEN`. It publishes no port. The field station reaches its API at
+`sandbox:7620` with the shared token; slot N's development gateway listens on
+`sandbox:760N`, and each slot's management handler listens on loopback inside
+the container only. `deploy/Caddyfile` routes `/sandbox/1/socket.io/*` through
+`/sandbox/3/socket.io/*` to those gateways for the site's exact Origin only
+(403 otherwise); every other `/sandbox/*` path falls through to 404. It also
+accepts sandbox candidate bodies up to 72 KB on
+`/api/sandbox/wb/v1/config/*`; every other `/api` body stays at 8 KB.
+
+The overlay is used by `npm run dev:lab` (docs/LOCAL_LAB.md). **It is not part of
+any host deployment**: `operations/deploy.sh`, `health.sh`, and `checkpoint.sh`
+do not add it, and enabling it on the host is a separate, owner-approved
+change. `Caddyfile.shared` and `compose.shared*.yaml` have no sandbox routes yet.
+
+`make-secrets.sh` writes `SANDBOX_SERVICE_TOKEN` into new env files only. An
+existing env file (a host's, or a local Lab directory from before the sandbox)
+needs it appended once, in a root-only session for a host:
+
+```sh
+printf 'SANDBOX_SERVICE_TOKEN=%s\n' "$(openssl rand -hex 32)" >> <env-file>
+```
+
+then recreate `field-station` and `sandbox` together so both read the same value.
+`npm run dev:lab` appends it to its own `.local/` env file when missing.
+
 ## Kafka authorization (LC11-ADR-03)
 
 **Requires the owner's explicit approval before it is run on the hosted

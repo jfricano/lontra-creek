@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { validateProjectConfig, type ProjectConfig } from 'streamotter/contracts';
 import { reviewCandidate, validateCandidate } from '../src/sandbox/editor.ts';
-import { checkInput, inputFromRequest, routeOperation, SANDBOX_OPERATIONS, SandboxFault } from '../src/sandbox/operations.ts';
+import { checkInput, inputFromRequest, operationRoute, routeOperation, SANDBOX_OPERATIONS, SandboxFault } from '../src/sandbox/operations.ts';
 import { fixtureBase } from './support/sandbox-fixture.ts';
 import { code, harness, wb } from './support/sandbox-harness.ts';
 
@@ -85,10 +85,12 @@ test('A43: the operation allowlist is closed, follows WHC-1 names, and bounds ev
   const bad = (op: Parameters<typeof checkInput>[0], input: unknown) => assert.throws(() => checkInput(op, input), (e: unknown) => e instanceof SandboxFault && e.code === 'invalid-request', `${op} ${JSON.stringify(input)}`);
   bad('dev.fixtures.advance', { sourceId: 'creek', count: 11 }); bad('dev.fixtures.advance', { sourceId: 'creek', count: 0 }); bad('dev.fixtures.advance', { sourceId: 'creek' });
   bad('source-checks', { sourceId: 'creek', brokers: ['evil:9092'] }); bad('source-checks', { sourceId: '../../etc' }); bad('health', { anything: 1 });
-  bad('preview-sessions', { fixturePrincipalRef: 'x'.repeat(65) }); bad('config.validate', { config: 'text' }); bad('traces', { limit: 101 }); bad('traces', { offset: 0 });
+  bad('preview-sessions', { fixturePrincipalRef: 'x'.repeat(65) }); bad('config.validate', { config: 'text' }); bad('traces', { limit: 501 }); bad('traces', { limit: 0 }); bad('traces', { offset: 0 });
   assert.throws(() => inputFromRequest('health', new URLSearchParams('x=1'), undefined), (e: unknown) => e instanceof SandboxFault);
   assert.throws(() => inputFromRequest('traces', new URLSearchParams('limit=5&limit=6'), undefined), (e: unknown) => e instanceof SandboxFault);
   assert.deepEqual(inputFromRequest('traces', new URLSearchParams('limit=5&outcome=failed'), undefined), { limit: 5, outcome: 'failed' });
+  assert.deepEqual(inputFromRequest('traces', new URLSearchParams('limit=500'), undefined), { limit: 500 }, 'the workbench asks for up to 500 traces');
+  for (const op of SANDBOX_OPERATIONS) { const { method, path } = operationRoute(op); assert.equal(routeOperation(method, path), op, 'each operation maps back to its own route'); }
 });
 
 test('A43: the service applies the editor before validating, never applies a candidate, and scopes sources, principals, and previews to the slot', async () => {
@@ -113,8 +115,8 @@ test('A43: the service applies the editor before validating, never applies a can
   await assert.rejects(h.opSlow(s, 'dev.fixtures.advance', { sourceId: 'nope', count: 1 }), wb('INVALID_REQUEST'));
   await assert.rejects(h.opSlow(s, 'traces', { channel: 'holt' }), wb('INVALID_REQUEST'));
   await assert.rejects(h.opSlow(s, 'preview-sessions', { fixturePrincipalRef: 'operator-only' }), wb('INVALID_REQUEST'));
-  assert.deepEqual((await h.opSlow(s, 'dev.principals') as { items: { ref: string }[] }).items.map(i => i.ref), ['visitor'], 'only the slot\'s synthetic principal is listed');
-  const preview = await h.opSlow(s, 'preview-sessions', { fixturePrincipalRef: 'visitor' }) as { expiresAt: string };
+  assert.deepEqual((await h.opSlow(s, 'dev.principals') as { items: { ref: string }[] }).items.map(i => i.ref), ['creek-volunteer', 'developer'], 'only the slot\'s synthetic principals are listed');
+  const preview = await h.opSlow(s, 'preview-sessions', { fixturePrincipalRef: 'creek-volunteer' }) as { expiresAt: string };
   assert.ok(Date.parse(preview.expiresAt) <= Date.parse((h.view(s) as { expiresAt: string }).expiresAt));
   await assert.rejects(h.opSlow(s, 'failures.list' as never), wb('FORBIDDEN', 'operation-not-allowed'));
 });

@@ -1,6 +1,6 @@
 # LC11-ADR-04 — Workbench sandbox architecture
 
-Status: **Accepted for implementation of the session layer** (October 3, 2026). The runtime binding is finalized against the published seam. · Slices: W2, W3, W9a · Companion plan §3 "Workbench sandbox on the existing route" · Acceptance: LC11-A41–A46
+Status: **Accepted for implementation of the session layer** (October 3, 2026). The runtime binding is finalized against the published seam: see the [W9a amendment](#amendment-w9a-binding-to-streamotter-020-rc1-october-4-2026), which supersedes the slot ports, the "never listened on" management service, and the single development principal below. · Slices: W2, W3, W9a · Companion plan §3 "Workbench sandbox on the existing route" · Acceptance: LC11-A41–A46
 
 ## Context
 
@@ -50,6 +50,16 @@ sandbox (one container, K slots, default K = 3)
 | Slot gateway limits | `maxConnections` 4, `maxSubscriptionsPerConnection` 8 |
 
 Real values are measured locally and on the host before a hosted proposal (Jason decides host capacity).
+
+## Amendment: W9a, binding to streamotter 0.2.0-rc.1 (October 4, 2026)
+
+StreamOtter 0.2.0-rc.1 publishes the seam: `@streamotter/workbench` with a WHC-1 host manifest (`hostContract: 1`), the WHC-1 types in `@streamotter/contracts`, and `createManagementHandler` in `streamotter/gateway/management`. The sandbox adopts it through those published exports only. Three details of the decision above change:
+
+1. **Slot gateway ports.** Slot N's gateway listens on **760N** (7601–7603), not 76N0, which put slot 2 on the sandbox API's 7620. `SANDBOX_GATEWAY_PORT_BASE` (default 7600) moves the block; a base that puts a slot on the API port is refused.
+2. **The management service listens on loopback.** `createManagementHandler` is HTTP-shaped (it takes a Node `IncomingMessage` and `ServerResponse`) and has no function-style API, so each study's handler is mounted on its own listener bound to `127.0.0.1` on a system-chosen port inside the sandbox process. It is never published, routed, or reachable from the Compose network. Its only credential is a 32-byte random key per study, checked by the handler's `authorize` in constant time and sent only by the sandbox service itself; `Authorization` is ignored, `startManagementServer` is never called, and no native management token exists. The handler offers only the sandbox allowlist, so the allowlist is checked three times: in the field station, in the sandbox service, and in the handler. Fake requests or in-memory sockets were rejected as undocumented and fragile.
+3. **Two development principals per slot** (decisions 4 and 7). Gateway routing includes the verified tenant, and the creek's records are tenant `lontra-creek` while the init scaffold's `jobProgress` is tenant `local`, so one principal cannot preview both channels. Each slot registers `creek-volunteer` (tenant `lontra-creek`, role volunteer) for `station` and the scaffold's own `developer` (tenant `local`, verbatim) for `jobProgress`; previews are minted only for these two, each reads only its own channel, and revocation covers both.
+
+Also recorded: WHC-1 has no unmount and reads its boot block once per evaluation of `app.js`, so the page runs one workbench instance per document and reloads to remount after a reset. Trace pages are narrowed to 100 items while the workbench may ask for up to 500 (WHC-1 lets a host narrow results). The sandbox contract (draft 0.3) carries the details; the session layer (W2) did not change.
 
 ## Open questions
 

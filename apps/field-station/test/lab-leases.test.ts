@@ -17,8 +17,11 @@ function fixture(count = 3, leaseMs = 300_000) {
   let seq = 0; const fresh = (bench: number) => `b${bench}study${String(++seq).padStart(9, '0')}`;
   for (let i = 1; i <= count; i++) slots.set(i as BenchId, { bench: i as BenchId, state: 'ready', lease: null, scenario: { gateway: 'running', source: { status: 'healthy' }, relay: 'up', calibration: 'present', satellite: 'idle', receiptTimeoutMs: 5000 }, checks: { developmentPrincipals: 0, fixtureSources: 0, managementHost: '127.0.0.1' }, readiness: { control: true, source: true, cleanLease: true }, study: { ...((id: string) => ({ studyId: id, generation: `lab-${i}-${id}`, consumerGroup: `streamotter-lab-${i}-${id}` }))(fresh(i)), createdAt: new Date(now).toISOString(), phase: 'clean', restarts: { gateway: 0, process: 0 } } });
   const calls: { bench: BenchId; path: string; body: unknown }[] = [];
+  /** Benches whose status calls hang until the client's 5-second timeout. */
+  const hanging = new Set<BenchId>();
   const client: BenchClient = { async call<T>(bench: BenchId, path: string, _method?: string, body?: unknown): Promise<T> {
     calls.push({ bench, path, body }); const slot = slots.get(bench)!; const input = body as { leaseId: string; expiresAt: string };
+    if (path === '/bench/v1/status' && hanging.has(bench)) { now += 5000; throw new Error('The operation was aborted due to timeout.'); }
     if (path === '/bench/v1/reset') { slot.state = 'ready'; slot.lease = null; slot.readiness = { ...slot.readiness, cleanLease: true }; const id = fresh(bench); slot.study = { ...slot.study!, studyId: id, generation: `lab-${bench}-${id}`, consumerGroup: `streamotter-lab-${bench}-${id}`, phase: 'clean' }; }
     if (path === '/bench/v1/lease') { slot.state = 'leased'; slot.lease = input; slot.readiness = { ...slot.readiness, cleanLease: false }; slot.study = { ...slot.study!, phase: 'open' }; }
     if (path === '/bench/v1/tokens') return { token: `token-${bench}`, expiresAt: slot.lease!.expiresAt } as T;
@@ -32,7 +35,7 @@ function fixture(count = 3, leaseMs = 300_000) {
     close: async (bench: BenchId, studyId: string) => { gate.push(`close ${bench} ${studyId}`); calls.push({ bench, path: 'gate.close', body: studyId }); closed.add(studyId); if (opened.get(bench) === studyId) opened.delete(bench); },
     current: (bench: BenchId) => opened.get(bench) ?? null
   };
-  return { pool: new LeasePool({ client, benches: [...slots.keys()], gatewayOrigin: 'https://demo.test', now: () => now, leaseMs, studies }), calls, slots, gate, studies, advance: (ms: number) => { now += ms; }, session: (id: string, ttl = 1_800_000) => ({ subject: id, role: 'volunteer' as const, exp: now + ttl }) };
+  return { pool: new LeasePool({ client, benches: [...slots.keys()], gatewayOrigin: 'https://demo.test', now: () => now, leaseMs, studies }), calls, slots, gate, studies, hanging, advance: (ms: number) => { now += ms; }, session: (id: string, ttl = 1_800_000) => ({ subject: id, role: 'volunteer' as const, exp: now + ttl }) };
 }
 const code = (name: string) => (error: unknown) => error instanceof LabError && error.code === name;
 test('concurrent joins grant each bench once; FIFO advances after return; requests cannot choose another bench', async () => {
@@ -80,6 +83,10 @@ test('redaction drops handshakes and map noise, replaces identifiers, bounds pag
   assert.equal(feed.page().items.length, 100); assert.equal(feed.page().gap, true);
   const cursor = feed.page().next; feed.reset('second'); assert.throws(() => feed.page(cursor), code('invalid-request'));
   assert.throws(() => feed.page('second:999'), code('invalid-request'));
+  assert.throws(() => feed.page('second:0.1'), code('invalid-request'), 'not issued yet');
+  feed.add({ kind: 'bench', event: 'lease-started' }); assert.equal(feed.page().items[0]?.id, 'second:0.1');
+  feed.reset('second', 1); feed.add({ kind: 'bench', event: 'gap' });
+  assert.deepEqual(feed.page('second:0.1'), { items: feed.page().items, next: 'second:1.1', gap: true }, 'an earlier epoch is answered from the start');
 });
 test('bench environment rejects production and other-bench secrets; options have no protected channels or development principals', () => {
   const env = { LAB_BENCH: '1', LAB_BENCH_1_SERVICE_TOKEN: 's'.repeat(32), LAB_BENCH_1_RELAY_TOKEN: 'r'.repeat(32) };
@@ -220,4 +227,69 @@ test('a leased bench that reports starting while its process restarts keeps the 
   Object.assign(f.slots.get(1)!, { state: 'starting', lease: null, study: null });
   for (let i = 0; i < 3; i++) { f.advance(5000); f.pool.heartbeat(a); await f.pool.sweep(); }
   assert.equal((f.pool.view(a) as { reason: string }).reason, 'bench-failed', 'a bench that never resumes ends the lease');
+});
+
+test('a place granted after a slow poll in line gets the whole 30-second claim window, not an idle end', async () => {
+  const f = fixture(1); await f.pool.initialize(); await f.pool.sweep();
+  const a = f.session('a'), b = f.session('b');
+  await f.pool.join(a, 'a'); await f.pool.token(a);
+  assert.equal((await f.pool.join(b, 'b')).status, 'queued');
+  // b's tab is in the background: its last poll was 50 s ago, inside the queue's 90 s limit. a keeps polling.
+  f.advance(50_000); f.pool.heartbeat(a);
+  await f.pool.leave(a);
+  assert.equal(f.pool.view(b).status, 'ready');
+  f.advance(5000); await f.pool.sweep();
+  assert.equal(f.pool.view(b).status, 'ready', 'the next sweep leaves the grant alone');
+  // The tab comes back 25 s after the grant: its poll counts, and it can still claim.
+  f.advance(20_000); f.pool.heartbeat(b); await f.pool.sweep();
+  assert.equal(f.pool.view(b).status, 'ready');
+  await f.pool.token(b); assert.equal(f.pool.view(b).status, 'active');
+});
+
+test('a grant made after a slow bench call in the same sweep starts when it is made, not at the sweep\'s start', async () => {
+  const f = fixture(2); await f.pool.initialize(); await f.pool.sweep();
+  const a = f.session('a'), b = f.session('b');
+  await f.pool.join(a, 'a'); await f.pool.token(a);
+  const joined = await f.pool.join(b, 'b'); assert.equal(joined.status === 'ready' && joined.bench, 2);
+  await f.pool.leave(b);
+  // Bench 1 stops answering; the next join's sweep waits out its timeout before granting bench 2.
+  f.hanging.add(1); f.advance(5000); f.pool.heartbeat(a);
+  const c = f.session('c'); const view = await f.pool.join(c, 'c');
+  const now = Date.parse(f.pool.view(c).now);
+  assert.ok(view.status === 'ready');
+  assert.deepEqual([Date.parse(view.grantedAt), Date.parse(view.claimBy!), Date.parse(view.expiresAt)], [now, now + 30_000, now + 300_000]);
+});
+
+test('a bench whose reset takes longer than 60 seconds is granted once it is clean, not reset again', async () => {
+  const f = fixture(1); const slot = f.slots.get(1)!;
+  const resets = () => f.calls.filter(call => call.path === '/bench/v1/reset').length;
+  // Each reset takes 70 s: a slow gate close, the quiesce, the group delete, and a gateway start.
+  let seen = 0; let readyAt = 0;
+  const bench = () => {
+    if (resets() > seen) { seen = resets(); readyAt = Date.parse(f.pool.status().now) + 70_000; }
+    const ready = Date.parse(f.pool.status().now) >= readyAt;
+    Object.assign(slot, { state: ready ? 'ready' : 'resetting', readiness: { control: ready, source: ready, cleanLease: ready } });
+  };
+  await f.pool.initialize(); bench();
+  const states: string[] = [];
+  for (let i = 0; i < 40; i++) { f.advance(5000); await f.pool.sweep(); bench(); states.push(f.pool.status().benches[0]!.state); }
+  assert.ok(states.includes('unavailable'), 'the slow reset is marked unavailable after 60 s');
+  assert.equal(states.at(-1), 'ready');
+  assert.equal(resets(), 1, 'the retry found the bench clean and did not reset it again');
+  const a = f.session('a'); assert.equal((await f.pool.join(a, 'a')).status, 'ready');
+});
+
+test('requests that arrive while the pool starts grant nothing until every bench has been reset', async () => {
+  const f = fixture(1);
+  // The API listens before the pool initializes: a status poll sweeps, and a visitor joins.
+  await f.pool.run(() => f.pool.sweep());
+  const a = f.session('a');
+  await assert.rejects(f.pool.run(() => f.pool.join(a, 'a')), code('lab-unavailable'));
+  assert.deepEqual(f.calls.map(call => call.path), [], 'no bench is touched before the startup reset');
+  await f.pool.initialize();
+  assert.deepEqual(f.calls.map(call => call.path), ['/bench/v1/reset']);
+  const view = await f.pool.run(() => f.pool.join(a, 'a'));
+  assert.equal(view.status, 'ready', 'granted after the startup reset');
+  await f.pool.token(a); f.advance(5000); f.pool.heartbeat(a); await f.pool.sweep();
+  assert.equal(f.pool.view(a).status, 'active');
 });

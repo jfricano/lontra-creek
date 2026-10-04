@@ -382,7 +382,7 @@ export interface BenchStatus {
 2. `gateway.revoke({ kind: "subject", tenantId, subject: "lab-<leaseId>" })`: its connections close with `UNAUTHENTICATED`.
 3. Stop the satellite client.
 4. Restore the calibration table and the relay.
-5. Stop the bench's gateway, then construct a new one — identical except for a fresh consumer group named for the lease that just ended (for example `streamotter-lab-N-<leaseId>`, or a name unique to this reset when no lease ended, such as on startup) and `startFrom: "latest"` — using only StreamOtter's public API (`gateway.stop()`, `createGateway`). Wait until its source reports `healthy` (after a relay cut this can take up to 30 seconds).
+5. Stop the bench's gateway, then construct a new one — identical except for a fresh consumer group, `streamotter-lab-N-<random UUID>` (on startup too; the broker's ACLs let bench N's user read and delete only groups prefixed `streamotter-lab-N-`, section 10.9) and `startFrom: "latest"` — using only StreamOtter's public API (`gateway.stop()`, `createGateway`). Wait until its source reports `healthy` (after a relay cut this can take up to 30 seconds).
 6. Delete the gateway's previous consumer group with a Kafka admin client the bench process keeps for this; StreamOtter has no such operation.
 7. Clear the feed buffer.
 8. If the new gateway's source isn't healthy within 60 seconds, report `failed`.
@@ -444,7 +444,8 @@ Everything the gateway does differently in development mode, found by reading ev
 | **T4 A visitor reaches management routes** | M2, M3; the management token never leaves the bench | S4 |
 | **T5 Another site's page drives a leaseholder's bench** | The bench token is in the page's memory, not a cookie; M8 Caddy's `Origin` rule; `SameSite=Strict` session cookie and the `Origin` check on `POST /api/lab/*` | S5 |
 | **T6 The feed leaks others' data or secrets** | M10 redaction (section 6); benches serve no `holt` or `notebook` channels; StreamOtter traces hold no payloads or credentials | S6 |
-| **T7 A compromised bench reaches production** | M11 benches hold no production secrets and don't use the field station's internal API; own SCRAM user | U3, S11, review |
+| **T7 A compromised bench reaches production** | M11 benches hold no production secrets and don't use the field station's internal API; own SCRAM user; M13 Kafka ACLs confine that user to its own topics and groups | U3, S11, S12, review |
+| **T10 A compromised bench writes Kafka evidence it shouldn't** (V1.1's quarantine writer: forged records in another bench's quarantine, its own source topics, or the shared creek) | M13: bench N may write only `lab-N.quarantine`, which the broker's bootstrap creates small and short-lived; no topic creation, no writes to its own sources | S12 |
 | **T8 Denial of service** (queue flooding, action spam, handshake floods) | Places per address and queue cap; the Lab budget; one action a second per lease and per bench; small `maxConnections` per bench; Cloudflare in front | S7, S9 |
 | **T9 A leaseholder shares their bench token** | Harmless within the lease: it grants the same bench until the lease ends, capped by `maxConnections` | None needed |
 
@@ -464,6 +465,7 @@ Everything the gateway does differently in development mode, found by reading ev
 | M10 | The feed's redaction rules (section 6), applied by the bench. | `be-lab` |
 | M11 | Bench environments hold no production secrets (section 8); bench snapshots don't come from the field station's internal API; each bench has its own Kafka user. | `be-lab`, `devops` |
 | M12 | Bench configs pass production validation: constructing the bench gateway with `mode: "production"` and no `development` option succeeds (no fixtures, no plaintext Kafka). | `be-lab` |
+| M13 | The broker runs KRaft's `StandardAuthorizer` with `allow.everyone.if.no.acl.found=false`, and each application user has only the ACLs in section 10.9 (`deploy/kafka/start.sh`, `KAFKA_AUTHORIZATION=acl`). Local and CI stacks only until the hosted migration is approved (section 10.7, R2). | `devops` |
 
 ### 10.6 Tests that prove them
 
@@ -482,19 +484,70 @@ Stack tests (E2.4, containers in CI, through Caddy like `deploy/test/stack.test.
 | S9 | **Action rate.** Two actions within a second: the second gets 429 `too-many-actions`. | T8 |
 | S10 | **Cross-session.** Visitor B's return, token, action, and feed requests don't touch A's lease (409 `no-lease` or B's own view). | T1, M5 |
 | S11 | **No production secrets on a bench.** From `docker compose exec` on a running bench container, its environment contains none of `FIELD_STATION_SECRET`, `FIELD_STATION_SERVICE_TOKEN`, `KAFKA_GATEWAY_PASSWORD`, or `KAFKA_FIELD_STATION_PASSWORD`. | T7, M11 |
+| S12 | **Kafka authorization** (`deploy/test/kafka-acls.test.ts`, probes in `deploy/test/kafka-acl-probes.mjs`). The broker's ACL listing equals section 10.9's table exactly, and the quarantine topics exist with their bounds. From each bench's own container, with its own user: it lists only `lab-N.*` topics, reads its sources and its quarantine topic in `streamotter-lab-N-` groups and deletes those groups, and writes its quarantine topic (plain and idempotent producers); it is refused (`TOPIC_`/`GROUP_`/`CLUSTER_AUTHORIZATION_FAILED`) reading, writing, or describing `field.*`, `creek.overview`, `field.holts`, and `field.notebooks`, reading or writing another bench's sources or quarantine topic, writing its own sources, joining another bench's or the production gateway's group, deleting another bench's or the production group, creating a topic, and deleting its quarantine topic. From the gateway's and field station's containers, each is refused everything outside its row. The production gateway and field station keep working end to end with the authorizer on (S1–S11 and `deploy/test/stack.test.ts` with `KAFKA_AUTHORIZATION=acl`). | T7, T10, M13 |
 
 Unit tests (`npm test`): **U1** the bench's gateway options register no principals and no fixture sources; **U2** the bench refuses to start when its management API lists a principal; **U3** the bench's configuration refuses production secrets in its environment; **U4** the bench config passes production validation (M12); plus the lease state machine with a fake clock (claim, idle, expiry, session cap, reset, field station restart).
 
 ### 10.7 Residual risks
 
 - **R1 The gateway's own attack surface.** A bug in the gateway, Socket.IO, or the handlers that an anonymous or leaseholding client can trigger is as serious on a bench as on the production gateway. Benches add three more instances of the same code; development mode adds no reachable code path beyond D2 and D3.
-- **R2 No Kafka authorization.** The broker has no authorizer (`deploy/kafka/start.sh`), so any SCRAM user can read and write every topic. A compromised bench, like a compromised production gateway, could read `field.notebooks` or write into `field.*` and pause the production source. Per-bench users make rotation and attribution possible; ACLs (`lab-N.*` read-only for bench N) would contain it, at the cost of changing the production broker. Recommended after launch, for the production gateway too.
+- **R2 Kafka authorization. Closed for local and CI stacks; open on the hosted broker** until its owner approves the migration (LC11-ADR-03). Without an authorizer any SCRAM user can read and write every topic: a compromised bench, like a compromised production gateway, could read `field.notebooks` or write into `field.*` and pause the production source. With `KAFKA_AUTHORIZATION=acl`, `deploy/kafka/start.sh` enables KRaft's `StandardAuthorizer`, denies whatever no ACL allows, and grants each user only its row in section 10.9 (M13). Evidence: S12 in the CI `Stack` workflow (gateway and field station) and the `Lab spike` workflow's three-bench stack (every bench), and the October 3, 2026 local runs recorded in section 10.9. The hosted broker keeps `KAFKA_AUTHORIZATION` at its default, `none`, so R2 stays open there, and hosted quarantine exercises stay unavailable, until the one-time migration in `deploy/OPERATIONS.md` (Kafka authorization) is approved and run with its verification.
 - **R3 Denial of service.** Stock Caddy has no rate limiter, so floods of WebSocket handshakes reach the benches (each rejected cheaply) as they reach the production gateway today. Queue abuse from many addresses can still fill the line. Cloudflare's free plan is the outer layer.
 - **R4 A release upgrade can change any of this.** D2–D5 are implementation details of `0.1.0-rc.3`. R.1 (release upgrade) must redo section 10.2 against the new published source and rerun S1–S6.
 
 ### 10.8 Verdict
 
-Yes, development-mode benches can face the public with these mitigations. In `0.1.0-rc.3`, development mode reaches the public Socket.IO endpoint in exactly two ways: a handshake without `Origin` is accepted, and a preview token for a development principal bypasses `authenticate`. The first is harmless, because the token is the boundary and Caddy restores production's `Origin` rule anyway. The second is closed completely by registering no development principals (M1), with the management API, the only minter, confined to each bench container's loopback and never proxied (M2, M3). Everything else a visitor can reach is the same code production runs. Lease-bound, bench-minted tokens whose principals expire with the lease (M4–M7) keep visitors on their own bench for their own five minutes, and S1–S6 prove it in CI on every stack change. What remains (R1–R3) is the exposure the production gateway already has, and R2 is worth closing for both. The one standing obligation is R4: re-verify this analysis whenever the pinned release changes.
+Yes, development-mode benches can face the public with these mitigations. In `0.1.0-rc.3`, development mode reaches the public Socket.IO endpoint in exactly two ways: a handshake without `Origin` is accepted, and a preview token for a development principal bypasses `authenticate`. The first is harmless, because the token is the boundary and Caddy restores production's `Origin` rule anyway. The second is closed completely by registering no development principals (M1), with the management API, the only minter, confined to each bench container's loopback and never proxied (M2, M3). Everything else a visitor can reach is the same code production runs. Lease-bound, bench-minted tokens whose principals expire with the lease (M4–M7) keep visitors on their own bench for their own five minutes, and S1–S6 prove it in CI on every stack change. What remains (R1–R3) is the exposure the production gateway already has; R2 is closed for both in local and CI stacks (M13, S12) and waits for the hosted migration's approval. The one standing obligation is R4: re-verify this analysis whenever the pinned release changes.
+
+### 10.9 Kafka authorization (M13)
+
+LC11-ADR-03 decides least privilege per Kafka user; this section is the authoritative table, derived from the code that uses each name. `deploy/kafka/start.sh` grants it and `deploy/test/kafka-acls.test.ts` (S12) requires the broker's ACL listing to equal it.
+
+**Topics and groups in use**
+
+| Name | Kind | Written by | Read by | Source in code |
+| --- | --- | --- | --- | --- |
+| `field.gauges`, `field.telemetry`, `field.cameras`, `field.holts`, `creek.overview` | topics, 6 h retention | field station | production gateway (`field` source) | `TOPICS` in `packages/creek-sim/src/views.ts`; created by `apps/field-station/src/server/kafka.ts` |
+| `field.notebooks` | topic, compact+delete | field station | production gateway (`notebooks` source); field station on start (rebuild) | `NOTEBOOK_TOPIC` in `apps/field-station/src/records.ts`; `readAll` in `server/kafka.ts` |
+| `lab-N.field.gauges`, `lab-N.field.telemetry`, `lab-N.field.cameras`, `lab-N.creek.overview` (no holts) | topics, 1 h retention, one set per bench up to `FIELD_LAB_BENCHES` | field station (copies of the creek) | bench N's gateway | `CREEK_TOPICS` and `bench()` in `apps/field-station/src/lab/benches.ts`; `withBenchCopies` in `server/kafka.ts` |
+| `lab-N.quarantine` | topic, created by the broker's bootstrap: 1 partition, `retention.ms` 3600000, `retention.bytes` 8388608, 1 MiB/10 min segments | bench N (V1.1's quarantine writer, W9b) | bench N | `deploy/kafka/start.sh` |
+| `streamotter-lontra-creek-field`, `streamotter-lontra-creek-notebooks` | consumer groups | | production gateway | `apps/field-station/src/project.ts` |
+| `lontra-field-station-read-<UUID>` | throwaway group, deleted after use | | field station | `readAll` in `server/kafka.ts` |
+| `streamotter-lab-N-<UUID>` (and the static default `streamotter-lab-N-field`) | a fresh group per bench gateway start, the previous one deleted on reset | | bench N | `consumerGroupPrefix` in `lab/benches.ts`; `BenchRuntime` in `lab/runtime.ts` |
+
+**Grants** (all `ALLOW`, host `*`; nothing else is allowed to an application user)
+
+| User | Pattern | Resources | Operations |
+| --- | --- | --- | --- |
+| `gateway` | prefixed | topics `field.`, `creek.`; group `streamotter-lontra-creek-` | Read, Describe |
+| `field-station` | prefixed | topics `field.`, `creek.`, and for each bench whose user the broker has, `lab-N.field.` and `lab-N.creek.` | Create, Write, Describe |
+| `field-station` | literal | topic `field.notebooks` | Read |
+| `field-station` | prefixed | group `lontra-field-station-read-` | Read, Delete |
+| `lab-N` | prefixed | topic `lab-N.` (its sources and its quarantine topic) | Read, Describe |
+| `lab-N` | literal | topic `lab-N.quarantine` | Write |
+| `lab-N` | prefixed | group `streamotter-lab-N-` | Read, Delete |
+
+- **Super user:** `User:ANONYMOUS` only, the principal of the broker's plaintext `INTERNAL` (127.0.0.1:9092) and `CONTROLLER` listeners, which bind to the Kafka container's own loopback: inter-broker traffic, the health check, and admin tools run there. The SASL_SSL listeners never yield it, and `start.sh` refuses a SCRAM user named `ANONYMOUS`.
+- **Not granted to anyone:** cluster operations (`Create` on the cluster, `Alter`, `AlterConfigs`, `DescribeConfigs`), topic `Delete`, `Alter`, and `AlterConfigs`, transactional IDs, and any `Deny` entry. The idempotent producers (the field station's, and a bench's quarantine writer) need only `Write` on a topic (KIP-679).
+- **Consequences:** a bench sees only `lab-N.*` in metadata, cannot write its own source topics, cannot create topics, and cannot touch the production groups. The field station writes the creek but cannot read it (only `field.notebooks`), and cannot write any quarantine topic. The gateway cannot write anything.
+- **Bootstrap:** on every start with `KAFKA_AUTHORIZATION=acl` or `migrate`, once the broker answers, `start.sh` lists the ACLs and topics, adds whatever grant or quarantine topic is missing (it never removes an ACL or changes an existing topic's settings), and then writes the ready file the Compose health check waits for. A failed bootstrap is retried, then stops the broker. Benches are those with `KAFKA_LAB_N_USERNAME` set (N = 1–3); the older shared `KAFKA_LAB_USERNAME` user is created but granted nothing, so the CI-only spike overlay now uses `lab-1`.
+- **Modes:** `acl` (enforced), `migrate` (the same grants with `allow.everyone.if.no.acl.found=true`: only the first step of migrating an existing broker), `none` (no authorizer). `deploy/compose.yaml` defaults to `none` so the hosted broker is unchanged; CI workflows and `deploy/compose.local-lab.yaml` set `acl`.
+
+**Evidence, October 3, 2026** (local Docker, linux/amd64, `apache/kafka:4.1.2`, the image from `deploy/Dockerfile`; CI runs the same tests on amd64 and arm64 on every stack change):
+
+- The `Stack` workflow's steps with `KAFKA_AUTHORIZATION=acl`: `deploy/test/stack.test.ts` 10/10, including both restarts and a notebook through Kafka; no authorizer denial during that traffic; S12 for the gateway (22 probes) and field station (15) passed.
+- The `Lab spike` workflow's steps with `acl`: `deploy/test/lab-spike.test.ts` 4/4 (relay cuts, bench user `lab-1`); the three-bench stack's `lab-private-checks.mjs` (benches 1–3 and the field station's leases, FIFO promotion, and resets, which delete bench groups) and `deploy/test/lab.test.ts` 7/7; no authorizer denial during that traffic; S12 for the gateway (22), field station (21), and each bench (45) passed, and the ACL listing equaled this table.
+- A standalone broker on one volume moved `none` → `migrate` → `acl` → `none`, as `deploy/OPERATIONS.md` describes: under `none` bench 1 failed 42 of its 45 probes (no confinement); under `acl` every principal passed; `migrate` enforces granted operations but leaves operations nobody is granted (creating and deleting topics) open; the return to `none` removed enforcement and kept the stored ACLs. A new volume's bootstrap took about 4 minutes at the shared host's 0.35 CPU (56 s on a restart, which adds nothing).
+- Not run here: the `Shared host adapter` rehearsal (it needs a disposable systemd-cgroup CI host).
+
+**Corrections to LC11-ADR-03's sketch** (the ADR's own table should be amended to match):
+
+1. The creek is not all under `field.`: the overview is `creek.overview`, so the gateway and field station also need the `creek.` prefix, and bench copies include `lab-N.creek.overview`.
+2. The production gateway consumes `field.notebooks` (its `notebooks` source) and `field.holts`; nothing is excluded. Its groups are `streamotter-lontra-creek-field` and `-notebooks`; StreamOtter 0.1.0-rc.3 uses `consumerGroup` verbatim.
+3. Bench groups use the ADR's `streamotter-lab-N-` prefix, which the code did not: groups were `lab-<UUID>` (first start, no bench number), then `lab-N-<UUID>`, and the static default `lontra-creek-lab-N-field`. `Bench.consumerGroupPrefix` in `lab/benches.ts` now names the prefix, and every bench group is built from it (W5's per-study groups, `streamotter-lab-N-<studyId>`, fit it).
+4. The field station reads only `field.notebooks` (not "what its consumers read" in general) and needs `Create`, since it creates its topics; its read groups are `lontra-field-station-read-`.
+5. The field station's `lab-` write is narrowed to each bench's `lab-N.field.` and `lab-N.creek.` copies, so it cannot write quarantine evidence either.
+6. Bench `Describe` on groups is implied by `Read`/`Delete`; benches get no topic `Describe` beyond their own prefix.
 
 ## 11. Open points
 

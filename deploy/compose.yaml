@@ -10,6 +10,11 @@
 #   LONTRA_SECRETS  a directory with kafka/ (deploy/make-certs.sh kafka) and origin/
 #                   (cert.pem and key.pem: the Cloudflare origin certificate)
 #   FIELD_EPOCH     when the hosted study began (ISO 8601); fixed for the life of a generation
+# and optionally KAFKA_AUTHORIZATION (deploy/kafka/start.sh): "acl" enforces each Kafka
+# user's least-privilege ACLs, "migrate" is the first step of moving an existing broker
+# there (deploy/OPERATIONS.md, Kafka authorization), and "none", the default here, leaves
+# the broker without an authorizer. CI and local stacks set "acl"; the hosted broker
+# stays at "none" until its owner approves the migration.
 name: lontra-creek
 
 x-node: &node
@@ -33,16 +38,21 @@ services:
       KAFKA_GATEWAY_PASSWORD: ${KAFKA_GATEWAY_PASSWORD:?}
       KAFKA_FIELD_STATION_USERNAME: field-station
       KAFKA_FIELD_STATION_PASSWORD: ${KAFKA_FIELD_STATION_PASSWORD:?}
+      KAFKA_AUTHORIZATION: ${KAFKA_AUTHORIZATION:-none}
     volumes:
       - ./kafka/start.sh:/opt/lontra/start.sh:ro
       - ${LONTRA_SECRETS:?}/kafka:/etc/lontra/kafka:ro
       - kafka-data:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD", "/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "127.0.0.1:9092"]
+      # Healthy once the broker answers and, with authorization on, its ACLs are in place
+      # (start.sh writes the ready file). The check's own JVM gets a small heap, not the broker's.
+      test: ["CMD-SHELL", "test -f /tmp/lontra-kafka.ready && KAFKA_HEAP_OPTS=-Xmx128m /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9092 > /dev/null"]
       interval: 10s
       timeout: 20s
       retries: 12
-      start_period: 30s
+      # A new volume's ACL bootstrap runs a dozen tool JVMs: about 4 minutes at the shared
+      # host's 0.35 CPU (compose.shared.yaml). Checks still pass as soon as it is ready.
+      start_period: 300s
     restart: unless-stopped
     logging:
       driver: json-file

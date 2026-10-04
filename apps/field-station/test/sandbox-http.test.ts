@@ -49,6 +49,10 @@ test('A42/A43: lifecycle and WHC-1 routes enforce Origin, the workbench header, 
     assert.equal(join.status, 200); assert.equal(join.headers.get('access-control-allow-origin'), SITE);
     const cookie = join.headers.get('set-cookie')!.split(';')[0]!; assert.match(join.headers.get('set-cookie')!, /HttpOnly/);
     const lease = await join.json() as { status: string; slot: number }; assert.equal(lease.status, 'ready');
+    const joinFrom = (ip: string) => fetch(`${origin}/api/sandbox/session`, { method: 'POST', headers: { origin: SITE, 'x-client-ip': ip } });
+    for (let i = 0; i < 2; i++) assert.ok((await joinFrom('192.0.2.9')).headers.get('set-cookie'));
+    const capped = await joinFrom('192.0.2.9'); assert.equal(capped.status, 429); assert.equal(capped.headers.get('set-cookie'), null, 'a refused join starts no session');
+    assert.equal(capped.headers.get('retry-after'), '1'); assert.equal(capped.headers.get('access-control-expose-headers'), 'retry-after', 'the cross-origin page can read Retry-After');
     assert.equal((await fetch(`${origin}/api/sandbox/session`, { method: 'POST', headers: { origin: SITE, cookie, 'content-type': 'application/json' }, body: JSON.stringify({ slot: 3 }) })).status, 400, 'a request cannot name a slot');
     assert.equal((await fetch(`${origin}/api/sandbox/session?slot=3`, { headers: { cookie } })).status, 400);
     const call = (path: string, init: RequestInit = {}) => fetch(`${origin}/api/sandbox/wb/v1${path}`, { ...init, headers: { ...WB, cookie, ...(init.headers as Record<string, string> ?? {}) } });
@@ -58,6 +62,7 @@ test('A42/A43: lifecycle and WHC-1 routes enforce Origin, the workbench header, 
 
     const health = await call('/health'); const body = await health.json() as { ok: boolean; requestId: string; data: { ready: boolean } };
     assert.equal(health.status, 200); assert.equal(body.ok, true); assert.equal(body.data.ready, true); assert.equal(health.headers.get('x-request-id'), body.requestId);
+    assert.deepEqual(health.headers.get('access-control-expose-headers')?.split(/,\s*/).sort(), ['retry-after', 'x-request-id'], 'the cross-origin workbench can read X-Request-Id and Retry-After');
     const discovery = await (await call('/workbench')).json() as { ok: boolean; data: { hostContract: number; operations: string[]; limits: { maxRequestBytes: number } } };
     assert.deepEqual([discovery.ok, discovery.data.hostContract, discovery.data.operations.length, discovery.data.limits.maxRequestBytes], [true, 1, 15, 65_536]);
     assert.ok(discovery.data.operations.includes('workbench') && !discovery.data.operations.some(op => op.startsWith('failures')));
@@ -96,7 +101,9 @@ test('A44/A46: the rc.3 production backend reports seam-unavailable and allocate
   assert.deepEqual(h.pool.discovery().operations, ['workbench'], 'nothing but discovery while the seam is unavailable');
   await serving(api(h.pool), async origin => {
     const join = await fetch(`${origin}/api/sandbox/session`, { method: 'POST', headers: { origin: SITE } });
-    assert.equal(join.status, 503); assert.equal((await join.json() as { code: string }).code, 'sandbox-unavailable');
+    assert.equal(join.status, 503); assert.equal((await join.json() as { code: string }).code, 'sandbox-unavailable'); assert.equal(join.headers.get('set-cookie'), null, 'no session is started');
+    const body = await fetch(`${origin}/api/sandbox/session`, { method: 'POST', headers: { origin: SITE }, body: 'x' });
+    assert.equal(body.status, 400); assert.equal(body.headers.get('set-cookie'), null);
   });
 });
 
@@ -111,7 +118,12 @@ test('A43: the sandbox service API needs its bearer token, and production cannot
   });
   const env = { SANDBOX_SERVICE_TOKEN: SERVICE_TOKEN, SANDBOX_RUNTIME: 'fixture' };
   assert.deepEqual(sandboxEnvironment(env).slots, [1, 2, 3]);
-  for (const key of ['FIELD_STATION_SECRET', 'KAFKA_GATEWAY_PASSWORD', 'KAFKA_LAB_USERNAME', 'LAB_BENCH_1_SERVICE_TOKEN']) assert.throws(() => sandboxEnvironment({ ...env, [key]: 'secret' }), /forbidden/);
+  for (const key of ['FIELD_STATION_SECRET', 'KAFKA_GATEWAY_PASSWORD', 'KAFKA_LAB_USERNAME', 'LAB_BENCH_1_SERVICE_TOKEN', 'LAB_PROXY_TOKEN']) assert.throws(() => sandboxEnvironment({ ...env, [key]: 'secret' }), /forbidden/);
+  // A shared env file: every secret deploy/make-secrets.sh writes is refused; the service's own and other non-secret settings are not.
+  const generated = [...readFileSync(new URL('../../../deploy/make-secrets.sh', import.meta.url), 'utf8').matchAll(/^([A-Z][A-Z0-9_]*)=\$\(secret\)$/gm)].map(m => m[1]!);
+  assert.ok(generated.includes('LAB_RELAY_TOKEN') && generated.length >= 14, 'the secrets the script writes');
+  for (const key of generated) assert.throws(() => sandboxEnvironment({ ...env, [key]: 'secret' }), /forbidden/, key);
+  assert.deepEqual(sandboxEnvironment({ ...env, SANDBOX_SLOTS: '2', SANDBOX_API_PORT: '7620', LAB_BENCH_API_URLS: 'http://lab-1:7420', LAB_LEASE_SECONDS: '600', NODE_ENV: 'production' }).slots, [1, 2]);
   assert.throws(() => sandboxEnvironment({ SANDBOX_SERVICE_TOKEN: 'short' }), /32/);
   const main = readFileSync(new URL('../src/sandbox/sandbox-main.ts', import.meta.url), 'utf8');
   assert.match(main, /backend: publishedBackend\(\)/); assert.doesNotMatch(main, /SANDBOX_RUNTIME|sandbox-fixture|FixtureBackend/);

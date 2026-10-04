@@ -32,7 +32,8 @@ export const DISABLED = (now: number): SandboxStatus => ({ now: new Date(now).to
 
 export async function sandboxRoute(request: IncomingMessage, response: ServerResponse, url: URL, context: SandboxRouteContext): Promise<void> {
   if (url.pathname === API_BASE || url.pathname.startsWith(`${API_BASE}/`)) return workbenchRoute(request, response, url, context);
-  const { pool, cors } = context; const origin = request.headers.origin;
+  // The page is on another origin, so it reads Retry-After only if it is exposed.
+  const { pool } = context; const cors = { ...context.cors, 'access-control-expose-headers': 'retry-after' }; const origin = request.headers.origin;
   try {
     if (context.wait > 0) return send(response, 429, { error: 'Too many requests.', code: 'too-many-requests' }, { ...cors, 'retry-after': String(context.wait) });
     const route = `${request.method} ${url.pathname}`;
@@ -40,9 +41,11 @@ export async function sandboxRoute(request: IncomingMessage, response: ServerRes
     if (request.method === 'POST' && origin !== undefined && !context.siteOrigins.includes(origin)) throw new SandboxFault('origin-not-allowed');
     if ([...url.searchParams.keys()].length) throw invalid('No query parameters are accepted.');
     let session = readSession(request.headers.cookie, context.secret);
+    // A new session's cookie goes only on a successful join; a refused one starts nothing.
+    let setCookie: string | undefined;
     if (!session && route === 'POST /api/sandbox/session' && pool) {
       const badge = badgeFor({ cookieHeader: undefined, role: 'volunteer', secret: context.secret, secure: context.secure });
-      cors['set-cookie'] = badge.setCookie!; session = readSession(badge.setCookie!, context.secret);
+      setCookie = badge.setCookie!; session = readSession(setCookie, context.secret);
     }
     if (!pool && route !== 'GET /api/sandbox/status') throw new SandboxFault('sandbox-unavailable');
     if (route !== 'GET /api/sandbox/status' && !session) throw new SandboxFault('no-session');
@@ -61,7 +64,7 @@ export async function sandboxRoute(request: IncomingMessage, response: ServerRes
       if (route === 'POST /api/sandbox/session/reset') return pool.reset(s);
       return pool.leave(s);
     });
-    return send(response, route === 'POST /api/sandbox/session/reset' ? 202 : 200, result, cors);
+    return send(response, route === 'POST /api/sandbox/session/reset' ? 202 : 200, result, setCookie ? { ...cors, 'set-cookie': setCookie } : cors);
   } catch (error) {
     const problem = error instanceof SandboxFault ? error : invalid('The request is malformed.');
     return send(response, problem.status, { error: problem.message, code: problem.code }, { ...cors, ...(problem.status === 429 ? { 'retry-after': '1' } : {}) });
@@ -76,7 +79,7 @@ export async function sandboxRoute(request: IncomingMessage, response: ServerRes
  * Authorization headers are ignored, as the handler does, and never forwarded.
  */
 async function workbenchRoute(request: IncomingMessage, response: ServerResponse, url: URL, context: SandboxRouteContext): Promise<void> {
-  const requestId = randomUUID(); const headers = { ...context.cors, 'x-request-id': requestId };
+  const requestId = randomUUID(); const headers = { ...context.cors, 'access-control-expose-headers': 'retry-after, x-request-id', 'x-request-id': requestId };
   const fail = (status: number, error: unknown) => send(response, status, { ok: false, requestId, error: { ...(error as object), requestId } }, { ...headers, ...(status === 429 ? { 'retry-after': '1' } : {}) });
   try {
     if (context.wait > 0) return send(response, 429, { ok: false, requestId, error: new SandboxFault('too-many-requests').stream(requestId) }, { ...headers, 'retry-after': String(context.wait) });

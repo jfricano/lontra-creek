@@ -9,7 +9,7 @@ import { FixtureBackend } from './sandbox-fixture.ts';
 
 export const SERVICE_TOKEN = 's'.repeat(40);
 
-export async function harness(options: { slots?: number; backend?: (now: () => number) => SlotBackend; cap?: AddressCap } = {}) {
+export async function harness(options: { slots?: number; backend?: (now: () => number) => SlotBackend; cap?: AddressCap; client?: (inner: SandboxClient) => SandboxClient; initialize?: boolean } = {}) {
   let now = Date.parse('2026-10-03T00:00:00Z');
   const clock = () => now;
   const fixture = new FixtureBackend(clock);
@@ -18,7 +18,7 @@ export async function harness(options: { slots?: number; backend?: (now: () => n
   let service = new SandboxService({ backend, slots, serviceToken: SERVICE_TOKEN, now: clock });
   let down = false;
   const requests: { path: string; method: string; body: unknown }[] = [];
-  const client: SandboxClient = {
+  const direct: SandboxClient = {
     async request(path, method = 'GET', body) {
       if (down) throw new Error('unreachable');
       requests.push({ path, method, body });
@@ -26,9 +26,10 @@ export async function harness(options: { slots?: number; backend?: (now: () => n
       return JSON.parse(JSON.stringify(await service.dispatch(method, path, (body ?? {}) as Record<string, unknown>))) as { status: number; body: unknown };
     }
   };
+  const client = options.client?.(direct) ?? direct;
   const cap = options.cap ?? new AddressCap();
   const pool = new SandboxPool({ client, slots, gatewayOrigin: 'https://demo.test', now: clock, cap });
-  await service.start(); await pool.initialize();
+  await service.start(); if (options.initialize !== false) await pool.initialize();
   const settle = async () => { for (let i = 0; i < 2; i++) { await service.settled(); pool.refresh(); await pool.run(() => pool.sweep()); } };
   await settle();
   const h = {
@@ -39,6 +40,8 @@ export async function harness(options: { slots?: number; backend?: (now: () => n
     setDown(value: boolean) { down = value; },
     settle,
     async advance(ms: number) { now += ms; await settle(); },
+    /** One maintenance sweep after `ms`, as main.ts's timer runs it: no forced poll. */
+    async sweepAfter(ms: number) { now += ms; await service.settled(); await pool.run(() => pool.sweep()); },
     session: (subject: string, ttlMs = 1_800_000): SessionClaims => ({ subject, role: 'volunteer', exp: now + ttlMs }),
     join: (s: SessionClaims, address = s.subject) => pool.run(async () => { await pool.sweep(); return pool.join(s, address); }),
     view: (s: SessionClaims) => pool.view(s),

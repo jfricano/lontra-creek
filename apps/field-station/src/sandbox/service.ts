@@ -50,7 +50,7 @@ export function publishedBackend(): SlotBackend {
 /** The service's settings. Production and other services' secrets are refused, as for Lab benches. */
 export function sandboxEnvironment(env: NodeJS.ProcessEnv): { serviceToken: string; slots: SlotId[]; host: string; port: number } {
   for (const key of Object.keys(env)) {
-    if (key.startsWith('FIELD_STATION_') || /^KAFKA_.*(PASSWORD|USERNAME)$/.test(key) || /^LAB_BENCH_\d+_(SERVICE|RELAY)_TOKEN$/.test(key)) throw new Error(`Production or Lab secret forbidden: ${key}`);
+    if (key.startsWith('FIELD_STATION_') || /^KAFKA_.*(PASSWORD|USERNAME)$/.test(key) || /^LAB_\w+_TOKEN$/.test(key)) throw new Error(`Production or Lab secret forbidden: ${key}`);
   }
   const serviceToken = env['SANDBOX_SERVICE_TOKEN'];
   if (!serviceToken || serviceToken.length < 32) throw new Error('SANDBOX_SERVICE_TOKEN needs 32 characters.');
@@ -156,7 +156,7 @@ export class SandboxService {
   /** Ends leases past their end even if the field station never says so. */
   sweep(): void { for (const slot of this.#slots.values()) if (slot.lease && slot.lease.expiresAt <= this.#now()) this.return(slot.id, { leaseId: slot.lease.leaseId }); }
 
-  /** One allowlisted operation in the current study. A result that arrives after a reset or return is discarded. */
+  /** One allowlisted operation in the current study. A result or failure that arrives after a reset or return is discarded as `stale-study`. */
   async operate(id: SlotId, request: { leaseId: unknown; studyId: unknown; op: unknown; input: unknown }): Promise<unknown> {
     const slot = this.#slot(id); const study = this.#current(slot, request.leaseId, request.studyId);
     if (!slot.lease!.claimed) throw new SandboxFault('no-lease');
@@ -165,12 +165,14 @@ export class SandboxService {
     if (slot.state !== 'leased' || !runtime) throw new SandboxFault('stale-study');
     const input = checkInput(op, request.input);
     study.counts[op] = (study.counts[op] ?? 0) + 1;
-    const result = await this.#execute(slot, study, runtime, op, input);
-    if (slot.study !== study || slot.runtime !== runtime) throw new SandboxFault('stale-study', undefined, op === 'traces' ? { wbCode: 'TRACE_CURSOR_EXPIRED', wbStatus: 410 } : {});
+    // Closing the old study's runtime may fail its pending calls; that failure is the old study's, not the slot's.
+    const stale = () => slot.study !== study || slot.runtime !== runtime ? new SandboxFault('stale-study', undefined, op === 'traces' ? { wbCode: 'TRACE_CURSOR_EXPIRED', wbStatus: 410 } : {}) : null;
+    const result = await this.#execute(slot, study, runtime, op, input).catch((error: unknown) => { throw stale() ?? error; });
+    const late = stale(); if (late) throw late;
     return result;
   }
   #source(runtime: SlotRuntime, sourceId: string, fixtureOnly = false): void {
-    const source = runtime.base.sources[sourceId];
+    const source = Object.hasOwn(runtime.base.sources, sourceId) ? runtime.base.sources[sourceId] : undefined;
     if (!source || fixtureOnly && source.kind !== 'fixture') throw invalid('sourceId must be one of this sandbox\'s fixture sources.');
   }
   async #execute(slot: Slot, study: Study, runtime: SlotRuntime, op: SandboxOperation, input: unknown): Promise<unknown> {

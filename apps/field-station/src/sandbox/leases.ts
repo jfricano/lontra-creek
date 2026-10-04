@@ -21,6 +21,8 @@ export interface SandboxTimings {
 }
 /** LC11-ADR-04 defaults; the queue idle limit and the poll, failure, and reset timings are the Lab's. */
 export const SANDBOX_DEFAULTS: SandboxTimings = { leaseMs: 600_000, claimMs: 30_000, idleMs: 60_000, queueIdleMs: 90_000, endedMs: 60_000, queueMax: 30, opsPerSecond: 2, pollMs: 5000, failMs: 15_000, resetDeadlineMs: 60_000, retryMs: 30_000 };
+/** How often the field station sweeps the pool: the service poll interval while a slot or study resets. A sweep polls only when the poll is due. */
+export const SANDBOX_SWEEP_MS = 1000;
 interface Lease { id: string; studyId: string; slot: SlotId; granted: number; expires: number; claimed: boolean; resetting: boolean; resetAt: number; ops: number[]; runtime: SandboxRuntime; }
 interface Place { session: SessionClaims; address: string; joined: number; heartbeat: number; lease?: Lease; }
 interface Slot { state: SandboxStatus['slots'][number]['state']; resetAt: number; retryAt: number; }
@@ -41,6 +43,7 @@ export class SandboxPool {
   #bootId: string | null = null;
   #lastSeen: number;
   #nextPoll = 0;
+  #initialized = false;
   #tail: Promise<unknown> = Promise.resolve();
   constructor(options: { client: SandboxClient; slots: SlotId[]; gatewayOrigin: string; cap?: AddressCap; now?: () => number; timings?: Partial<SandboxTimings> }) {
     this.#client = options.client; this.#now = options.now ?? Date.now; this.#origin = options.gatewayOrigin; this.#t = { ...SANDBOX_DEFAULTS, ...options.timings };
@@ -49,8 +52,8 @@ export class SandboxPool {
   }
   run<T>(operation: () => Promise<T>): Promise<T> { const next = this.#tail.then(operation); this.#tail = next.catch(() => undefined); return next; }
   placesFor(address: string): number { let n = 0; for (const place of this.#places.values()) if (place.address === address) n++; return n; }
-  /** Every slot is returned before anything is granted, which also ends whatever an earlier field station left behind. */
-  async initialize(): Promise<void> { await this.run(async () => { for (const slot of this.#slots.keys()) await this.#return(slot, null); }); }
+  /** Every slot is returned before anything is granted, which also ends whatever an earlier field station left behind. Until then the pool is unavailable. */
+  async initialize(): Promise<void> { await this.run(async () => { for (const slot of this.#slots.keys()) await this.#return(slot, null); this.#initialized = true; }); }
 
   async #return(slot: SlotId, leaseId: string | null): Promise<void> {
     const s = this.#slots.get(slot)!; s.state = 'resetting'; s.resetAt = this.#now(); this.#nextPoll = 0;
@@ -65,6 +68,7 @@ export class SandboxPool {
   #holder(slot: SlotId): Place | undefined { for (const place of this.#places.values()) if (place.lease?.slot === slot) return place; return undefined; }
 
   async sweep(): Promise<void> {
+    if (!this.#initialized) return;
     const now = this.#now(); const t = this.#t;
     for (const [subject, ended] of this.#ended) if (now - Date.parse(ended.endedAt) >= t.endedMs) this.#ended.delete(subject);
     for (const place of [...this.#places.values()]) {
@@ -76,7 +80,7 @@ export class SandboxPool {
     for (const [slot, s] of this.#slots) if (s.state === 'unavailable' && this.#service?.availability === 'available' && now >= s.retryAt && !this.#holder(slot)) await this.#return(slot, null);
     const busy = [...this.#places.values()].some(p => p.lease?.resetting) || [...this.#slots.values()].some(s => s.state === 'resetting');
     if (now >= this.#nextPoll) {
-      this.#nextPoll = now + (busy ? 1000 : t.pollMs);
+      this.#nextPoll = now + (busy ? SANDBOX_SWEEP_MS : t.pollMs);
       let status: SandboxServiceStatus | null = null;
       try { const r = await this.#client.request('/sandbox/v1/status'); if (r.status === 200 && isPlainObject(r.body)) status = r.body as unknown as SandboxServiceStatus; } catch { /* below */ }
       if (status) await this.#reconcile(status, now);
@@ -150,20 +154,26 @@ export class SandboxPool {
     if (!lease || active && (!lease.claimed || lease.resetting)) throw new SandboxFault('no-lease');
     return lease;
   }
-  /** A slot call for this session's lease; an unreachable or failing slot ends the lease. */
-  async #call(session: SessionClaims, lease: Lease, path: string, body: unknown): Promise<{ status: number; body: unknown }> {
+  /**
+   * A slot call for this session's lease and study; an unreachable or failing slot ends
+   * the lease. A failure after the lease has moved on to another study (a reset) or
+   * ended is the old study's, so it ends nothing: null, and the caller answers `stale-study`.
+   */
+  async #call(session: SessionClaims, lease: Lease, studyId: string, path: string, body: unknown): Promise<{ status: number; body: unknown } | null> {
     let response: { status: number; body: unknown } | null = null;
     try { response = await this.#client.request(`/sandbox/v1/slots/${lease.slot}/${path}`, 'POST', body); } catch { /* below */ }
     // 5xx answers the slot gave on purpose (a native SOURCE_UNAVAILABLE, a withheld download) pass through; only an unreachable or failed slot ends the lease.
     const answer = response?.body; const error = isPlainObject(answer) && isPlainObject(answer['error']) ? answer['error'] : null;
     const details = error && isPlainObject(error['details']) ? error['details'] : null;
     if (response && isPlainObject(answer) && (response.status < 500 || answer['code'] !== 'slot-unavailable' && details?.['code'] !== 'slot-unavailable' && (error !== null || answer['code'] !== undefined))) return response;
-    const place = this.#places.get(session.subject); if (place?.lease === lease) await this.#end(place, 'slot-failed');
+    const place = this.#places.get(session.subject);
+    if (place?.lease !== lease || lease.studyId !== studyId) return null;
+    await this.#end(place, 'slot-failed');
     throw new SandboxFault('slot-unavailable');
   }
   async claim(session: SessionClaims): Promise<SandboxConnection> {
-    const lease = this.#lease(session); const r = await this.#call(session, lease, 'claim', { leaseId: lease.id, studyId: lease.studyId });
-    if (r.status !== 200) throw fault(r.body);
+    const lease = this.#lease(session); const r = await this.#call(session, lease, lease.studyId, 'claim', { leaseId: lease.id, studyId: lease.studyId });
+    if (r?.status !== 200) throw fault(r?.body);
     lease.claimed = true;
     return { leaseId: lease.id, studyId: lease.studyId, expiresAt: iso(lease.expires), gatewayOrigin: this.#origin, gatewayPath: `/sandbox/${lease.slot}/socket.io` };
   }
@@ -172,8 +182,8 @@ export class SandboxPool {
     const lease = this.#lease(session);
     if (lease.resetting) return this.view(session);
     const studyId = randomUUID(); lease.studyId = studyId; lease.resetting = true; lease.resetAt = this.#now(); this.#nextPoll = 0;
-    const r = await this.#call(session, lease, 'reset', { leaseId: lease.id, studyId });
-    if (r.status >= 300) { const place = this.#places.get(session.subject); if (place?.lease === lease) await this.#end(place, 'slot-failed'); throw new SandboxFault('slot-unavailable'); }
+    const r = await this.#call(session, lease, studyId, 'reset', { leaseId: lease.id, studyId });
+    if (!r || r.status >= 300) { const place = this.#places.get(session.subject); if (place?.lease === lease) await this.#end(place, 'slot-failed'); throw new SandboxFault('slot-unavailable'); }
     return this.view(session);
   }
   #throttle(lease: Lease): void {
@@ -188,10 +198,10 @@ export class SandboxPool {
    */
   async operate(session: SessionClaims, op: SandboxOperation, input: unknown): Promise<unknown> {
     const ticket = await this.run(async () => { await this.sweep(); this.heartbeat(session); const lease = this.#lease(session, true); this.#throttle(lease); return { lease, studyId: lease.studyId }; });
-    const r = await this.#call(session, ticket.lease, 'ops', { leaseId: ticket.lease.id, studyId: ticket.studyId, op, input });
+    const r = await this.#call(session, ticket.lease, ticket.studyId, 'ops', { leaseId: ticket.lease.id, studyId: ticket.studyId, op, input });
     return this.run(async () => {
       const current = this.#places.get(session.subject)?.lease;
-      if (current !== ticket.lease || current.studyId !== ticket.studyId) throw new SandboxFault('stale-study', undefined, op === 'traces' ? { wbCode: 'TRACE_CURSOR_EXPIRED', wbStatus: 410 } : {});
+      if (!r || current !== ticket.lease || current.studyId !== ticket.studyId) throw new SandboxFault('stale-study', undefined, op === 'traces' ? { wbCode: 'TRACE_CURSOR_EXPIRED', wbStatus: 410 } : {});
       const body = r.body as { ok?: unknown; data?: unknown; error?: unknown };
       if (r.status === 200 && isPlainObject(body) && body.ok === true) return body.data;
       throw new WorkbenchFailure(r.status, isPlainObject(body) ? body.error : undefined);
@@ -199,10 +209,10 @@ export class SandboxPool {
   }
   async repro(session: SessionClaims): Promise<SandboxReproDownload> {
     const ticket = await this.run(async () => { await this.sweep(); this.heartbeat(session); const lease = this.#lease(session, true); this.#throttle(lease); return { lease, studyId: lease.studyId }; });
-    const r = await this.#call(session, ticket.lease, 'repro', { leaseId: ticket.lease.id, studyId: ticket.studyId });
+    const r = await this.#call(session, ticket.lease, ticket.studyId, 'repro', { leaseId: ticket.lease.id, studyId: ticket.studyId });
     return this.run(async () => {
       const current = this.#places.get(session.subject)?.lease;
-      if (current !== ticket.lease || current.studyId !== ticket.studyId) throw new SandboxFault('stale-study');
+      if (!r || current !== ticket.lease || current.studyId !== ticket.studyId) throw new SandboxFault('stale-study');
       if (r.status !== 200) throw fault(r.body);
       return r.body as SandboxReproDownload;
     });
@@ -220,9 +230,21 @@ export class WorkbenchFailure extends Error {
   readonly error: StreamError;
   constructor(status: number, raw: unknown) {
     super('Workbench operation failed.'); this.status = status >= 400 && status < 600 ? status : 502;
-    const e = isPlainObject(raw) ? raw : {}; const details = isPlainObject(e['details']) && JSON.stringify(e['details']).length <= 16_384 ? e['details'] as Record<string, Json> : undefined;
+    const e = isPlainObject(raw) ? raw : {}; const details = bounded(e['details']);
     this.error = streamError(isErrorCode(e['code']) ? e['code'] : 'INTERNAL', { message: typeof e['message'] === 'string' ? e['message'].slice(0, 300) : 'The sandbox could not answer.', ...(typeof e['retryable'] === 'boolean' ? { retryable: e['retryable'] } : {}), ...(details ? { details } : {}) });
   }
+}
+
+const DETAILS_BYTES = 16_384;
+/** The slot's error details, at most 16 KB: a long `issues` list is cut and flagged (`issuesTruncated`), and `code` is always kept. */
+function bounded(raw: unknown): Record<string, Json> | undefined {
+  if (!isPlainObject(raw)) return undefined;
+  if (JSON.stringify(raw).length <= DETAILS_BYTES) return raw as Record<string, Json>;
+  const code = typeof raw['code'] === 'string' ? { code: raw['code'].slice(0, 64) } : {};
+  if (!Array.isArray(raw['issues'])) return 'code' in code ? code : undefined;
+  const issues: Json[] = []; let size = 256;
+  for (const issue of raw['issues'] as Json[]) { size += JSON.stringify(issue).length + 1; if (size > DETAILS_BYTES) break; issues.push(issue); }
+  return { ...code, issues, issuesTruncated: true };
 }
 
 export function configuredSandbox(env: NodeJS.ProcessEnv, gatewayOrigin: string, cap?: AddressCap): SandboxPool | undefined {

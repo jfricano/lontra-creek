@@ -44,6 +44,7 @@ export class FixtureRuntime implements SlotRuntime {
   /** Set to hold the next call until released, to test late answers. */
   hold: { release: () => void } | null = null;
   holdNext = false;
+  #fail: ((error: unknown) => void) | null = null;
   /** Overrides the export content, to test the download guard. */
   exportContent: string | null = null;
   readonly #backend: FixtureBackend;
@@ -53,7 +54,7 @@ export class FixtureRuntime implements SlotRuntime {
   async call<O extends SandboxOperation>(op: O, input: SandboxRequest<O>): Promise<SandboxResponse<O>> {
     if (this.closed) throw new Error('Runtime closed.');
     this.calls.push({ op, input });
-    if (this.holdNext) { this.holdNext = false; await new Promise<void>(release => { this.hold = { release }; }); }
+    if (this.holdNext) { this.holdNext = false; await new Promise<void>((release, fail) => { this.hold = { release }; this.#fail = fail; }); }
     const sources = Object.entries(this.base.sources).map(([sourceId, s]) => ({ sourceId, kind: s.kind, status: 'healthy' as const }));
     const answer = ((): unknown => {
       switch (op as SandboxOperation) {
@@ -80,13 +81,15 @@ export class FixtureRuntime implements SlotRuntime {
     return answer as SandboxResponse<O>;
   }
   async revoke(): Promise<void> { this.revoked++; this.previews.clear(); }
-  async close(): Promise<void> { if (this.#backend.failClose > 0) { this.#backend.failClose--; throw new Error('Cleanup failed.'); } this.closed = true; }
+  async close(): Promise<void> { if (this.#backend.failClose > 0) { this.#backend.failClose--; throw new Error('Cleanup failed.'); } this.closed = true; if (this.#backend.failPending !== null) this.#fail?.(this.#backend.failPending); }
 }
 
 export class FixtureBackend implements SlotBackend {
   readonly opened: FixtureRuntime[] = [];
   failClose = 0;
   failOpen = 0;
+  /** When set, closing a runtime fails its held call with this error, as a real gateway's pending calls fail when it stops. */
+  failPending: unknown = null;
   /** While set, opening a runtime waits for it, to observe a slot mid-reset. */
   gate: Promise<void> | null = null;
   operations: readonly SandboxOperation[] | null = null;

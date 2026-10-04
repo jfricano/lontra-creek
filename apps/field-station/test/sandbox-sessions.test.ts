@@ -11,6 +11,7 @@ import { LabError } from '../src/lab/errors.ts';
 import { AddressCap } from '../src/places.ts';
 import type { SessionClaims } from '../src/sessions.ts';
 import { SandboxService } from '../src/sandbox/service.ts';
+import { StreamOtterError } from 'streamotter/contracts';
 import { code, harness, wb } from './support/sandbox-harness.ts';
 
 test('A44: a slot is allocated only by an explicit join; status, view, heartbeat, and discovery allocate nothing', async () => {
@@ -165,6 +166,41 @@ test('A42: reset rotates the study and invalidates previews, trace cursors, and 
   await h.settle();
   const newest = h.fixture.current(1); assert.notEqual(newest, fresh); assert.equal(newest.traces.length, 0, 'the late call had no effect on the new study');
   assert.equal(h.view(s).status, 'active');
+
+  // A late failure: closing the old study's runtime fails its pending call, as a real gateway does. It is the old study's failure, not the slot's.
+  h.fixture.failPending = new Error('Runtime closed.');
+  newest.holdNext = true;
+  const failed = h.opSlow(s, 'traces', {});
+  while (!newest.hold) await new Promise(r => setImmediate(r));
+  await h.reset(s);
+  await assert.rejects(failed, code('stale-study'));
+  assert.ok(newest.closed); await h.settle();
+  const kept = h.view(s); assert.ok(kept.status === 'active', 'the reset kept the lease'); assert.equal(kept.leaseId, first.leaseId); assert.equal(kept.slot, first.slot);
+});
+
+test('A42: a call from the old study that fails during a reset ends nothing: stale-study, and the same slot and lease', async () => {
+  // The transport to the slot fails after the reset (a timeout, a dropped connection), so only the field station sees it.
+  let gate: Promise<void> | null = null; let entered = false;
+  const h = await harness({ slots: 1, client: inner => ({ async request(path, method, body) { if (gate && path.endsWith('/ops')) { entered = true; await gate; throw new Error('socket hang up'); } return inner.request(path, method, body); } }) });
+  const s = h.session('s'); const next = h.session('next'); await h.join(s); await h.claim(s); await h.join(next);
+  const first = h.view(s); assert.ok(first.status === 'active');
+  let open!: () => void; gate = new Promise(r => { open = r; });
+  const dropped = h.opSlow(s, 'health');
+  while (!entered) await new Promise(r => setImmediate(r));
+  gate = null; await h.reset(s); open();
+  await assert.rejects(dropped, code('stale-study'));
+  await h.settle(); assert.equal(h.view(s).status, 'active'); assert.equal(h.view(next).status, 'queued', 'the slot was not given away');
+
+  // The native management service fails a pending call with INTERNAL as its runtime closes.
+  const runtime = h.fixture.current(1); h.fixture.failPending = new StreamOtterError('INTERNAL', { message: 'Gateway stopped.' });
+  runtime.holdNext = true;
+  const internal = h.opSlow(s, 'source-checks', { sourceId: 'creek' });
+  while (!runtime.hold) await new Promise(r => setImmediate(r));
+  await h.reset(s);
+  await assert.rejects(internal, code('stale-study'));
+  await h.settle();
+  const kept = h.view(s); assert.ok(kept.status === 'active'); assert.equal(kept.leaseId, first.leaseId); assert.equal(kept.slot, first.slot);
+  assert.equal(h.view(next).status, 'queued');
 });
 
 test('A42: two concurrent sessions never share a slot, candidate, traces, previews, or downloads', async () => {
@@ -194,4 +230,10 @@ test('A42: the service refuses another lease, an old study, or an unclaimed leas
   const wrongLease = await call({ leaseId: 'someone-else', studyId: v.studyId }); assert.equal((wrongLease.body as { error: { details: { code: string } } }).error.details.code, 'no-lease');
   const oldStudy = await call({ leaseId: v.leaseId, studyId: 'previous-study' }); assert.equal((oldStudy.body as { error: { details: { code: string } } }).error.details.code, 'stale-study');
   assert.equal((await service.dispatch('PUT', '/sandbox/v1/slots/1/lease', { leaseId: 'x', studyId: 'y', expiresAt: new Date(h.clock() + 1000).toISOString() })).status, 503, 'a leased slot cannot be leased again');
+  // A call the old study's closing runtime fails is answered as stale-study, not as a failed slot.
+  const runtime = h.fixture.current(1); h.fixture.failPending = new Error('Runtime closed.'); runtime.holdNext = true;
+  const late = call({ leaseId: v.leaseId, studyId: v.studyId });
+  while (!runtime.hold) await new Promise(r => setImmediate(r));
+  service.reset(1, { leaseId: v.leaseId, studyId: 'next-study' });
+  const answer = await late; assert.equal(answer.status, 401); assert.equal((answer.body as { error: { details: { code: string } } }).error.details.code, 'stale-study');
 });

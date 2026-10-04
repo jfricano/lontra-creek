@@ -9,7 +9,7 @@ import { FixtureBackend } from './sandbox-fixture.ts';
 
 export const SERVICE_TOKEN = 's'.repeat(40);
 
-export async function harness(options: { slots?: number; backend?: (now: () => number) => SlotBackend; cap?: AddressCap } = {}) {
+export async function harness(options: { slots?: number; backend?: (now: () => number) => SlotBackend; cap?: AddressCap; client?: (inner: SandboxClient) => SandboxClient } = {}) {
   let now = Date.parse('2026-10-03T00:00:00Z');
   const clock = () => now;
   const fixture = new FixtureBackend(clock);
@@ -18,7 +18,7 @@ export async function harness(options: { slots?: number; backend?: (now: () => n
   let service = new SandboxService({ backend, slots, serviceToken: SERVICE_TOKEN, now: clock });
   let down = false;
   const requests: { path: string; method: string; body: unknown }[] = [];
-  const client: SandboxClient = {
+  const direct: SandboxClient = {
     async request(path, method = 'GET', body) {
       if (down) throw new Error('unreachable');
       requests.push({ path, method, body });
@@ -26,6 +26,7 @@ export async function harness(options: { slots?: number; backend?: (now: () => n
       return JSON.parse(JSON.stringify(await service.dispatch(method, path, (body ?? {}) as Record<string, unknown>))) as { status: number; body: unknown };
     }
   };
+  const client = options.client?.(direct) ?? direct;
   const cap = options.cap ?? new AddressCap();
   const pool = new SandboxPool({ client, slots, gatewayOrigin: 'https://demo.test', now: clock, cap });
   await service.start(); await pool.initialize();

@@ -204,7 +204,7 @@ Unknown keys, query parameters on other operations, a missing `Content-Type: app
 | A `POST` without `X-StreamOtter-Workbench: 1`, or a foreign `Origin` | 403 | `FORBIDDEN` | `origin-not-allowed` |
 | No session | 401 | `UNAUTHENTICATED` | `no-session` |
 | No active lease (none, queued, ready, resetting, or ended) | 401 | `UNAUTHENTICATED` | `no-lease` |
-| An answer for a study that was reset or ended while the request was in flight | 401 | `UNAUTHENTICATED` | `stale-study` |
+| An answer or failure for a study that was reset or ended while the request was in flight | 401 | `UNAUTHENTICATED` | `stale-study` |
 | A trace cursor from another study | 410 | `TRACE_CURSOR_EXPIRED` | `stale-study` |
 | Over the request or operation budget | 429 | `OVERLOADED` | `too-many-requests` |
 | Sandbox not configured, or the slot failed | 503 | `INTERNAL` | `sandbox-unavailable`, `slot-unavailable` |
@@ -242,7 +242,7 @@ The lease state machine is the Lab's (Lab contract §4) with the sandbox's own q
 
 - **Explicit allocation.** Only `POST /api/sandbox/session` creates a place or lease. Status, discovery, heartbeats, and page loads never do.
 - **Reset and return** invalidate the study at once: the field station moves the lease to a new `studyId` before calling the slot, and the slot switches its current study before cleanup. Cleanup then revokes the study's preview connections before anything else, closes its runtime, and opens a fresh one, so preview tokens, trace cursors, preview session IDs, and late answers from the old study have no effect on the new one. Operations are refused while a study resets.
-- **Late answers.** The field station holds its lock only to check the lease before an operation and to check it again after the slot answers; an answer for a study that is no longer current is discarded (`stale-study`). The slot does the same with its own study.
+- **Late answers.** The field station holds its lock only to check the lease before an operation and to check it again after the slot answers; an answer for a study that is no longer current is discarded (`stale-study`). The slot does the same with its own study. A call that fails after its study was reset (closing the old runtime fails its pending calls) is also the old study's: it is answered `stale-study` and never ends the lease, which keeps its slot.
 - **Cleanup failure** marks the slot `unavailable`; it is never handed out until a cleanup of the same runtime succeeds (retried every 30 s).
 - **Restarts.** On startup the field station returns every slot before granting anything. A sandbox service restart (a new `bootId`) ends its leases as `sandbox-restarted`.
 - **Isolation:** two sessions never share a slot, a runtime, a candidate, traces, previews, or downloads (LC11-A42).
@@ -283,6 +283,7 @@ The service refuses to start with production or Lab secrets in its environment (
 
 ## Changes
 
+- **Draft 0.2, review fixes (October 4, 2026).** §§6 and 8: a call from a study that was reset while it ran is answered `stale-study` whether it succeeded or failed, and never ends the lease.
 - **Draft 0.2, W3 clarification (October 3, 2026).** §4 records how the page uses the lifecycle routes (no allocation on open, reload, or restore; heartbeat; `pagehide` return; 404 status as not enabled), that unconfigured lifecycle routes other than `status` answer 503 `sandbox-unavailable` (as W2 implements), and the conditions under which the page mounts the published workbench. No route, payload, or type changed.
 - **Draft 0.2 (October 3, 2026, W2).** §6's single `POST /api/sandbox/ops` replaced by the WHC-1 rev 0.1 host API at `/api/sandbox/wb/v1` (discovery, WHC-1 operation names and paths, `Result<T>` envelope, StreamOtter error codes, `X-StreamOtter-Workbench` header on `POST`), aligned with rev 0.2 §9 (`workbench` in discovery, discovery behind the session check, `createManagementHandler`'s check order, `Authorization` ignored). `requestId`/`studyId` request fields removed: the study is bound to the session on the server. `repro.export` became `POST /api/sandbox/session/repro`. §3 adds the WHC-1 types; `stale-study` is now "a study the session has since reset or ended". §5 says how refusals are reported. §§7–10 add the bundle contents, the download guard, the timings table, the private service API, and configuration.
 - **Draft 0.1 (October 3, 2026, P0).** First draft.

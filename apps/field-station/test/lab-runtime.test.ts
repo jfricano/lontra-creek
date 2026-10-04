@@ -16,7 +16,7 @@ import { BenchRuntime, POLL_GRACE_MS } from '../src/lab/runtime.ts';
 
 const SERVICE = 's'.repeat(32);
 /** What the stand-ins answer; each test sets what it needs. */
-const world = { sources: 'healthy' as 'healthy' | 'paused' | 'fail', relayFails: false, sourcePolls: 0, resume: 'ok' as 'ok' | 'conflict' };
+const world = { sources: 'healthy' as 'healthy' | 'paused' | 'fail', relayFails: false, sourcePolls: 0, resume: 'ok' as 'ok' | 'conflict', /** Source polls (by number) that fail on their own. */ failPolls: new Set<number>() };
 
 function listen(server: Server): Promise<string> { return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(`http://127.0.0.1:${(server.address() as AddressInfo).port}`))); }
 const close = (server: Server) => { server.closeAllConnections(); return new Promise<void>(resolve => server.close(() => resolve())); };
@@ -28,7 +28,7 @@ const management = createServer((request, response) => {
   if (path === '/management/v1/traces') return json(response, 200, { ok: true, data: { items: [], nextCursor: null } });
   if (path === '/management/v1/sources') {
     world.sourcePolls++;
-    if (world.sources === 'fail') return json(response, 503, { ok: false, error: { code: 'SOURCE_UNAVAILABLE' } });
+    if (world.sources === 'fail' || world.failPolls.has(world.sourcePolls)) return json(response, 503, { ok: false, error: { code: 'SOURCE_UNAVAILABLE' } });
     return json(response, 200, { ok: true, data: { items: [{ sourceId: 'field', status: world.sources, ...(world.sources === 'paused' ? { reason: 'HANDLER_FAILED' } : {}) }] } });
   }
   json(response, 404, { ok: false });
@@ -43,7 +43,7 @@ let managementOrigin = '';
 let relayOrigin = '';
 before(async () => { managementOrigin = await listen(management); relayOrigin = await listen(relay); });
 after(async () => { await close(management); await close(relay); });
-beforeEach(() => { Object.assign(world, { sources: 'healthy', relayFails: false, sourcePolls: 0, resume: 'ok' }); });
+beforeEach(() => { Object.assign(world, { sources: 'healthy', relayFails: false, sourcePolls: 0, resume: 'ok', failPolls: new Set() }); });
 
 async function bench(t: import('node:test').TestContext) {
   let now = Date.parse('2026-10-03T00:00:00Z');
@@ -70,6 +70,22 @@ describe('a bench polling its gateway', () => {
     assert.equal(runtime.status().state, 'ready', 'a successful poll restarts the grace period');
     advance(1); await runtime.tick();
     assert.equal(runtime.status().state, 'failed');
+  });
+
+  test('one failed poll during a gateway restart, before the stop or after the start, keeps the lease', async t => {
+    const { runtime, at, advance } = await bench(t);
+    await runtime.run(() => runtime.lease('lease-1', new Date(at() + 120_000).toISOString()));
+    const restart = async () => { await runtime.run(() => runtime.action('lease-1', 'gateway.restart')); await runtime.run(async () => undefined); advance(1000); };
+    world.failPolls.add(world.sourcePolls + 1); // the old gateway's last drain
+    await restart();
+    assert.deepEqual([runtime.status().state, runtime.status().scenario.gateway], ['leased', 'running']);
+    world.failPolls.add(world.sourcePolls + 2); // the new gateway's first poll
+    await restart();
+    assert.deepEqual([runtime.status().state, runtime.status().scenario.gateway], ['leased', 'running']);
+    assert.equal(runtime.status().readiness.control, false, 'the failed poll starts the grace clock, as a background poll\'s does');
+    await runtime.tick();
+    assert.equal(runtime.status().readiness.control, true, 'the next poll clears it');
+    assert.equal(runtime.status().state, 'leased');
   });
 
   test('a long operation holding the queue leaves at most one poll waiting behind it', async t => {

@@ -142,8 +142,11 @@ export class BenchRuntime {
   #config() { const study = this.#study; if (!study) throw new Error('No study.'); return benchConfig(this.#settings.number, { generation: study.generation, host: this.#env['BENCH_HOST'] ?? '0.0.0.0', port: Number(this.#env['BENCH_PORT'] ?? 7400), brokers: (this.#env['BENCH_KAFKA_BROKERS'] ?? `lab-${this.#settings.number}-kafka:${9100 + this.#settings.number}`).split(','), caFile: this.#env['KAFKA_CA_FILE'] ?? '/etc/lontra/kafka/ca.pem', consumerGroup: study.consumerGroup, allowedOrigins: (this.#env['SITE_ORIGIN'] ?? 'https://streamotter.app').split(',') }); }
   /** Runs `fn` only while `scope` is the open study; otherwise counts a late callback against that study. */
   #within(scope: StudyScope, fn: () => void): void { if (scope.closed || scope !== this.#scope) { scope.counts.lateCallbacks++; return; } fn(); }
-  /** Starts the gateway for the current study. A source that isn't healthy afterwards is reported, not treated as failure. */
-  async #startGateway(): Promise<void> {
+  /**
+   * Starts the gateway for the current study. A source that isn't healthy afterwards is reported, not treated as failure.
+   * With `graced`, a failed first poll starts the poll grace clock, as a background poll's would, instead of failing the start.
+   */
+  async #startGateway(graced = false): Promise<void> {
     const config = this.#config(); const scope = this.#scope;
     const handlers = benchHandlers(this.#settings.number, { authenticate: token => this.authenticate(token), serviceToken: this.#settings.serviceToken, snapshotOrigin: this.#settings.snapshotOrigin, calibration: () => this.#scenario.calibration === 'present',
       record: item => this.#within(scope, () => { if (item.kind === 'record') scope.counts[item.outcome === 'failed' ? 'recordsFailed' : 'recordsProcessed']++; this.#feed.add(item); }) });
@@ -151,7 +154,7 @@ export class BenchRuntime {
     const principals = await this.#managementCall<{ items: unknown[] }>('dev/principals'); this.#principalCount = principals.items.length;
     requireNoDevelopmentPrincipals(principals.items);
     this.#traceCursor = null; this.#scenario.gateway = 'running'; this.#pollFailingSince = null;
-    await this.#poll(false);
+    try { await this.#poll(false); } catch (error) { if (!graced) throw error; this.#pollFailingSince = this.#now(); }
   }
   async #stopGateway(): Promise<void> { this.#scenario.gateway = 'restarting'; this.#satellite?.disconnect(); this.#satellite = undefined; this.#scenario.satellite = 'idle'; await this.#management?.close(); this.#management = undefined; await this.#gateway?.stop(); this.#gateway = undefined; }
   async #deleteGroup(group: string): Promise<void> { const connection = benchConfig(this.#settings.number, { brokers: (this.#env['BENCH_KAFKA_BROKERS'] ?? `lab-${this.#settings.number}-kafka:${9100 + this.#settings.number}`).split(',') }).connections['field']!; const kafka = new Kafka({ brokers: [...connection.brokers], ssl: { ca: [readFileSync(this.#env['KAFKA_CA_FILE'] ?? '/etc/lontra/kafka/ca.pem', 'utf8')] }, sasl: { mechanism: 'scram-sha-512', username: this.#env['KAFKA_LAB_USERNAME']!, password: this.#env['KAFKA_LAB_PASSWORD']! }, logLevel: 0 }); const admin = kafka.admin(); try { await admin.connect(); await admin.deleteGroups([group]); }
@@ -289,9 +292,10 @@ export class BenchRuntime {
       // paused keeps the lease; only a gateway that can't start fails the bench.
       void this.run(async () => {
         if (scope.closed) return;
-        await this.#poll(true); await this.#stopGateway(); this.#feed.add({ kind: 'bench', event: 'gateway-stopped' });
+        // Draining the old gateway's traces is best effort: one slow or failed poll changes nothing, and the `gap` below covers what it missed.
+        await this.#poll(true).catch(() => undefined); await this.#stopGateway(); this.#feed.add({ kind: 'bench', event: 'gateway-stopped' });
         study.restarts.gateway++; await this.#store.save(study);
-        await this.#startGateway(); this.#feed.add({ kind: 'bench', event: 'gateway-started' }); this.#feed.add({ kind: 'bench', event: 'gap' });
+        await this.#startGateway(true); this.#feed.add({ kind: 'bench', event: 'gateway-started' }); this.#feed.add({ kind: 'bench', event: 'gap' });
       }).catch(() => { if (!scope.closed) this.#state = 'failed'; });
     }
     if (action === 'satellite.start') {

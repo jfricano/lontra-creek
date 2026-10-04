@@ -1,6 +1,7 @@
 ---
 import ContentPage from "../components/ContentPage.astro";
 import { REACHES, STATIONS } from "@lontra-creek/sim";
+import { CREEK_PATH, REACH_MARKERS } from "../creek-map.ts";
 const chapters = ["Dawn survey", "The creek rises", "Into Slate Canyon", "The protected holt", "Hand over the tablet", "Log a sighting"];
 ---
 <ContentPage title="A field trip through live state" eyebrow="Lontra Creek · guided demo" description="Follow one real subscription from its first snapshot through a lost connection, an access check, and a new identity.">
@@ -31,7 +32,7 @@ const chapters = ["Dawn survey", "The creek rises", "Into Slate Canyon", "The pr
         </details>
       </section>
       <section class="content-card" aria-labelledby="gauge-title"><h2 id="gauge-title">Kestrel Bend · LC-02</h2><p>Subscription <strong data-walk-state>idle</strong></p><dl class="gauge-values"><div><dt>Flow</dt><dd><span data-walk-flow>—</span> cfs</dd></div><div><dt>Water</dt><dd><span data-walk-temp>—</span> °C</dd></div><div><dt>Revision</dt><dd data-walk-revision>—</dd></div><div><dt>Snapshot count</dt><dd data-walk-epoch>0</dd></div></dl><p>Snapshot count labels observed synchronization attempts; it is not the gateway's internal epoch ID.</p>
-        <svg viewBox="0 0 520 310" role="img" aria-label="Schematic of the fictional 14.2 kilometre Lontra Creek, with four gauge stations." class="creek-map"><path d="M75 25 C370 50 40 115 300 140 S80 240 410 280" fill="none" stroke="var(--accent)" stroke-width="8"/>{REACHES.map((reach,i)=><g><circle cx={70+i*57} cy={30+i*39} r="5" fill="var(--ink)"/><text x={82+i*57} y={24+i*39} font-size="12" fill="var(--ink)">{reach.name}</text></g>)}</svg>
+        <svg viewBox="0 0 520 310" role="img" aria-label="Schematic of the fictional 14.2 kilometre Lontra Creek, with four gauge stations." class="creek-map"><path d={CREEK_PATH} fill="none" stroke="var(--accent)" stroke-width="8"/>{REACH_MARKERS.map(marker=><g><circle cx={marker.x} cy={marker.y} r="5" fill="var(--ink)"/><text x={marker.labelX} y={marker.labelY} text-anchor={marker.anchor} font-size="12" fill="var(--ink)">{marker.name}</text></g>)}</svg>
         <ul>{STATIONS.map(station=><li>{station.id} · {station.name}</li>)}</ul><p data-map-holt hidden></p>
       </section>
     </div>

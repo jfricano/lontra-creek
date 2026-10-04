@@ -21,7 +21,7 @@ import { describe, test, type TestContext } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { advanceTo, createWorld, currentEmissions } from '@lontra-creek/sim';
 import type { BenchId, BenchIncident, BenchIncidentFacts, BenchIntentRequest, BenchOperation, BenchStatus, LabIncidentView, LabOperation, LabScenarioId, RecordCoordinates } from '../src/lab/contract.ts';
-import { LabError } from '../src/lab/errors.ts';
+import { BenchNotFound, LabError } from '../src/lab/errors.ts';
 import { runsUnder } from '../src/lab/bench.ts';
 import { INSTALLED_INTEGRITY, type Verification } from '../src/lab/capabilities.ts';
 import { compose } from '../src/lab/intents.ts';
@@ -78,7 +78,8 @@ function scriptedBench(now: () => number) {
       operations.set(request.operationId, operation); return structuredClone(operation) as T;
     }
     const operation = /^\/bench\/v1\/operations\/([^?]+)/.exec(path);
-    if (operation) { const found = operations.get(operation[1]!); if (!found) throw new LabError('bench-unavailable', 503); return structuredClone(found) as T; }
+    // An operation the bench doesn't have answers 404, as after a bench process restart (benchError).
+    if (operation) { const found = operations.get(operation[1]!); if (!found) throw new BenchNotFound(); return structuredClone(found) as T; }
     return structuredClone(status) as T;
   } };
   return { client, status, facts, sent, operations, outcomes, hooks, setRestarting: (value: boolean) => { restarting = value; }, setFailing: (value: boolean) => { failing = value; } };
@@ -142,6 +143,34 @@ describe('the answers to an intent, in order (section 12.5)', () => {
     const second = await l.submit({ requestId: 'req-00000002', intent: 'scenario.start', scenario: 'fouled-sensor' });
     assert.equal(second.status, 'accepted', 'accepted once the first is final');
     assert.deepEqual(l.bench.sent.map(request => request.scenario), ['calibration-blip', 'fouled-sensor']);
+  });
+
+  test('an operation the bench no longer knows (its process restarted) ends unknown at once, not after the wait', async t => {
+    const l = await lab(t);
+    l.bench.outcomes.set('scenario.start', 'hold');
+    const op = await l.submit({ intent: 'scenario.start', scenario: 'calibration-blip' });
+    await sleep(5);
+    l.bench.operations.clear();
+    const done = await l.settled(op.operationId);
+    assert.equal(done.status, 'unknown');
+    assert.match(done.detail!, /bench restarted/);
+    assert.match(done.detail!, /not repeated/);
+  });
+
+  test('a prepare-coverage that fails for another reason than the lease ending says so', async t => {
+    const l = await lab(t);
+    const started = await l.submit({ intent: 'scenario.start', scenario: 'bad-projection' }); l.advance(1000);
+    await l.settled(started.operationId);
+    l.bench.facts.incident = incident({ position: { ...l.published[0]!.at } });
+    const errors: unknown[] = [];
+    t.mock.method(console, 'error', (message: unknown) => { errors.push(message); });
+    t.mock.method(l.studies, 'prepareCoverage', async () => { throw new Error('ledger write failed'); });
+    const prepare = await l.submit({ intent: 'scenario.prepare-coverage', expectedRevision: revisionOf(await l.view()) });
+    const done = await l.settled(prepare.operationId);
+    assert.equal(done.status, 'failed');
+    assert.match(done.detail!, /Snapshot coverage couldn't be released/);
+    assert.doesNotMatch(done.detail!, /lease ended/);
+    assert.ok(errors.some(message => /preparing coverage failed: ledger write failed/.test(String(message))), 'the cause is logged for the operator');
   });
 
   test('preconditions: no incident for incident intents, nothing to restore, no withheld run, a start while an incident is open', async t => {

@@ -21,9 +21,9 @@
 import { randomBytes } from 'node:crypto';
 import { StaleMutationError, type LedgerEntry } from './coverage.ts';
 import type { BenchId, BenchIncident, BenchIncidentFacts, BenchIntentRequest, BenchOperation, LabIncidentSummary, LabIncidentView, LabIntentRequest, LabOperation, LabScenarioId } from './contract.ts';
-import { LabError } from './errors.ts';
+import { BenchNotFound, LabError } from './errors.ts';
 import { scenarioRuns, type ScenarioRun } from './scenarios.ts';
-import type { LabStudies, ScenarioSink } from './studies.ts';
+import { StudyClosedError, type LabStudies, type ScenarioSink } from './studies.ts';
 
 /** How long an ended lease's operations and last projection stay readable (sections 12.6 and 12.7). */
 export const ENDED_KEPT_MS = 60_000;
@@ -193,6 +193,8 @@ const DETAIL: Record<string, string> = {
   'integrity-fault-open': 'An integrity fault is still open on this source.',
   'study-closed': 'The lease ended before this finished.',
   'publish-failed': 'The scenario\'s records couldn\'t be published.',
+  'prepare-failed': 'Snapshot coverage couldn\'t be released: look at the incident again.',
+  'bench-restarted': 'The bench restarted before this finished, so its outcome couldn\'t be observed. It is not repeated: look at the incident again.',
   'advance-timeout': 'StreamOtter didn\'t advance past the bad-projection record in time.',
   'not-applicable': 'That doesn\'t apply to the bench\'s current state.'
 };
@@ -354,7 +356,12 @@ export class LabIntents {
     const run = (await this.#studies!.runs(state.bench, state.studyId!)).find(entry => entry.status === 'withheld');
     if (!run) return { status: 'refused', outcome: 'not-applicable' };
     try { await this.#studies!.prepareCoverage(state.bench, state.studyId!, run.runId); }
-    catch { return { status: state.ended !== null ? 'cancelled' : 'failed', outcome: 'study-closed' }; }
+    catch (error) {
+      if (state.ended !== null || error instanceof StudyClosedError) return { status: 'cancelled', outcome: 'study-closed' };
+      // The visitor sees only that coverage couldn't be released; the operator needs the cause.
+      console.error(`${iso(this.#now())} Lab bench ${state.bench}: preparing coverage failed: ${(error as Error).message}`);
+      return { status: 'failed', outcome: 'prepare-failed' };
+    }
     this.#step(state, 'Snapshot coverage released: the study\'s authoritative update for the reading is served');
     return { status: 'succeeded', outcome: 'prepared' };
   }
@@ -373,7 +380,10 @@ export class LabIntents {
       if (state.ended !== null) return { status: 'cancelled', outcome: 'study-closed' };
       if (this.#now() >= deadline) return { status: 'unknown', outcome: 'timeout' };
       await new Promise(resolve => setTimeout(resolve, this.#pollMs));
-      seen = await this.#pool.bench<BenchOperation>(state.bench, `/bench/v1/operations/${operation.operationId}?leaseId=${encodeURIComponent(state.leaseId)}`).catch(() => seen);
+      const next = await this.#pool.bench<BenchOperation>(state.bench, `/bench/v1/operations/${operation.operationId}?leaseId=${encodeURIComponent(state.leaseId)}`).catch((error: unknown) => error instanceof BenchNotFound ? null : seen);
+      // The bench no longer knows the operation: its process restarted, and what the operation did can't be observed.
+      if (!next) return { status: 'unknown', outcome: 'bench-restarted' };
+      seen = next;
     }
     return { status: seen.status, outcome: seen.outcome ?? '' };
   }

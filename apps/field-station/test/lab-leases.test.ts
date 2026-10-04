@@ -4,7 +4,7 @@ import type { BenchId, BenchStatus } from '../src/lab/contract.ts';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { benchError, configuredLab, LeasePool, type BenchClient } from '../src/lab/leases.ts';
-import { LabError, MAX_LEASE_MS } from '../src/lab/errors.ts';
+import { BenchNotFound, LabError, MAX_LEASE_MS } from '../src/lab/errors.ts';
 import { LabFeed } from '../src/lab/feed.ts';
 import { benchConfig, benchEnvironment, benchHandlers } from '../src/lab/bench.ts';
 import { createGateway } from 'streamotter/gateway';
@@ -119,6 +119,9 @@ test("a bench's error codes reach the visitor as the contract names them", () =>
   assert.deepEqual(mapped(429, 'too-many-actions'), ['too-many-actions', 429]);
   assert.deepEqual(mapped(400), ['invalid-request', 400]);
   for (const status of [401, 404, 500, 502]) assert.deepEqual(mapped(status, 'no-lease'), ['bench-unavailable', 503]);
+  // A 404 is the bench failing like the rest, marked so an operation lookup can tell an operation the bench forgot.
+  assert.ok(benchError(404, undefined) instanceof BenchNotFound);
+  for (const status of [401, 500]) assert.ok(!(benchError(status, undefined) instanceof BenchNotFound));
 });
 
 test('over HTTP, a bench no-lease stays no-lease and a bench failure ends the lease as bench-failed', async () => {

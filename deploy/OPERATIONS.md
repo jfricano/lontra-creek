@@ -221,16 +221,18 @@ any host deployment**: `operations/deploy.sh`, `health.sh`, and `checkpoint.sh`
 do not add it, and enabling it on the host is a separate, owner-approved
 change. `Caddyfile.shared` and `compose.shared*.yaml` have no sandbox routes yet.
 
-`make-secrets.sh` writes `SANDBOX_SERVICE_TOKEN` into new env files only. An
-existing env file (a host's, or a local Lab directory from before the sandbox)
-needs it appended once, in a root-only session for a host:
+`make-secrets.sh` writes `SANDBOX_SERVICE_TOKEN` into new env files only. A
+local Lab directory from before the sandbox needs it appended once (`npm run
+dev:lab` does this for its own `.local/` env file when missing):
 
 ```sh
 printf 'SANDBOX_SERVICE_TOKEN=%s\n' "$(openssl rand -hex 32)" >> <env-file>
 ```
 
 then recreate `field-station` and `sandbox` together so both read the same value.
-`npm run dev:lab` appends it to its own `.local/` env file when missing.
+No host env file gets the token until the owner approves the sandbox there: no
+release layout runs the overlay, and the token belongs to that change, made the
+same way in a root-only session.
 
 ## Kafka authorization (LC11-ADR-03)
 

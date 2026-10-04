@@ -89,9 +89,13 @@ and the benches with the `quarantine` failure-handling profile and the local
 exercises (`LAB_FAILURE_HANDLING=quarantine`, `LAB_LOCAL_EXERCISES=1`, set by
 `deploy/compose.local-lab.yaml`), so every source-failures scenario, LC11-S01
 to S09, is offered here. The hosted Lab's default is `retry` with no local
-exercises, which offers only the calibration blip (Lab contract 12.2). To try
-that profile locally, export `LAB_FAILURE_HANDLING=retry LAB_LOCAL_EXERCISES=0`
-before `up`; the field station and every bench read the same value.
+exercises, on a broker without authorization, which offers only the calibration
+blip (Lab contract 12.2). To try that configuration locally, export
+`LAB_FAILURE_HANDLING=retry LAB_LOCAL_EXERCISES=0 KAFKA_AUTHORIZATION=none`
+before `up`; the field station and every bench read the same profile. That is
+the combination the retry evidence was recorded with (S06 only). A broker that
+already ran with ACLs keeps them stored under `none`; going back to `acl`
+enforces them again.
 
 ## Commands
 
@@ -240,7 +244,8 @@ benches' profile; a story is recorded only after its suite passes here), or
 
 On this stack all eight new stories are offered: `npm run dev:lab` runs the benches with the
 `quarantine` profile, `LAB_LOCAL_EXERCISES=1` and Kafka ACLs on. The hosted default
-(`LAB_FAILURE_HANDLING=retry`, no ACLs) offers only Calibration blip (S06).
+(`LAB_FAILURE_HANDLING=retry`, `KAFKA_AUTHORIZATION=none`) offers only Calibration blip (S06),
+the one story recorded under `retry`.
 
 The source-failures exercises (Lab contract 12.9) run as a visitor through
 Caddy and check the broker itself through `docker compose exec`: the

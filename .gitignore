@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .astro/
+# Local data: dev:kafka (.local/kafka-dev) and dev:lab (.local/lab: secrets, test certificates, study settings).
 .local/
 .data/
 *.tsbuildinfo

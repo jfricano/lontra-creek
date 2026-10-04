@@ -14,10 +14,11 @@
   ],
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "test": "node --test --test-force-exit \"packages/*/test/**/*.test.ts\" \"apps/*/test/**/*.test.ts\"",
+    "test": "node --test --test-force-exit \"packages/*/test/**/*.test.ts\" \"apps/*/test/**/*.test.ts\" \"scripts/test/**/*.test.mjs\"",
     "test:browser": "playwright test",
     "typecheck": "tsc -p tsconfig.json && tsc -p apps/site/tsconfig.json --noEmit && tsc -p e2e/tsconfig.json --noEmit",
     "dev:kafka": "node scripts/dev-kafka.mjs",
+    "dev:lab": "node scripts/dev-lab.mjs",
     "check:site": "node scripts/check-site.mjs"
   },
   "devDependencies": {

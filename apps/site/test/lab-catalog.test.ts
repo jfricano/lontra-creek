@@ -69,3 +69,20 @@ test("only a body with the summary's shape counts as a summary", () => {
   assert.equal(capabilityAnswer((rc3 as { summary: LabCapabilities }).summary).kind, "summary");
   for (const body of [null, "ok", [], {}, { status: "queued" }, { scenarios: [], library: { version: "0.1.0-rc.3" } }, { ...(rc3 as { summary: LabCapabilities }).summary, scenarios: [{ id: 1 }] }]) assert.deepEqual(capabilityAnswer(body), { kind: "unreachable" }, JSON.stringify(body));
 });
+
+test("an existing scenario claims to run today only when the backend reports it available", () => {
+  const EXISTING = ["fouled-sensor", "relay-cut", "slow-client", "relay-restart"] as LabScenarioId[];
+  const disabled: CapabilityAnswer = { kind: "summary", summary: labCapabilities({ labEnabled: false, now: 0, version: "0.1.0-rc.3" }) };
+  for (const id of EXISTING) {
+    assert.deepEqual(scenarioAvailability(id, disabled), { state: "unavailable", text: "This backend has no Lab benches." }, id);
+    assert.match(scenarioAvailability(id, rc3).text, /^Runs today on a leased bench with /, id);
+    // Not checked yet (the static text), no summary, or no usable answer: say what it needs rather than that it runs.
+    for (const answer of [{ kind: "pending" }, { kind: "absent" }, { kind: "unreachable" }] as CapabilityAnswer[]) {
+      const availability = scenarioAvailability(id, answer);
+      assert.equal(availability.state, "existing", `${id} ${answer.kind}`);
+      assert.match(availability.text, /^Runs on a leased bench with .*, when this backend has benches\.$/, `${id} ${answer.kind}`);
+    }
+  }
+  assert.equal(scenarioAvailability("fouled-sensor", rc3).text, "Runs today on a leased bench with the Fouled sensor controls below.");
+  assert.equal(scenarioAvailability("fouled-sensor", { kind: "absent" }).text, "Runs on a leased bench with the Fouled sensor controls below, when this backend has benches.");
+});

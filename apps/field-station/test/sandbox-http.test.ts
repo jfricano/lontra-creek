@@ -124,8 +124,8 @@ test('A43: the sandbox service API needs its bearer token, and production cannot
   for (const key of ['FIELD_STATION_SECRET', 'KAFKA_GATEWAY_PASSWORD', 'KAFKA_LAB_USERNAME', 'LAB_BENCH_1_SERVICE_TOKEN', 'LAB_PROXY_TOKEN']) assert.throws(() => sandboxEnvironment({ ...env, [key]: 'secret' }), /forbidden/);
   // A shared env file: every secret deploy/make-secrets.sh writes is refused; the service's own and other non-secret settings are not.
   const generated = [...readFileSync(new URL('../../../deploy/make-secrets.sh', import.meta.url), 'utf8').matchAll(/^([A-Z][A-Z0-9_]*)=\$\(secret\)$/gm)].map(m => m[1]!);
-  assert.ok(generated.includes('LAB_RELAY_TOKEN') && generated.length >= 14, 'the secrets the script writes');
-  for (const key of generated) assert.throws(() => sandboxEnvironment({ ...env, [key]: 'secret' }), /forbidden/, key);
+  assert.ok(generated.includes('LAB_RELAY_TOKEN') && generated.includes('SANDBOX_SERVICE_TOKEN') && generated.length >= 15, 'the secrets the script writes');
+  for (const key of generated.filter(k => k !== 'SANDBOX_SERVICE_TOKEN')) assert.throws(() => sandboxEnvironment({ ...env, [key]: 'secret' }), /forbidden/, key);
   assert.deepEqual(sandboxEnvironment({ ...env, SANDBOX_SLOTS: '2', SANDBOX_API_PORT: '7620', LAB_BENCH_API_URLS: 'http://lab-1:7420', LAB_LEASE_SECONDS: '600', NODE_ENV: 'production', SITE_ORIGIN: 'https://streamotter.dev' }).slots, [1, 2]);
   assert.throws(() => sandboxEnvironment({ SANDBOX_SERVICE_TOKEN: 'short' }), /32/);
   const settings = sandboxEnvironment(env);

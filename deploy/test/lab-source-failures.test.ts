@@ -124,6 +124,9 @@ async function api<T>(path: string, method = 'GET', body?: unknown): Promise<T> 
   return answer.body;
 }
 const NATIVE = /\bf1:|\brb1:|\bop1:|\bpl1:|\/var\/lib|\/journal|\.sqlite/;
+interface Study { studyId: string; generation: string; consumerGroup: string; restarts: { process: number } }
+/** A bench's current study, as its volume holds it (the observer's view: the projection never names it, contract 12.7). */
+const studyOf = async (bench: number): Promise<Study> => JSON.parse(await sh(`${EXEC} lab-${bench} cat /var/lib/lontra/lab-${bench}/study.json`)) as Study;
 
 /** One lease on one study: its bench, the visitor's LC-03 view, and the intents it sends. */
 class Exercise {
@@ -135,6 +138,8 @@ class Exercise {
   #lastIntent = 0;
   #heartbeat: NodeJS.Timeout;
   readonly token: LabToken;
+  /** The leased study, with LAB_STACK_EXEC. */
+  study: Study | null = null;
   #client: Client<LabChannels> | null = null;
   private constructor(token: LabToken) {
     this.token = token; this.bench = token.bench;
@@ -144,6 +149,7 @@ class Exercise {
     let lease = await api<LabLease>('lease', 'POST', {});
     lease = await until(async () => { const now = lease.status === 'ready' ? lease : await api<LabLease>('lease'); return now.status === 'ready' || now.status === 'active' ? now : false; }, 'a ready bench', 180_000);
     const exercise = new Exercise(await api<LabToken>('lease/token', 'POST', {}));
+    if (EXEC) exercise.study = await studyOf(exercise.bench);
     await exercise.subscribe();
     return exercise;
   }
@@ -168,6 +174,7 @@ class Exercise {
     const answer = await request<LabIncidentView>('incident');
     assert.equal(answer.status, 200, JSON.stringify(answer.body));
     assert.doesNotMatch(JSON.stringify(answer.body), NATIVE, 'the projection carries no native ID or path');
+    if (this.study) assert.ok(!JSON.stringify(answer.body).includes(this.study.studyId), 'the projection carries no study ID');
     this.views.push(answer.body);
     return answer.body;
   }
@@ -217,8 +224,6 @@ async function exercise(run: (exercise: Exercise) => Promise<void>): Promise<voi
   const current = await Exercise.start();
   try { await run(current); } finally { await current.end(); }
 }
-/** The study's consumer group, named from the projection's source generation (`lab-N-<studyId>`). */
-const studyGroup = (incident: LabIncidentSummary): string => `streamotter-${incident.detail.sourceGeneration}`;
 
 const capabilities: LabCapabilities | null = API ? await (await fetch(`${API}/api/lab/capabilities`)).json() as LabCapabilities : null;
 const offered = (id: LabScenarioId): string | false => {
@@ -258,7 +263,7 @@ describe('the source-failures exercises on real Kafka', { skip: !API && 'LAB_API
     await until(() => lab.state === 'stale', 'the LC-03 view stale');
     if (EXEC) {
       // The broker holds the record's exact bytes, under the incident's coordinates, and the study's group stays before it.
-      const copies = (await quarantineCopies(lab.bench)).filter(copy => copy.envelope?.generation === held.detail.sourceGeneration);
+      const copies = (await quarantineCopies(lab.bench)).filter(copy => copy.envelope?.generation === lab.study!.generation);
       assert.equal(copies.length, 1, JSON.stringify(copies.map(copy => copy.envelope)));
       const copy = copies[0]!;
       assert.deepEqual(copy.envelope.position, { ...copy.envelope.position, topic: held.detail.topic, partition: held.detail.partition, offset: held.detail.offset });
@@ -267,7 +272,7 @@ describe('the source-failures exercises on real Kafka', { skip: !API && 'LAB_API
       assert.equal(copy.key, 'station:LC-03');
       assert.equal(copy.value, await sourceRecord(held.detail.topic, held.detail.partition, held.detail.offset));
       assert.throws(() => JSON.parse(copy.value), 'the evidence is the garbled record, not a repaired one');
-      const at = await committed(studyGroup(held), held.detail.topic, held.detail.partition);
+      const at = await committed(lab.study!.consumerGroup, held.detail.topic, held.detail.partition);
       assert.ok(at !== null && at <= Number(held.detail.offset), `committed ${at}, record ${held.detail.offset}`);
     }
     await lab.succeeds('incident.retry-current');
@@ -293,7 +298,7 @@ describe('the source-failures exercises on real Kafka', { skip: !API && 'LAB_API
     const held = await lab.open(i => i.source === 'held' && i.recovery === 'coverage-not-ready', 'held: coverage not ready');
     assert.deepEqual([held.failure.class, held.policy, held.evidence, held.nextIntent], ['payload-schema', 'quarantine-resync', 'saved', 'scenario.prepare-coverage']);
     await until(() => lab.state === 'stale', 'the LC-03 view stale');
-    const before = EXEC ? await committed(studyGroup(held), held.detail.topic, held.detail.partition) : null;
+    const before = EXEC ? await committed(lab.study!.consumerGroup, held.detail.topic, held.detail.partition) : null;
     if (EXEC) assert.ok(before !== null && before <= Number(held.detail.offset), `committed ${before}`);
     await lab.succeeds('scenario.prepare-coverage');
     await lab.open(i => i.recovery === 'coverage-established' && i.nextIntent === 'incident.reassess', 'coverage established');
@@ -305,10 +310,10 @@ describe('the source-failures exercises on real Kafka', { skip: !API && 'LAB_API
     const resynchronized = await lab.open(i => i.recovery === 'view-resynchronized', 'the view resynchronized');
     assert.equal(resynchronized.nextIntent, null);
     if (EXEC) {
-      const at = await committed(studyGroup(held), held.detail.topic, held.detail.partition);
+      const at = await committed(lab.study!.consumerGroup, held.detail.topic, held.detail.partition);
       assert.ok(at !== null && at >= Number(held.detail.offset) + 1, `committed ${at}, record ${held.detail.offset}`);
       // The first hold saved one copy; reassessing wrote a fresh one before the guard was asked again.
-      const copies = (await quarantineCopies(lab.bench)).filter(copy => copy.envelope?.generation === held.detail.sourceGeneration && copy.envelope.position.offset === held.detail.offset);
+      const copies = (await quarantineCopies(lab.bench)).filter(copy => copy.envelope?.generation === lab.study!.generation && copy.envelope.position.offset === held.detail.offset);
       assert.equal(copies.length, 2, JSON.stringify(copies.map(copy => copy.offset)));
       assert.equal(new Set(copies.map(copy => copy.failureId)).size, 1);
       assert.equal(copies[0]!.value, await sourceRecord(held.detail.topic, held.detail.partition, held.detail.offset));
@@ -378,7 +383,7 @@ describe('the source-failures exercises on real Kafka', { skip: !API && 'LAB_API
     assert.equal(retry.status, 'refused');
     assert.match(retry.detail ?? '', /automatic continuation stopped/);
     if (EXEC) {
-      const at = await committed(studyGroup(held), held.detail.topic, held.detail.partition);
+      const at = await committed(lab.study!.consumerGroup, held.detail.topic, held.detail.partition);
       assert.ok(at !== null && at <= Number(held.detail.offset), `committed ${at}, sixth record ${held.detail.offset}`);
     }
   }));
@@ -397,11 +402,11 @@ describe('the source-failures exercises on real Kafka', { skip: !API && 'LAB_API
     if (RESTART && EXEC) {
       // A bench container restart with its volume (LC11-A15). The visitor's page is closed meanwhile: any of its
       // calls that reaches a bench that doesn't answer ends the lease (section 4), and heartbeats don't reach it.
-      const before = JSON.parse(await sh(`${EXEC} lab-${lab.bench} cat /var/lib/lontra/lab-${lab.bench}/study.json`)) as { studyId: string; restarts: { process: number } };
+      const before = await studyOf(lab.bench);
       await lab.close();
       await sh(`${RESTART} lab-${lab.bench}`, undefined, 120_000);
       // The new process counts itself before its gateway starts; until then the field station's last view can still say running.
-      const study = async () => JSON.parse(await sh(`${EXEC} lab-${lab.bench} cat /var/lib/lontra/lab-${lab.bench}/study.json`).catch(() => 'null')) as typeof before | null;
+      const study = () => studyOf(lab.bench).catch(() => null);
       await until(async () => (await study())?.restarts.process !== before.restarts.process, 'the restarted process booted', 120_000);
       await until(async () => { const lease = await api<LabLease>('lease'); assert.equal(lease.status, 'active', JSON.stringify(lease)); return lease.status === 'active' && lease.benchState.gateway === 'running'; }, 'the lease kept and the bench\'s gateway running again', 120_000);
       const after = (await study())!;
@@ -416,10 +421,10 @@ describe('the source-failures exercises on real Kafka', { skip: !API && 'LAB_API
 
   test('LC11-S09 unavailable evidence: once its copy is deleted, evaluation finds the evidence gone', { skip: offered('unavailable-evidence') || (!EXEC && 'LAB_STACK_EXEC not set: deleting the evidence needs the broker') }, () => exercise(async lab => {
     await lab.succeeds('scenario.start', { scenario: 'unavailable-evidence' });
-    const advanced = await lab.open(i => i.source === 'advanced' && i.evidence === 'saved', 'advanced with evidence saved', 60_000);
+    await lab.open(i => i.source === 'advanced' && i.evidence === 'saved', 'advanced with evidence saved', 60_000);
     // The harness, never a visitor, deletes the bench's quarantine topic up to its end.
     await kafkaTool('kafka-delete-records.sh', '--offset-json-file /dev/stdin', JSON.stringify({ version: 1, partitions: [{ topic: `lab-${lab.bench}.quarantine`, partition: 0, offset: -1 }] }));
-    assert.deepEqual((await quarantineCopies(lab.bench)).filter(copy => copy.envelope?.generation === advanced.detail.sourceGeneration), []);
+    assert.deepEqual((await quarantineCopies(lab.bench)).filter(copy => copy.envelope?.generation === lab.study!.generation), []);
     await lab.succeeds('incident.evaluate');
     const evaluated = await lab.open(i => i.evaluation !== null, 'an evaluation');
     assert.equal(evaluated.evaluation!.result, 'failed');

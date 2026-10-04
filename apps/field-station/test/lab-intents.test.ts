@@ -316,7 +316,8 @@ describe('the projection (section 12.7)', () => {
     assert.deepEqual([gone.evidence, gone.evaluation?.result, gone.evaluation?.summary], ['unavailable', 'failed', 'The saved record couldn\'t be evaluated: the saved record is no longer available.']);
     const stillFails = compose({ facts: { ...facts, evaluation: { ...expired, ineligibleReason: 'still-fails', errorClass: 'invalid-json' } }, scenario: 'garbled-reading', entries: [], steps: [], now: 0 })!;
     assert.deepEqual([stillFails.evidence, stillFails.evaluation?.summary], ['saved', 'The saved record still fails with today\'s handlers (invalid-json).']);
-    for (const s of [summary, established, resynced, paused, circuit, gone]) assert.doesNotMatch(JSON.stringify(s), /f1:|rb1:|op1:|pl1:|\/(?:var|tmp|home|run)\//);
+    for (const s of [summary, established, resynced, paused, circuit, gone]) assert.doesNotMatch(JSON.stringify(s), new RegExp(`f1:|rb1:|op1:|pl1:|${STUDY}|\\/(?:var|tmp|home|run)\\/`));
+    assert.equal(summary.detail.sourceGeneration, null, 'the generation names the private study');
   });
 });
 

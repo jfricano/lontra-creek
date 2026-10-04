@@ -16,7 +16,8 @@
  * from the intent the visitor sent. Its `scenarioRevision` increments whenever any other
  * field changes, and each revision remembers which library incident and incident
  * revision it showed: the browser never names an incident. Native IDs (failure,
- * boundary, operation, plan) stay between the bench and the field station.
+ * boundary, operation, plan) and the study's ID (in its source generation) stay between
+ * the bench and the field station.
  */
 import { randomBytes } from 'node:crypto';
 import { StaleMutationError, type LedgerEntry } from './coverage.ts';
@@ -170,7 +171,7 @@ export function compose(input: { facts: BenchIncidentFacts; scenario: LabScenari
         : `The saved record still fails with today's handlers${evaluation.errorClass ? ` (${evaluation.errorClass})` : ''}.`
     },
     reprocess, discarded: false, nextIntent,
-    detail: { topic: position?.topic ?? '', partition: position?.partition ?? 0, offset: position?.offset ?? '', evidenceFingerprint: incident.evidence.hash || null, handlerIdentity: incident.handlerBuildId, sourceGeneration: incident.generation },
+    detail: { topic: position?.topic ?? '', partition: position?.partition ?? 0, offset: position?.offset ?? '', evidenceFingerprint: incident.evidence.hash || null, handlerIdentity: incident.handlerBuildId, sourceGeneration: null },
     steps: kept,
     stepsGap: steps.length > kept.length || incident.history[0]?.event !== 'detected'
   };

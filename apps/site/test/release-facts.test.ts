@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import installedPackage from "streamotter/package.json" with { type: "json" };
-import { DEFAULT_LIMITS, ERROR_CODES, streamError, type ErrorCode } from "streamotter/contracts";
+import { DEFAULT_LIMITS, ERROR_CODES, FAILURE_CLASSES, streamError, validateProjectConfig, type ErrorCode } from "streamotter/contracts";
+import playgroundConfig from "../src/data/playground-config.json" with { type: "json" };
 import {
-  CONNECTION_STATE_FACTS, DEFAULT_LIMIT_VALUES, ERROR_FACTS, KAFKA_MODES, LIMIT_FACTS, MAP_HANDLER_FAILURE,
+  CONNECTION_STATE_FACTS, DEFAULT_LIMIT_VALUES, ERROR_FACTS, JOURNAL_NODE_FLOOR, KAFKA_MODES, LIMIT_FACTS, MAP_HANDLER_FAILURE, MIN_CONTROL_FRAME_BYTES,
   NPM_RELEASE_PAGE, RELEASE_TAG, RELEASE_VERSION, SUBSCRIPTION_STATE_FACTS, SUPPORT_MATRIX, TIMING_FACTS
 } from "../src/release-facts.ts";
 
@@ -113,6 +114,29 @@ describe("limits cover exactly the package's Limits keys", () => {
 
   test("DEFAULT_LIMIT_VALUES is the package's own object, not a copy that can drift", () => {
     assert.deepEqual(DEFAULT_LIMIT_VALUES, DEFAULT_LIMITS);
+  });
+});
+
+describe("facts that changed in the installed release, checked against it", () => {
+  test("maxControlFrameBytes has the minimum the installed validator enforces", () => {
+    const at = (bytes: number) => validateProjectConfig({ ...playgroundConfig, limits: { maxControlFrameBytes: bytes } });
+    assert.deepEqual(at(MIN_CONTROL_FRAME_BYTES), { valid: true, issues: [] });
+    assert.deepEqual(at(MIN_CONTROL_FRAME_BYTES - 1).issues.map(issue => [issue.path, issue.code]), [["/limits/maxControlFrameBytes", "INCONSISTENT_LIMITS"]]);
+    assert.ok(DEFAULT_LIMITS.maxControlFrameBytes >= MIN_CONTROL_FRAME_BYTES);
+    assert.match(LIMIT_FACTS.maxControlFrameBytes.description, /at least 9,216/);
+  });
+
+  test("the support matrix states the failure journal's Node.js floor, inside the package's own engines range", () => {
+    const row = SUPPORT_MATRIX.find(fact => fact.detail.startsWith(JOURNAL_NODE_FLOOR));
+    assert.ok(row, "no Node.js row for the failure journal");
+    assert.equal(row.component, "Node.js");
+    assert.match(installedPackage.engines.node, /^>=24$/);
+    assert.equal(JOURNAL_NODE_FLOOR.split(".")[0], "24");
+  });
+
+  test("the map handler failure is logged with one of the package's failure classes", () => {
+    assert.ok((FAILURE_CLASSES as readonly string[]).includes(MAP_HANDLER_FAILURE.failureClass));
+    assert.match(ERROR_FACTS.HANDLER_FAILED.visibility.operatorLog, new RegExp(`failureClass ${MAP_HANDLER_FAILURE.failureClass}`));
   });
 });
 

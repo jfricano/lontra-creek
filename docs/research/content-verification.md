@@ -14,7 +14,7 @@ Only those five content routes are marked ready. This does not assert that the o
 
 ## Capture provenance and reproduction
 
-`apps/site/public/recordings/workbench/capture.json` records exact release, time, viewport, runtime and steps. `scripts/capture-workbench.mjs` scaffolds a temporary project with the installed npm CLI, starts its development gateway on loopback ports 7790/7791, drives the real workbench with Playwright, and closes/cleans up its own process and temporary files. The ephemeral management token is never logged or stored; the recording only sees a password input.
+`apps/site/public/recordings/workbench/capture.json` records exact release, time, viewport, runtime, platform, image sizes and steps, and whether the package came from npm or from a pre-publish tarball. `scripts/capture-provenance.mjs` derives the release, the install source (from the lockfile) and the platform, for this capture and for `scripts/capture-demo.ts`'s creek recording, so neither label is typed by hand. `scripts/capture-workbench.mjs` scaffolds a temporary project with the installed npm CLI, starts its development gateway on loopback ports 7790/7791, drives the real workbench with Playwright, and closes/cleans up its own process and temporary files. The ephemeral management token is never logged or stored; the recording only sees a password input.
 
 Run after installing the repository's QA dependencies and Playwright browsers:
 

@@ -32,6 +32,8 @@ node scripts/capture-workbench.mjs
 
 The local StreamOtter checkout's source was not used. Its existing browser/video binaries were reused. The captured package came from this site's installed npm dependencies.
 
+**October 4, 2026:** the current workbench screenshots and creek recording were recaptured on the phase 2 branch from the pre-publish StreamOtter 0.2.0-rc.1 tarballs, and their labels say so. Once 0.2.0-rc.1 is installed from the registry, rerunning the commands above relabels them as published npm.
+
 ## Verification
 
 - `npm run typecheck`: passed, including the recovery snippet against rc.3.

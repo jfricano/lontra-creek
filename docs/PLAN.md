@@ -130,7 +130,7 @@ GitHub Actions: builds arm64 images and deploys over SSH; no Docker needed on a 
 
 ### Kafka data path
 
-This diagram shows the main demo's Kafka-backed data path. HTTPS proxy layers are simplified; it does not describe the separate Failure Lab benches or the planned Workbench sandbox. The local `npm run dev` fixture mode bypasses Kafka.
+This diagram shows the main demo's Kafka-backed data path. HTTPS proxy layers are simplified; it does not describe the separate Failure Lab benches or the Workbench sandbox ([sandbox contract](contracts/sandbox-api.md)). The local `npm run dev` fixture mode bypasses Kafka.
 
 ```mermaid
 flowchart LR

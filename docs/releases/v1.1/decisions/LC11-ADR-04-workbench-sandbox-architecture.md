@@ -11,7 +11,7 @@ Status: **Accepted for implementation of the session layer** (October 3, 2026). 
 ### Components
 
 ```
-browser, https://streamotter.app/workbench/
+browser, https://streamotter.dev/workbench/
   ├─ published workbench UI (WHC-1 boot block written after allocation, then app.js)
   │    └─ fetch, credentials ──▶ /api/sandbox/* and /api/sandbox/wb/v1/*      Caddy ─▶ field-station:7402   sessions, queue, op allowlist
   └─ preview SDK WebSocket ─────────────────────────────▶ /sandbox/N/socket.io/ Caddy (Origin check) ─▶ sandbox:76N0

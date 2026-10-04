@@ -1,6 +1,6 @@
 # Lontra Creek V1.1 — Implementation plan and work breakdown
 
-October 3, 2026 · Revision 1.0 · Owner: Jason Fricano · Status: in progress (see [STATUS.md](STATUS.md))
+October 3, 2026 (updated October 4) · Revision 1.0 · Owner: Jason Fricano · Status: in progress (see [STATUS.md](STATUS.md))
 
 This document turns the approved [companion plan](LONTRA_CREEK_V1_1_COMPANION_PLAN.md) (revision 0.4), the [acceptance plan](LONTRA_CREEK_V1_1_ACCEPTANCE_PLAN.md) (LC11-A01–A46), and the [handoff](LONTRA_CREEK_V1_1_HANDOFF.md) into an ordered set of pull requests. It does not change their scope. Where this plan and those documents disagree, they win and this plan is corrected.
 
@@ -37,8 +37,10 @@ The companion plan's §13 dependency table governs. In short:
 | Quarantine, guarded continuation, evaluation, redrive scenarios (S01–S09 upgrades) | Published native failure APIs (R7–R9) | No |
 | `npm run dev:lab` local launcher | None | Yes |
 | Kafka topic/group authorization for benches, publisher, and quarantine | None for local and CI; hosted change needs Jason's go | Yes locally; hosted waits |
-| Playground failure-policy presets | Published validator with `failureHandling` | No |
+| Playground failure-policy presets | Published validator with `failureHandling` | No on rc.3; built on 0.2.0-rc.1 (LC11-A34, see the update below) |
 | Site deployment, hosted infrastructure, npm publication | Jason's explicit approval | Never without it |
+
+**Update, October 4, 2026.** StreamOtter 0.2.0-rc.1 publishes the workbench seam (WHC-1, R1–R6 with R11 and R12) and the native failure APIs (R7–R9). It is not on npm yet, so the phase 2 branch, `feat/v1.1-source-failure-exercises`, builds the rows above that waited on a release against a pre-publish pack of it in `vendor/`: the playground's failure-policy presets (LC11-A34, with W8), the mounted workbench and its sandbox runtime (W9a), and the source-failure exercises S01–S09 (W9b). None of them ships until that branch's pin PR moves to the registry release; [STATUS.md](STATUS.md) tracks each, and [SOURCE_FAILURE_EXERCISES.md](SOURCE_FAILURE_EXERCISES.md) says how the pre-publish pack comes out.
 
 An unavailable mandatory feature is never reported as complete (LC11-A40). Each pull request states which acceptance IDs it advances and at which evidence level.
 

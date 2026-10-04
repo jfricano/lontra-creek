@@ -166,6 +166,8 @@ test("a second tab on the same session leaves the slot alone when it closes; onl
   await tab.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
   await expect(other.claim).toBeEnabled();
   await other.claim.click();
+  // The button hides as soon as the claim is sent; the mount note shows only once its answer is in and the tab holds the slot.
+  await expect(other.mountNote).toHaveText("The sandbox service reports no host contract; this page mounts host contract 1.");
   await expect(other.claim).toBeHidden();
   await tab.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })));
   await expect.poll(() => second.includes("POST session/return")).toBe(true);

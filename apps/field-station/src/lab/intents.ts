@@ -18,10 +18,10 @@
  * boundary, operation, plan) stay between the bench and the field station.
  */
 import { randomBytes } from 'node:crypto';
-import type { LedgerEntry } from './coverage.ts';
+import { StaleMutationError, type LedgerEntry } from './coverage.ts';
 import type { BenchId, BenchIncident, BenchIncidentFacts, BenchIntentRequest, BenchOperation, LabIncidentSummary, LabIncidentView, LabIntentRequest, LabOperation, LabScenarioId } from './contract.ts';
 import { LabError } from './errors.ts';
-import { scenarioRuns } from './scenarios.ts';
+import { scenarioRuns, type ScenarioRun } from './scenarios.ts';
 import type { LabStudies, ScenarioSink } from './studies.ts';
 
 /** How long an ended lease's operations and last projection stay readable (sections 12.6 and 12.7). */
@@ -96,8 +96,15 @@ const INELIGIBLE: Record<string, string> = {
   'evidence-incomplete': 'the saved record is incomplete'
 };
 
-export function evidenceOf(incident: BenchIncident): LabIncidentSummary['evidence'] {
+/** An evaluation's reasons that say the saved record itself couldn't be read back. */
+const EVIDENCE_GONE: ReadonlySet<string> = new Set(['evidence-expired', 'evidence-unavailable']);
+/**
+ * The incident's evidence. The library records what it captured; whether the copy can still
+ * be read back is learned only when an evaluation tries (LC11-S09), so its finding counts too.
+ */
+export function evidenceOf(incident: BenchIncident, evaluation: BenchIncidentFacts['evaluation'] = null): LabIncidentSummary['evidence'] {
   if (incident.evidence.completeness === 'expired' || incident.evidence.completeness === 'unavailable' || incident.quarantine === 'failed') return 'unavailable';
+  if (evaluation && evaluation.incidentRevision === incident.revision && EVIDENCE_GONE.has(evaluation.ineligibleReason ?? '')) return 'unavailable';
   if (incident.quarantine === 'acknowledged') return 'saved';
   if (incident.quarantine === 'not-required') return 'not-required';
   return 'unknown';
@@ -148,7 +155,7 @@ export function compose(input: { facts: BenchIncidentFacts; scenario: LabScenari
     openedAt: incident.firstObservedAt, updatedAt,
     failure: { stage: incident.stage, class: incident.failureClass },
     policy: incident.policy,
-    evidence: evidenceOf(incident), source: sourceOf(incident), recovery,
+    evidence: evidenceOf(incident, evaluation), source: sourceOf(incident), recovery,
     evaluation: evaluation && {
       result: evaluation.validation === 'valid' ? 'passed' : 'failed', at: evaluation.at,
       expiresAt: token ? evaluation.expiresAt : null,
@@ -156,6 +163,7 @@ export function compose(input: { facts: BenchIncidentFacts; scenario: LabScenari
       planToken: nextIntent === 'incident.approve-reprocess' ? token : null,
       summary: evaluation.validation === 'valid'
         ? evaluation.eligible ? 'The saved record maps and validates with today\'s handlers, and may be reprocessed once.' : `The saved record maps and validates with today's handlers, but can't be reprocessed: ${INELIGIBLE[evaluation.ineligibleReason ?? ''] ?? 'StreamOtter didn\'t offer a plan'}.`
+        : EVIDENCE_GONE.has(evaluation.ineligibleReason ?? '') ? `The saved record couldn't be evaluated: ${INELIGIBLE[evaluation.ineligibleReason!]}.`
         : `The saved record still fails with today's handlers${evaluation.errorClass ? ` (${evaluation.errorClass})` : ''}.`
     },
     reprocess, discarded: false, nextIntent,
@@ -314,7 +322,8 @@ export class LabIntents {
     try {
       if (request.intent === 'scenario.prepare-coverage') outcome = await this.#prepare(state);
       else if (request.intent === 'scenario.start') outcome = await this.#start(state, operation, request.scenario!, facts);
-      else outcome = await this.#bench(state, operation, { intent: request.intent, ...(target ? { incident: target } : {}), ...(request.planToken ? { planToken: request.planToken } : {}) });
+      // Only incident intents name the incident (section 8b): the bench refuses one on scenario.restore-calibration.
+      else outcome = await this.#bench(state, operation, { intent: request.intent, ...(target && request.intent.startsWith('incident.') ? { incident: target } : {}), ...(request.planToken ? { planToken: request.planToken } : {}) });
     } catch { outcome = { status: 'unknown', outcome: 'unexpected-error' }; }
     if (state.ended !== null) return;
     // The revision the outcome produced: the projection after it, read without touching the pool.
@@ -354,21 +363,35 @@ export class LabIntents {
   /** `scenario.start`: the bench arms, the field station publishes (inspect-old-reading alone: publish, wait for the advance, then arm). */
   async #start(state: LeaseState, operation: Operation, scenario: LabScenarioId, facts: BenchIncidentFacts): Promise<Outcome> {
     const advancedProjection = facts.incident?.failureClass === 'payload-schema' && facts.incident.progress === 'advanced';
-    const world = this.#studies?.world() ?? null;
-    const runs = world ? scenarioRuns(state.bench, scenario, world, { advancedProjection }) : [];
-    if (runs.length && (!this.#studies || !this.#sink)) return { status: 'failed', outcome: 'publish-failed' };
+    // A run's reading is at the world's current tick, which moves on every few seconds: each run is built
+    // from the world as it is when it is published, and rebuilt if the tick moved before the ledger recorded it.
+    const runsNow = (): ScenarioRun[] => { const world = this.#studies?.world() ?? null; return world ? scenarioRuns(state.bench, scenario, world, { advancedProjection }) : []; };
+    const runs = runsNow().length;
+    if (runs && (!this.#studies || !this.#sink)) return { status: 'failed', outcome: 'publish-failed' };
     const publish = async (): Promise<Outcome | null> => {
-      for (const run of runs) {
-        if (state.ended !== null) return { status: 'cancelled', outcome: 'study-closed' };
-        try { await this.#studies!.publishRun(state.bench, state.studyId!, run, this.#sink!); }
-        catch { return { status: state.ended !== null ? 'cancelled' : 'failed', outcome: 'publish-failed' }; }
-        this.#step(state, run.step);
+      for (let index = 0; index < runs; index++) {
+        for (let attempt = 1; ; attempt++) {
+          if (state.ended !== null) return { status: 'cancelled', outcome: 'study-closed' };
+          const run = runsNow()[index];
+          try {
+            if (!run) throw new Error('The world has not started.');
+            await this.#studies!.publishRun(state.bench, state.studyId!, run, this.#sink!);
+            this.#step(state, run.step); break;
+          } catch (error) {
+            if (state.ended !== null) return { status: 'cancelled', outcome: 'study-closed' };
+            // Nothing was recorded or published: the reading is built again at the new tick.
+            if (error instanceof StaleMutationError && attempt < 3) continue;
+            // The visitor sees only that publishing failed; the operator needs the cause.
+            console.error(`${iso(this.#now())} Lab bench ${state.bench}: publishing a ${scenario} record failed: ${(error as Error).message}`);
+            return { status: 'failed', outcome: 'publish-failed' };
+          }
+        }
       }
       return null;
     };
     if (scenario === 'inspect-old-reading') {
       const failed = await publish(); if (failed) return failed;
-      if (runs.length) {
+      if (runs) {
         const deadline = this.#now() + ADVANCE_WAIT_MS;
         for (;;) {
           if (state.ended !== null) return { status: 'cancelled', outcome: 'study-closed' };

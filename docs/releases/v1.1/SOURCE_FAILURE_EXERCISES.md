@@ -53,9 +53,9 @@ To see what this backend offers, without a browser:
 curl --cacert .local/lab/secrets/origin/ca.pem https://localhost:8443/api/lab/capabilities
 ```
 
-The contract's local profile is `quarantine` with `LAB_LOCAL_EXERCISES=1` (§12.2), with the local stack's least-privilege Kafka ACLs (`KAFKA_AUTHORIZATION=acl`, LC11-ADR-03), which include the grants for each bench's quarantine topics. Which scenarios the local stack offers on 0.2.0-rc.1 is whatever the capability summary above reports; STATUS.md records it.
+The contract's local profile is `quarantine` with `LAB_LOCAL_EXERCISES=1` (§12.2), with the local stack's least-privilege Kafka ACLs (`KAFKA_AUTHORIZATION=acl`, LC11-ADR-03), which include the grants for each bench's quarantine topics. Whatever the page shows, the capability summary above is the backend's answer.
 
-<!-- W9b verification: fill after slice D -->
+On 0.2.0-rc.1 the local stack offers all eight new stories: `npm run dev:lab` runs the benches and the field station with `LAB_FAILURE_HANDLING=quarantine` and `LAB_LOCAL_EXERCISES=1` (`deploy/compose.local-lab.yaml`), with Kafka ACLs on. The real-Kafka suite and how to run it are in [LOCAL_LAB.md](../../LOCAL_LAB.md#source-failure-exercises).
 
 The unit, library and fixture suites below run with `npm test` on Node 24. Under Node 22, eight tests in `lab-coverage.test.ts` are cancelled by the test runner, which is not a product failure.
 
@@ -82,9 +82,27 @@ Even then the hosted exercises would differ from local ones, because the hosted 
 | Real Kafka, local stack | Each scenario end to end on `npm run dev:lab`; a scenario is offered only after this passes (contract §12.3) | See below |
 | Hosted | Nothing: no bench runs on the hosted demo in either phase | — |
 
-Results at the real-Kafka level are recorded in STATUS.md and here, scenario by scenario, as each passes. Until a scenario is listed, treat it as not verified on real Kafka, whatever the lower levels show.
+Results at the real-Kafka level are recorded here and in STATUS.md. A scenario not listed is not verified on real Kafka, whatever the lower levels show.
 
-<!-- W9b verification: fill after slice D -->
+Real Kafka, `npm run dev:lab`, October 4, 2026: StreamOtter 0.2.0-rc.1 (pre-publish pack), profile `quarantine`, `KAFKA_AUTHORIZATION=acl`, `deploy/test/lab-source-failures.test.ts` 11 of 11, with no authorizer denials in the final run. Every new story is in `VERIFIED_WITH` for 0.2.0-rc.1.
+
+| Scenario | What the real run checked |
+| --- | --- |
+| Routes | The intent and incident routes are served exactly while a scenario is offered |
+| S01 | A `pause` incident with no evidence; restore calibration, retry, processed |
+| S02 | The quarantine copy's bytes and envelope match the source record; the source holds with its committed offset at or before the record; reassess is refused; evaluate reports still-fails; the evidence read group is gone afterwards |
+| S03 | Hold, prepare coverage, reassess: advanced, committed past the record, resynchronized |
+| S04 | Evaluate passes; approval comes back superseded; the spent plan token is refused |
+| S05 | Integrity hold; reassess refused |
+| S06 | A blip is absorbed; a sustained one runs out of retries, and the record is processed after restore |
+| S07 | Five records advance; the sixth opens the circuit and holds; retry is refused as `circuit-open` |
+| S08 | The study survives a gateway restart and a container restart (same study, one more process restart) |
+| S09 | The quarantine copy is deleted; evaluation reports the evidence unavailable |
+| A32 | Nothing is left behind after resets; the journal directory is owner-only |
+
+The hosted default was rechecked on the same stack with `LAB_FAILURE_HANDLING=retry`, `LAB_LOCAL_EXERCISES=0` and `KAFKA_AUTHORIZATION=none`: only S06 is offered, the other seven report `deployment-restricted`, and S01, S06 and A32 pass.
+
+One limit found on the real stack: a bench container that is recreated (a new hostname) while its gateway still holds the journal lock, for example after a kill, comes back `failed`, because StreamOtter can't check a lock that names another host. The field station's reset then discards that study and the bench is ready with a new one in about a minute. A graceful stop releases the lock, and a restart in place (same hostname) resumes the same study.
 
 ## Pre-publish packages, and their removal
 

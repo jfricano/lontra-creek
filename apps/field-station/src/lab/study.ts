@@ -28,6 +28,11 @@ const FORMAT = 1;
 /** Discarded-study summaries kept per bench; older ones are deleted. */
 export const SUMMARIES_KEPT = 20;
 const STUDY_ID = /^[A-Za-z0-9_-]{16}$/;
+/**
+ * Directories the bench creates are owner-only: StreamOtter refuses a journal whose state
+ * directory others could write (section 8b), and nothing here is for anyone else.
+ */
+const PRIVATE = 0o700;
 
 export interface StudyDescriptor extends BenchStudy {
   format: typeof FORMAT;
@@ -86,7 +91,7 @@ export class StudyStore {
     return parseStudy(this.#bench, text) ?? 'corrupt';
   }
   async save(study: StudyDescriptor): Promise<void> {
-    await mkdir(this.directory(study.studyId), { recursive: true });
+    await mkdir(this.directory(study.studyId), { recursive: true, mode: PRIVATE });
     await this.#write(join(this.#root, 'study.json'), study);
   }
   /** Removes a study's journal directory. Missing is fine: removal is idempotent. */
@@ -96,7 +101,7 @@ export class StudyStore {
   /** Writes a discarded study's summary once: a retried discard never replaces the first, fuller record. */
   async summarize(summary: StudySummary): Promise<void> {
     const dir = join(this.#root, 'summaries'); const path = join(dir, `${summary.studyId}.json`);
-    await mkdir(dir, { recursive: true });
+    await mkdir(dir, { recursive: true, mode: PRIVATE });
     try { await stat(path); return; } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     await this.#write(path, summary);
     const files = (await readdir(dir)).filter(name => name.endsWith('.json'));
@@ -111,8 +116,8 @@ export class StudyStore {
     return (await Promise.all(files.filter(name => name.endsWith('.json')).map(async name => JSON.parse(await readFile(join(dir, name), 'utf8')) as StudySummary))).sort((a, b) => a.closedAt.localeCompare(b.closedAt));
   }
   async #write(path: string, value: unknown): Promise<void> {
-    await mkdir(join(path, '..'), { recursive: true });
-    await writeFile(`${path}.tmp`, JSON.stringify(value));
+    await mkdir(join(path, '..'), { recursive: true, mode: PRIVATE });
+    await writeFile(`${path}.tmp`, JSON.stringify(value), { mode: 0o600 });
     await rename(`${path}.tmp`, path);
   }
 }

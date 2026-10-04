@@ -300,7 +300,7 @@ sudo /usr/local/sbin/lontra-deploy "$(sudo cat /srv/lontra/current.sha)"
    `stack.env` too before investigating.
 3. **Verify under `migrate`.**
    - `$compose logs kafka | grep 'Kafka authorization'` reports `migrate`,
-     13 grants with three benches (4 without the Lab), and the quarantine
+     19 grants with three benches (4 without the Lab), and the quarantine
      topics.
    - `$compose exec kafka grep -E '^(authorizer|allow|super)'
      /tmp/lontra-kafka.properties` shows the authorizer, `true`, and
@@ -319,7 +319,8 @@ sudo /usr/local/sbin/lontra-deploy "$(sudo cat /srv/lontra/current.sha)"
      the authorizer logs, which roll hourly: `$compose exec kafka sh -c "grep
      -h -E 'is Denied|DefaultAllow' /opt/kafka/logs/kafka-authorizer.log*"`.
      An `is Denied` line for `User:gateway`, `User:field-station`, or a
-     bench's own `lab-N.*` topics and `streamotter-lab-N-` groups is a missing
+     bench's own `lab-N.*` topics, `streamotter-lab-N-` groups, and
+     `streamotter-lontra-creek-lab-N-quarantine-read-` groups is a missing
      grant on a granted resource, already failing: stop and roll back. A
      `based on rule DefaultAllow` line for one of those users is an operation
      on a resource nobody is granted, which `acl` will deny: stop and roll
@@ -357,6 +358,19 @@ so returning to `acl` later needs no new bootstrap. To remove the ACLs
 entirely, run `kafka-acls.sh --remove --force` with the same resources while
 an authorizer is configured. Neither direction touches topic data, SCRAM
 users, or the world checkpoint.
+
+**A broker that already runs `acl` or `migrate` picks up added grants on its
+next start.** The bootstrap compares the listing with its table and adds only
+what is missing, so W9b's two grants per bench (`DescribeConfigs` on
+`lab-N.quarantine`, and `Read`/`Delete` on groups prefixed
+`streamotter-lontra-creek-lab-N-quarantine-read-`, Lab contract 10.9) need no
+operator step beyond starting Kafka once with this `kafka/start.sh` (a deploy
+that recreates the `kafka` service, or a restart of it in a maintenance
+window). Its log reports the additions: on `npm run dev:lab`, a running
+13-grant broker restarted with each grant in turn logged `16 grants, 3 added`,
+then `19 grants, 3 added`, and a further start adds nothing. Benches whose profile is `quarantine` need these grants before they
+start; with `retry` or `off` they are unused. A broker at `none` is
+unaffected.
 
 **Changing a grant later** (a new bench, renamed groups): the bootstrap only
 adds. Update `kafka/start.sh` and Lab contract 10.9 together, deploy, and

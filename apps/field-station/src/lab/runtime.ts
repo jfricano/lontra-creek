@@ -8,9 +8,9 @@ import { getGatewayOperator } from 'streamotter/gateway/operator';
 import type { Gateway, OperatorApi, Principal, ProjectConfig, SourceStatus, Trace, Page } from 'streamotter/contracts';
 import type { HandlerRegistry } from 'streamotter/gateway';
 import { io, type Socket } from 'socket.io-client';
-import { Kafka } from 'kafkajs';
+import { Kafka, type Admin } from 'kafkajs';
 import { readFileSync } from 'node:fs';
-import { benchConfig, benchHandlers, benchEnvironment, handlerBuildId, runsUnder, type LabChannels } from './bench.ts';
+import { benchConfig, benchHandlers, benchEnvironment, handlerBuildId, quarantineReadGroupPrefix, runsUnder, type LabChannels } from './bench.ts';
 import { INTENTS, SOURCE_SCENARIOS } from './capabilities.ts';
 import type { BenchIncidentFacts, BenchIntent, BenchIntentRequest, BenchOperation, BenchStatus, LabAction, LabBenchState, LabScenarioId, StudySummary } from './contract.ts';
 import { createJournal, hasJournal } from './journal.ts';
@@ -55,6 +55,8 @@ export interface BenchRuntimeOptions {
   stateDir?: string;
   /** Deletes a consumer group; tests substitute a stand-in for the Kafka admin client. */
   deleteGroup?: (group: string) => Promise<void>;
+  /** Lists the consumer groups with a prefix that this bench's user may see. A test with a stand-in deleteGroup and no listGroups lists none. */
+  listGroups?: (prefix: string) => Promise<string[]>;
   /** The field station's study gate; defaults to its private API at LAB_SNAPSHOT_ORIGIN. */
   gate?: StudyGateClient;
   quiesceMs?: number;
@@ -131,6 +133,7 @@ export class BenchRuntime {
   readonly #store: StudyStore;
   readonly #gate: StudyGateClient;
   readonly #deleteGroupFn: (group: string) => Promise<void>;
+  readonly #listGroupsFn: (prefix: string) => Promise<string[]>;
   readonly #quiesceMs: number;
   #satellite: Socket | undefined;
   #nextAction = 0;
@@ -149,6 +152,7 @@ export class BenchRuntime {
     this.#store = new StudyStore(options.stateDir ?? env['LAB_STATE_DIR'] ?? (env['NODE_ENV'] === 'production' ? '/var/lib/lontra' : '.data'), this.#settings.number);
     this.#gate = options.gate ?? fieldStationGate(this.#settings.number, this.#settings.snapshotOrigin, this.#settings.serviceToken);
     this.#deleteGroupFn = options.deleteGroup ?? (group => this.#deleteGroup(group)); this.#quiesceMs = options.quiesceMs ?? QUIESCE_MS;
+    this.#listGroupsFn = options.listGroups ?? (options.deleteGroup ? async () => [] : prefix => this.#listGroups(prefix));
   }
   run<T>(fn: () => Promise<T>): Promise<T> { const p = this.#tail.then(fn); this.#tail = p.catch(() => undefined); return p; }
   status(): BenchStatus {
@@ -223,9 +227,12 @@ export class BenchRuntime {
     try { await this.#poll(false); } catch (error) { if (!graced) throw error; this.#pollFailingSince = this.#now(); }
   }
   async #stopGateway(): Promise<void> { this.#scenario.gateway = 'restarting'; this.#operator = null; this.#durable = false; this.#satellite?.disconnect(); this.#satellite = undefined; this.#scenario.satellite = 'idle'; await this.#management?.close(); this.#management = undefined; await this.#gateway?.stop(); this.#gateway = undefined; }
-  async #deleteGroup(group: string): Promise<void> { const connection = benchConfig(this.#settings.number, { brokers: (this.#env['BENCH_KAFKA_BROKERS'] ?? `lab-${this.#settings.number}-kafka:${9100 + this.#settings.number}`).split(',') }).connections['field']!; const kafka = new Kafka({ brokers: [...connection.brokers], ssl: { ca: [readFileSync(this.#env['KAFKA_CA_FILE'] ?? '/etc/lontra/kafka/ca.pem', 'utf8')] }, sasl: { mechanism: 'scram-sha-512', username: this.#env['KAFKA_LAB_USERNAME']!, password: this.#env['KAFKA_LAB_PASSWORD']! }, logLevel: 0 }); const admin = kafka.admin(); try { await admin.connect(); await admin.deleteGroups([group]); }
-    catch (error) { if (!((error as { groups?: { errorCode: number }[] }).groups ?? [{ errorCode: -1 }]).every(item => item.errorCode === GROUP_ID_NOT_FOUND)) throw error; }
-    finally { await admin.disconnect(); } }
+  /** A short-lived Kafka admin client with the bench's own user, through its relay proxy. */
+  async #admin<T>(fn: (admin: Admin) => Promise<T>): Promise<T> { const connection = benchConfig(this.#settings.number, { brokers: (this.#env['BENCH_KAFKA_BROKERS'] ?? `lab-${this.#settings.number}-kafka:${9100 + this.#settings.number}`).split(',') }).connections['field']!; const kafka = new Kafka({ brokers: [...connection.brokers], ssl: { ca: [readFileSync(this.#env['KAFKA_CA_FILE'] ?? '/etc/lontra/kafka/ca.pem', 'utf8')] }, sasl: { mechanism: 'scram-sha-512', username: this.#env['KAFKA_LAB_USERNAME']!, password: this.#env['KAFKA_LAB_PASSWORD']! }, logLevel: 0 }); const admin = kafka.admin(); try { await admin.connect(); return await fn(admin); } finally { await admin.disconnect(); } }
+  async #deleteGroup(group: string): Promise<void> { await this.#admin(async admin => { try { await admin.deleteGroups([group]); }
+    catch (error) { if (!((error as { groups?: { errorCode: number }[] }).groups ?? [{ errorCode: -1 }]).every(item => item.errorCode === GROUP_ID_NOT_FOUND)) throw error; } }); }
+  /** Kafka lists only the groups this user may describe, which its grants confine to its own prefixes (section 10.9). */
+  async #listGroups(prefix: string): Promise<string[]> { return this.#admin(async admin => (await admin.listGroups()).groups.map(group => group.groupId).filter(group => group.startsWith(prefix))); }
   /**
    * Boots the bench. A persisted study that is clean, or open with a lease still
    * running, is resumed: same group, generation, and journal directory, counted as a
@@ -235,7 +242,8 @@ export class BenchRuntime {
    * it never exits, so a held source can't cause a restart loop (LC11-A33).
    */
   async start(): Promise<void> {
-    await this.run(() => this.#boot()).catch(() => { this.#state = 'failed'; this.#cleanupOk = false; });
+    // The cause goes to the bench's own log only: a refused journal, for example, says why and which lock (section 8b).
+    await this.run(() => this.#boot()).catch((error: unknown) => { this.#state = 'failed'; this.#cleanupOk = false; console.error(`Bench startup failed: ${(error as { code?: string }).code ?? (error as Error).name}: ${(error as Error).message}`); });
     this.#timer = setInterval(() => { void this.tick(); }, this.#tickMs);
   }
   async #boot(): Promise<void> {
@@ -328,6 +336,8 @@ export class BenchRuntime {
     if (study) { await this.#deleteGroupFn(study.consumerGroup); await this.#store.remove(study.studyId); await this.#gate.discard(study.studyId); }
     // Directories a crash or an unreadable study.json left behind belong to no live study: each is discarded with the same steps.
     for (const stray of await this.#store.studies()) { await this.#gate.close(stray); await this.#deleteGroupFn(consumerGroupFor(this.#settings.number, stray)); await this.#store.remove(stray); await this.#gate.discard(stray); }
+    // StreamOtter deletes each evidence read's throwaway group itself; one it couldn't (its member's leave was lost) goes now, with the gateway stopped.
+    for (const group of await this.#listGroupsFn(quarantineReadGroupPrefix(this.#settings.number))) await this.#deleteGroupFn(group);
     this.#study = null; this.#feed.reset();
   }
   /** Step 7: a new identity, generation, group, and journal directory, then its gateway. A new study's source must consume. */

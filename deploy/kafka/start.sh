@@ -48,7 +48,12 @@
 #   field-station Create, Write, Describe: field.*, creek.*, and     Read, Delete: lontra-field-station-read-*
 #                each bench's lab-N.field.*, lab-N.creek.*;
 #                Read: field.notebooks
-#   lab-N        Read, Describe: lab-N.*; Write: lab-N.quarantine    Read, Delete: streamotter-lab-N-*
+#   lab-N        Read, Describe: lab-N.*; Write, DescribeConfigs:    Read, Delete: streamotter-lab-N-*, and
+#                lab-N.quarantine                                    streamotter-lontra-creek-lab-N-quarantine-read-*
+#
+# A bench's quarantine writer checks its topic's max.message.bytes before it starts
+# (DescribeConfigs), and reading evidence back joins a throwaway group named for the
+# bench's StreamOtter project, deleted after use (V1.1, docs/contracts/lab-api.md 10.9).
 #
 # Environment: KAFKA_GATEWAY_USERNAME, KAFKA_GATEWAY_PASSWORD,
 # KAFKA_FIELD_STATION_USERNAME, KAFKA_FIELD_STATION_PASSWORD, and optionally each
@@ -223,6 +228,8 @@ for index in ${bench_numbers[@]+"${!bench_numbers[@]}"}; do
     "$user;prefixed;Read Describe;topic:lab-${number}."
     "$user;literal;Write;topic:lab-${number}.quarantine"
     "$user;prefixed;Read Delete;group:streamotter-lab-${number}-"
+    "$user;literal;DescribeConfigs;topic:lab-${number}.quarantine"
+    "$user;prefixed;Read Delete;group:streamotter-lontra-creek-lab-${number}-quarantine-read-"
   )
   quarantine+=("lab-${number}.quarantine")
 done
@@ -235,7 +242,8 @@ tool() {
   KAFKA_HEAP_OPTS="-Xms32m -Xmx256m" "$KAFKA_HOME/bin/$1" --bootstrap-server "127.0.0.1:${INTERNAL_PORT}" "${@:2}"
 }
 
-# The ACLs that exist, one "<type>:<name>;<pattern type>;<principal>;<operation>" per line.
+# The ACLs that exist, one "<type>:<name>;<pattern type>;<principal>;<operation>" per line,
+# the operation as a grant spells it, lowercased (DESCRIBE_CONFIGS is describeconfigs).
 existing_acls() {
   tool kafka-acls.sh --list | awk '
     /^Current ACLs for resource/ {
@@ -246,7 +254,7 @@ existing_acls() {
     }
     /principal=.*permissionType=ALLOW/ {
       match($0, /principal=[^,]+/); principal = substr($0, RSTART + 10, RLENGTH - 10)
-      match($0, /operation=[A-Z_]+/); operation = tolower(substr($0, RSTART + 10, RLENGTH - 10))
+      match($0, /operation=[A-Z_]+/); operation = tolower(substr($0, RSTART + 10, RLENGTH - 10)); gsub(/_/, "", operation)
       print type ":" name ";" pattern ";" principal ";" operation
     }'
 }

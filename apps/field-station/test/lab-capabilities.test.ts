@@ -88,14 +88,17 @@ test('proposed intents parse only in their closed shape', () => {
   }
 });
 
-test('0.2.0-rc.1 is verified for no scenario yet: every new scenario is not integrated, whatever the profile', () => {
-  assert.deepEqual([...VERIFIED_WITH.get('0.2.0-rc.1') ?? ['missing']], [], 'a scenario is added only after its real-Kafka test passes');
+test('0.2.0-rc.1 is verified for every new scenario, and the deployment still decides which are offered', () => {
+  // Each one passed deploy/test/lab-source-failures.test.ts on dev:lab (section 12.9).
+  assert.deepEqual([...VERIFIED_WITH.get('0.2.0-rc.1') ?? ['missing']].sort(), [...NEW].sort());
   assert.match(LAB_CONTRACT, /W9b/);
-  for (const profile of ['off', 'retry', 'quarantine'] as const) {
-    const summary = labCapabilities({ labEnabled: true, now: 0, version: '0.2.0-rc.1', profile, localExercises: true });
-    for (const id of NEW) assert.equal(scenario(summary, id).reason?.code, 'not-integrated', `${profile} ${id}`);
-    for (const feature of Object.values(summary.features)) assert.equal(feature.reason?.code, 'not-integrated');
-  }
+  const at = (profile: 'off' | 'retry' | 'quarantine', localExercises = false) => labCapabilities({ labEnabled: true, now: 0, version: '0.2.0-rc.1', profile, localExercises });
+  // The hosted default: retry, no local exercises. Only calibration-blip is offered.
+  for (const id of NEW) assert.equal(scenario(at('retry'), id).available, id === 'calibration-blip', id);
+  for (const id of NEW) assert.equal(scenario(at('quarantine', true), id).available, true, id);
+  for (const id of NEW) assert.equal(scenario(at('off', true), id).reason?.code, 'deployment-restricted', id);
+  // A release nobody verified is still not integrated.
+  for (const id of NEW) assert.equal(scenario(labCapabilities({ labEnabled: true, now: 0, version: '0.2.0-rc.2', profile: 'quarantine', localExercises: true }), id).reason?.code, 'not-integrated', id);
 });
 
 describe('the capability matrix with an injected verified set (section 12.3)', () => {

@@ -56,6 +56,8 @@ function scriptedBench(now: () => number) {
   /** How each intent ends; `hold` keeps it running until the test settles it. */
   const outcomes = new Map<string, { status: BenchOperation['status']; outcome: string } | 'hold'>();
   let restarting = false; let failing = false; let resets = 0;
+  /** Runs as the bench accepts an intent: the world can tick meanwhile, as it does every two seconds. */
+  const hooks: { onIntent?: () => void } = {};
   const client: BenchClient = { async call<T>(_bench: BenchId, path: string, method = 'GET', body?: unknown): Promise<T> {
     const at = new Date(now()).toISOString();
     if (failing) throw new LabError('bench-unavailable', 503);
@@ -66,7 +68,7 @@ function scriptedBench(now: () => number) {
     if (path === '/bench/v1/tokens') return { token: 'lab1_token', expiresAt: status.lease!.expiresAt } as T;
     if (path.startsWith('/bench/v1/incident')) { if (restarting) throw new LabError('not-applicable', 409); return structuredClone(facts) as T; }
     if (path === '/bench/v1/intents' && method === 'POST') {
-      const request = body as BenchIntentRequest; sent.push(request);
+      const request = body as BenchIntentRequest; sent.push(request); hooks.onIntent?.();
       const outcome = outcomes.get(request.intent) ?? { status: 'succeeded', outcome: 'armed' };
       const operation: BenchOperation = { operationId: request.operationId, intent: request.intent, status: 'running', outcome: null, incidentRevision: null, acceptedAt: at, updatedAt: at };
       if (outcome !== 'hold') Object.assign(operation, { status: outcome.status, outcome: outcome.outcome });
@@ -76,7 +78,7 @@ function scriptedBench(now: () => number) {
     if (operation) { const found = operations.get(operation[1]!); if (!found) throw new LabError('bench-unavailable', 503); return structuredClone(found) as T; }
     return structuredClone(status) as T;
   } };
-  return { client, status, facts, sent, operations, outcomes, setRestarting: (value: boolean) => { restarting = value; }, setFailing: (value: boolean) => { failing = value; } };
+  return { client, status, facts, sent, operations, outcomes, hooks, setRestarting: (value: boolean) => { restarting = value; }, setFailing: (value: boolean) => { failing = value; } };
 }
 
 const incident = (over: Partial<BenchIncident> = {}): BenchIncident => ({
@@ -148,6 +150,15 @@ describe('the answers to an intent, in order (section 12.5)', () => {
     assert.deepEqual(l.bench.sent.map(request => [request.intent, request.incident, request.operationId]), [['incident.reassess', { failureId: 'f1:aaaa', revision: 3 }, op.operationId]]);
     assert.equal(done.status, 'refused'); assert.match(done.detail!, /integrity fault/);
     assert.equal(done.scenarioRevision, revision, 'the projection didn\'t change');
+  });
+
+  test('scenario.restore-calibration names no incident: only incident intents do (section 8b)', async t => {
+    const l = await lab(t);
+    l.bench.facts.app.calibration = 'removed';
+    l.bench.facts.incident = incident({ failureClass: 'mapper-error', policy: 'pause', quarantine: 'not-required', nextAction: 'repair-and-retry', recovery: 'not-applicable' });
+    const op = await l.submit({ intent: 'scenario.restore-calibration', expectedRevision: revisionOf(await l.view()) });
+    assert.equal((await l.settled(op.operationId)).status, 'succeeded');
+    assert.deepEqual(l.bench.sent.map(request => [request.intent, 'incident' in request]), [['scenario.restore-calibration', false]]);
   });
 
   test('a lease that ends cancels unfinished operations; they and the last projection stay readable for a minute', async t => {
@@ -223,7 +234,13 @@ describe('the projection (section 12.7)', () => {
     assert.equal(circuit.nextIntent, null); assert.match(circuit.reason, /no action to reopen it/);
     const gap = compose({ facts: { ...facts, incident: incident({ history: [{ at: '2026-10-04T12:00:01.200Z', event: 'held' }] }) }, scenario: 'bad-projection', entries: [], steps: [], now: 0 })!;
     assert.equal(gap.stepsGap, true, 'the library\'s bounded history no longer starts at detected');
-    for (const s of [summary, established, resynced, paused, circuit]) assert.doesNotMatch(JSON.stringify(s), /f1:|rb1:|op1:|pl1:|\/(?:var|tmp|home|run)\//);
+    // LC11-S09: the library learns the copy is gone only when an evaluation reads it back; that finding is the evidence's.
+    const expired = { at: '2026-10-04T12:00:09.000Z', incidentRevision: 3, validation: 'invalid' as const, eligible: false, ineligibleReason: 'evidence-expired', errorClass: null, outputs: 0, expiresAt: null, planToken: null };
+    const gone = compose({ facts: { ...facts, evaluation: expired, incident: incident({ progress: 'advanced', state: 'resolved', nextAction: 'evaluate' }) }, scenario: 'unavailable-evidence', entries: [], steps: [], now: 0 })!;
+    assert.deepEqual([gone.evidence, gone.evaluation?.result, gone.evaluation?.summary], ['unavailable', 'failed', 'The saved record couldn\'t be evaluated: the saved record is no longer available.']);
+    const stillFails = compose({ facts: { ...facts, evaluation: { ...expired, ineligibleReason: 'still-fails', errorClass: 'invalid-json' } }, scenario: 'garbled-reading', entries: [], steps: [], now: 0 })!;
+    assert.deepEqual([stillFails.evidence, stillFails.evaluation?.summary], ['saved', 'The saved record still fails with today\'s handlers (invalid-json).']);
+    for (const s of [summary, established, resynced, paused, circuit, gone]) assert.doesNotMatch(JSON.stringify(s), /f1:|rb1:|op1:|pl1:|\/(?:var|tmp|home|run)\//);
   });
 });
 
@@ -263,6 +280,14 @@ describe('scenario records against the expected ledger', () => {
     const after = await l.view();
     assert.deepEqual(after.status === 'open' && [after.incident.recovery, after.incident.nextIntent], ['coverage-established', 'incident.reassess']);
     assert.ok(after.status === 'open' && after.incident.steps.some(step => /Snapshot coverage released/.test(step.text)));
+  });
+
+  test('a run is built at the tick it is published: the world moving on while the bench arms doesn\'t fail the start', async t => {
+    const l = await lab(t);
+    l.bench.hooks.onIntent = () => { advanceTo(l.world, TICK + 1); };
+    assert.equal((await start(l, 'bad-projection')).status, 'succeeded');
+    assert.equal(parse(l.published[0]!.value).revision, Expected.revision(TICK + 1));
+    assert.deepEqual((await l.studies.runs(1, STUDY)).map(run => run.revision), [Expected.revision(TICK + 1)]);
   });
 
   test('conflicting-readings: one batch record, two different readings at one revision', async t => {
@@ -341,7 +366,7 @@ describe('the public routes (sections 12.5 to 12.7)', () => {
       assert.equal((await fetch(`${origin}/api/lab/incident?x=1`, { headers: { cookie } })).status, 400);
     });
     // The same backend without a verified release serves neither route.
-    const plain = new LeasePool({ client: l.bench.client, benches: [1], gatewayOrigin: 'https://demo.test', capabilities: { profile: 'quarantine', localExercises: true } });
+    const plain = new LeasePool({ client: l.bench.client, benches: [1], gatewayOrigin: 'https://demo.test', capabilities: { profile: 'quarantine', localExercises: true, verified: new Map() } });
     attachIntents(plain);
     await serving(publicApi({ config, station: {} as FieldStation, notebooks: {} as Notebooks, lab: plain }), async origin => {
       const join = await fetch(`${origin}/api/lab/lease`, { method: 'POST', headers: { origin: 'https://site.test' } });

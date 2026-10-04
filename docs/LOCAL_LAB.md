@@ -84,6 +84,15 @@ resolves to your own machine.
 `npm run dev:lab -- up --no-build` restarts with the existing site build and
 image, skipping both builds.
 
+The local Lab runs Kafka with least-privilege ACLs (`KAFKA_AUTHORIZATION=acl`)
+and the benches with the `quarantine` failure-handling profile and the local
+exercises (`LAB_FAILURE_HANDLING=quarantine`, `LAB_LOCAL_EXERCISES=1`, set by
+`deploy/compose.local-lab.yaml`), so every source-failures scenario, LC11-S01
+to S09, is offered here. The hosted Lab's default is `retry` with no local
+exercises, which offers only the calibration blip (Lab contract 12.2). To try
+that profile locally, export `LAB_FAILURE_HANDLING=retry LAB_LOCAL_EXERCISES=0`
+before `up`; the field station and every bench read the same value.
+
 ## Commands
 
 Pass options after `--`, for example `npm run dev:lab -- logs -f caddy`.
@@ -229,7 +238,28 @@ failure-handling profile (`LAB_FAILURE_HANDLING`) or `LAB_LOCAL_EXERCISES`
 doesn't cover it. Which stories the local stack offers is recorded in
 [STATUS.md](releases/v1.1/STATUS.md).
 
-<!-- W9b verification: fill after slice D -->
+On this stack all eight new stories are offered: `npm run dev:lab` runs the benches with the
+`quarantine` profile, `LAB_LOCAL_EXERCISES=1` and Kafka ACLs on. The hosted default
+(`LAB_FAILURE_HANDLING=retry`, no ACLs) offers only Calibration blip (S06).
+
+The source-failures exercises (Lab contract 12.9) run as a visitor through
+Caddy and check the broker itself through `docker compose exec`: the
+quarantine topic's copies, committed offsets, and leftover groups. S08 also
+restarts a bench container, and S09 deletes a quarantine copy. A scenario is
+admitted to `VERIFIED_WITH` only after this suite passes for it:
+
+```sh
+C="docker compose -p lontra-local-lab -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.sandbox.yaml -f deploy/compose.local-lab.yaml --env-file .local/lab/.env"
+LAB_API_ORIGIN=https://localhost:8443 LAB_SITE_ORIGIN=https://localhost:8443 \
+  NODE_EXTRA_CA_CERTS="$PWD/.local/lab/secrets/origin/ca.pem" \
+  LAB_STACK_EXEC="$C exec -T" LAB_STACK_RESTART="$C restart" \
+  node --test --test-force-exit deploy/test/lab-source-failures.test.ts
+```
+
+Without `LAB_STACK_EXEC` the broker checks, and S09, are skipped; without
+`LAB_STACK_RESTART`, S08 runs only its gateway restart. S2's lease expiry in
+`deploy/test/lab.test.ts` waits out a whole lease (up to five minutes), so it
+runs only with `LAB_EXPIRY_TEST=1`.
 
 ## Troubleshooting
 
@@ -289,6 +319,16 @@ again after `stop` and `up --no-build`; that restart, with
 `SANDBOX_SERVICE_TOKEN` removed from the env file first, appended a new token
 once. Only Caddy's port was published: the sandbox API, the slot gateways, and
 each slot's loopback management listener were not reachable from the host.
+
+On October 4, 2026, with the source-failures exercises (W9b, StreamOtter
+0.2.0-rc.1, quarantine profile, ACLs on), `deploy/test/lab-source-failures.test.ts`
+passed LC11-S01 to S09 and A32 against a cold `up` of the same kind (its own
+`--dir` and `--project`), as did `deploy/test/lab.test.ts` with
+`LAB_EXPIRY_TEST=1`, `lab-private-checks.mjs` on every bench and the field
+station, and `deploy/test/kafka-acls.test.ts`. A bench container restarted in
+place resumed its study; one recreated after being killed failed on its
+journal lock, which names the old container's host name, and the field
+station's reset replaced its study within a minute (Lab contract 8b).
 
 ## What the launcher runs (manual recipe)
 

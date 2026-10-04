@@ -36,6 +36,13 @@ services:
       LAB_BENCH_1_SERVICE_TOKEN: ${LAB_BENCH_1_SERVICE_TOKEN:?}
       LAB_BENCH_2_SERVICE_TOKEN: ${LAB_BENCH_2_SERVICE_TOKEN:?}
       LAB_BENCH_3_SERVICE_TOKEN: ${LAB_BENCH_3_SERVICE_TOKEN:?}
+      # Source-failures exercises (docs/contracts/lab-api.md 8b, 12.3): the field station
+      # grants a lease only on a bench reporting this same profile. `retry` (the default)
+      # needs no Kafka grants beyond a bench's sources, so it runs on a broker without
+      # authorization too; `quarantine` needs each bench's quarantine topic and grants
+      # (KAFKA_AUTHORIZATION=acl). LAB_LOCAL_EXERCISES=1 also offers the local and CI ones.
+      LAB_FAILURE_HANDLING: ${LAB_FAILURE_HANDLING:-retry}
+      LAB_LOCAL_EXERCISES: ${LAB_LOCAL_EXERCISES:-0}
   caddy:
     environment:
       SITE_ORIGIN: ${SITE_ORIGIN:-https://streamotter.dev}
@@ -63,6 +70,8 @@ services:
       LAB_BENCH_1_RELAY_TOKEN: ${LAB_BENCH_1_RELAY_TOKEN:?}
       LAB_SNAPSHOT_ORIGIN: http://field-station:7410
       LAB_STATE_DIR: /var/lib/lontra
+      # The same profile as the field station's (above).
+      LAB_FAILURE_HANDLING: ${LAB_FAILURE_HANDLING:-retry}
     volumes:
       - ${LONTRA_SECRETS:?}/kafka/ca.pem:/etc/lontra/kafka/ca.pem:ro
       # The bench's study (study.json, its journal directory, discarded-study summaries):
@@ -97,6 +106,8 @@ services:
       LAB_BENCH_2_RELAY_TOKEN: ${LAB_BENCH_2_RELAY_TOKEN:?}
       LAB_SNAPSHOT_ORIGIN: http://field-station:7410
       LAB_STATE_DIR: /var/lib/lontra
+      # The same profile as the field station's (above).
+      LAB_FAILURE_HANDLING: ${LAB_FAILURE_HANDLING:-retry}
     volumes:
       - ${LONTRA_SECRETS:?}/kafka/ca.pem:/etc/lontra/kafka/ca.pem:ro
       # The bench's study (study.json, its journal directory, discarded-study summaries):
@@ -131,6 +142,8 @@ services:
       LAB_BENCH_3_RELAY_TOKEN: ${LAB_BENCH_3_RELAY_TOKEN:?}
       LAB_SNAPSHOT_ORIGIN: http://field-station:7410
       LAB_STATE_DIR: /var/lib/lontra
+      # The same profile as the field station's (above).
+      LAB_FAILURE_HANDLING: ${LAB_FAILURE_HANDLING:-retry}
     volumes:
       - ${LONTRA_SECRETS:?}/kafka/ca.pem:/etc/lontra/kafka/ca.pem:ro
       # The bench's study (study.json, its journal directory, discarded-study summaries):

@@ -2,7 +2,7 @@
 
 October 3, 2026 · Branch `feat/v1.1-workbench-page`, stacked on `feat/v1.1-sandbox-sessions` (W2) · [Implementation plan](../IMPLEMENTATION_PLAN.md) row W3 · [Sandbox API contract](../../../contracts/sandbox-api.md) draft 0.2 · [LC11-ADR-04](../decisions/LC11-ADR-04-workbench-sandbox-architecture.md)
 
-The route, its navigation entry, and the site summary in `site.ts` are unchanged. The page now has four parts: the sandbox panel, the seed explanation with an **In your app** note, the recorded tour as a labeled fallback, and the existing "Run it locally" steps.
+The route, its navigation entry, and the site summary in `site.ts` are unchanged. The page now has four parts: the sandbox panel, the seed explanation with an **In your app** note, the step-by-step screenshots as a labeled fallback (jason removed the recorded video on 2026-10-04: its cursor was invisible and the steps are already written out), and the existing "Run it locally" steps.
 
 ## Files
 

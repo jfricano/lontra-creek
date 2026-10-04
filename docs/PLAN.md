@@ -53,7 +53,7 @@ Den sites are restricted to researchers, as real studies restrict them to preven
 | `/field-station` | What does it look like running? | The guided walkthrough (below), the creek map, and an under-the-hood panel: states, epochs, revisions, and the code behind each step. |
 | `/lab` | What happens when it breaks? | The Failure Lab (below). |
 | `/playground` | What's it like to set up? | Edit a `streamotter.json` with the real validator running in the browser; generated types once the library can generate in a browser; a labeled console that subscribes to the field station; recorded CLI sessions. |
-| `/workbench` | What tools do I get? | A tour of Connect, Define, Preview, Inspect, and Export from screenshots Playwright captures from the workbench installed from npm, plus a recorded session. |
+| `/workbench` | What tools do I get? | A tour of Connect, Define, Preview, Inspect, and Export from screenshots Playwright captures from the workbench installed from npm. |
 | `/when-it-breaks` | How does it fail, exactly? | Each failure mode: the state it produces, the `StreamError` the application receives, whether it retries, handling code, and an interactive state diagram. |
 | `/docs` | How do I build with it? | A map of the documentation linking to the guides on GitHub and the package pages on npm. The site doesn't copy them. |
 | `/releases` | What works in this version? | The pinned version, its verified support matrix and limits as published by the library, and links to its changelog. |

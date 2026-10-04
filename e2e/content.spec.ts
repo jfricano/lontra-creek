@@ -80,9 +80,8 @@ test("state reference works from the keyboard and workbench media is labeled", a
   await page.keyboard.press("Enter");
   await expect(page.locator("details[open]")).toContainText("Browser SDK");
   await page.goto("/workbench/");
-  await expect(page.getByRole("heading", { name: "Recorded session" })).toBeVisible();
-  await expect(page.locator("video")).toHaveAttribute("controls", "");
-  await expect(page.locator("video")).not.toHaveAttribute("autoplay");
+  await expect(page.getByRole("heading", { name: "Step by step" })).toBeVisible();
+  await expect(page.locator("video")).toHaveCount(0);
   await expect(page.locator('img[src^="/recordings/workbench/"]')).toHaveCount(5);
   for (const image of await page.locator('img[src^="/recordings/workbench/"]').all()) await expect(image).toHaveAttribute("alt", /Recorded/);
 });

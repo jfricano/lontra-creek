@@ -33,7 +33,7 @@ sandbox (one container, K slots, default K = 3)
 7. **Preview credentials.** The sandbox API mints a development preview token for the slot's own principal only, for the current session, expiring at the earlier of the native preview lifetime and the session's end. Caddy routes `/sandbox/N/socket.io/*` only with the site's exact Origin. Revocation on return, reset, or expiry closes the slot's connections.
 8. **Bounded downloads.** Export returns canonical configuration built from the validated candidate, and a reproduction bundle of this session's metadata, both size-capped and generated per request. No host paths, tokens, cookies, or other sessions' data.
 9. **Honest modes.** The page labels the mode **synthetic fixture** and the exact package version from the running service. Fixture mode never claims Kafka durability or quarantine. A real-Kafka sandbox mode is out of scope until the Failures view needs it (open question 1).
-10. **Unavailable is a first-class state.** With no published seam, a full pool, or the service down, the page says so and offers the recorded tour, labeled with its own capture provenance. A recording never stands in for sandbox acceptance.
+10. **Unavailable is a first-class state.** With no published seam, a full pool, or the service down, the page says so and offers the step-by-step workbench screenshots, labeled with their own capture provenance. Screenshots never stand in for sandbox acceptance.
 
 ### Defaults (configuration, not measured capacity)
 

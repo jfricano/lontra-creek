@@ -4,13 +4,17 @@ import { createServer, type Server } from 'node:http';
 import { TENANT_ID } from '@lontra-creek/sim';
 import { createGateway } from 'streamotter/gateway';
 import { startManagementServer } from 'streamotter/gateway/management';
-import type { Gateway, Principal, ProjectConfig, SourceStatus, Trace, Page } from 'streamotter/contracts';
+import { getGatewayOperator } from 'streamotter/gateway/operator';
+import type { Gateway, OperatorApi, Principal, ProjectConfig, SourceStatus, Trace, Page } from 'streamotter/contracts';
 import type { HandlerRegistry } from 'streamotter/gateway';
 import { io, type Socket } from 'socket.io-client';
 import { Kafka } from 'kafkajs';
 import { readFileSync } from 'node:fs';
-import { benchConfig, benchHandlers, benchEnvironment, type LabChannels } from './bench.ts';
-import type { BenchStatus, LabAction, LabBenchState, StudySummary } from './contract.ts';
+import { benchConfig, benchHandlers, benchEnvironment, handlerBuildId, runsUnder, type LabChannels } from './bench.ts';
+import { INTENTS, SOURCE_SCENARIOS } from './capabilities.ts';
+import type { BenchIncidentFacts, BenchIntent, BenchIntentRequest, BenchOperation, BenchStatus, LabAction, LabBenchState, LabScenarioId, StudySummary } from './contract.ts';
+import { createJournal, hasJournal } from './journal.ts';
+import { BenchFailures, SOURCE_ID, type Outcome } from './operator.ts';
 import { LabFeed } from './feed.ts';
 import { ACTIONS, LabError, MAX_LEASE_MS } from './errors.ts';
 import { consumerGroupFor, newStudy, StudyStore, type StudyDescriptor } from './study.ts';
@@ -18,6 +22,8 @@ import { consumerGroupFor, newStudy, StudyStore, type StudyDescriptor } from './
 export const POLL_GRACE_MS = 15_000;
 /** How long a reset waits for the closing study's pending work before it carries on (LC11-ADR-02 step 4). */
 export const QUIESCE_MS = 5_000;
+/** A sustained calibration outage (LC11-S06's second start): more attempts than any retry budget, cleared by `scenario.restore-calibration`. */
+export const SUSTAINED_BLIP = 1_000;
 /** Kafka's error for a group that doesn't exist: a group that never committed is already gone. */
 const GROUP_ID_NOT_FOUND = 69;
 /**
@@ -32,14 +38,19 @@ export interface StudyGateClient { close(studyId: string): Promise<void>; discar
  */
 interface StudyScope { studyId: string; closed: boolean; pending: Set<Promise<unknown>>; counts: StudySummary['counts']; lastSource: StudySummary['lastSource'] }
 const scopeFor = (studyId: string): StudyScope => ({ studyId, closed: false, pending: new Set(), counts: { actions: 0, recordsProcessed: 0, recordsFailed: 0, lateCallbacks: 0 }, lastSource: null });
-/** A running gateway and its loopback management API. */
-export interface BenchServices { gateway: Gateway; management: { origin: string; close(): Promise<void> } }
+/**
+ * A running gateway and its loopback management API. With failure handling, also its
+ * in-process operator API (section 8b); stand-ins without failure handling leave it out.
+ */
+export interface BenchServices { gateway: Gateway; management: { origin: string; close(): Promise<void> }; operator?: OperatorApi | null }
+/** What a gateway with failure handling is started with: the study's journal directory and the handlers' build ID. */
+export interface BenchJournal { stateDirectory: string; handlerBuildId: string }
 export interface BenchRuntimeOptions {
   now?: () => number;
   /** Background tick interval; tests pass a long one and call tick() themselves. */
   tickMs?: number;
   /** Starts the gateway and management API; tests substitute stand-ins. */
-  services?: (config: ProjectConfig<LabChannels>, handlers: HandlerRegistry<LabChannels>, managementToken: string, port: number) => Promise<BenchServices>;
+  services?: (config: ProjectConfig<LabChannels>, handlers: HandlerRegistry<LabChannels>, managementToken: string, port: number, journal: BenchJournal | null) => Promise<BenchServices>;
   /** The bench's volume. Defaults to LAB_STATE_DIR, else /var/lib/lontra in production and .data elsewhere. */
   stateDir?: string;
   /** Deletes a consumer group; tests substitute a stand-in for the Kafka admin client. */
@@ -55,12 +66,37 @@ function fieldStationGate(number: number, origin: string, token: string): StudyG
   };
   return { close: studyId => call(studyId, 'close'), discard: studyId => call(studyId, 'discard') };
 }
-async function gatewayServices(config: ProjectConfig<LabChannels>, handlers: HandlerRegistry<LabChannels>, token: string, port: number): Promise<BenchServices> {
+async function gatewayServices(config: ProjectConfig<LabChannels>, handlers: HandlerRegistry<LabChannels>, token: string, port: number, journal: BenchJournal | null): Promise<BenchServices> {
+  // The journal opens at start, not construction, so the production-rules check below never touches it.
+  // No operator socket and no health listener: the bench reaches failure handling in process only (ADR-03).
+  const options = journal ? { stateDirectory: journal.stateDirectory, handlerBuildId: journal.handlerBuildId } : {};
   // Validate the exact same config under production rules before development enables traces.
-  createGateway({ config, handlers, mode: 'production' });
-  const gateway = createGateway({ config, handlers, mode: 'development' });
-  try { await gateway.start(); return { gateway, management: await startManagementServer({ gateway, host: '127.0.0.1', port, token, workbenchDir: null }) }; }
+  createGateway({ config, handlers, mode: 'production', ...options });
+  const gateway = createGateway({ config, handlers, mode: 'development', ...options });
+  try { await gateway.start(); return { gateway, operator: journal ? getGatewayOperator(gateway) : null, management: await startManagementServer({ gateway, host: '127.0.0.1', port, token, workbenchDir: null }) }; }
   catch (error) { await gateway.stop().catch(() => undefined); throw error; }
+}
+const OPERATION_ID = /^lop_[A-Za-z0-9_-]{22}$/;
+const FAILURE_ID = /^[\x21-\x7e]{1,200}$/;
+const BENCH_INTENTS: readonly BenchIntent[] = INTENTS.filter((intent): intent is BenchIntent => intent !== 'scenario.prepare-coverage');
+const INTENT_KEYS = new Set(['leaseId', 'operationId', 'intent', 'scenario', 'incident', 'planToken']);
+/** Validates a `BenchIntentRequest` (section 8b): 400 `invalid-request` for anything outside its shape. */
+export function parseBenchIntent(body: Record<string, unknown>): BenchIntentRequest {
+  const { leaseId, operationId, intent, scenario, incident, planToken } = body;
+  const target = incident as { failureId?: unknown; revision?: unknown } | undefined;
+  const ok = Object.keys(body).every(key => INTENT_KEYS.has(key))
+    && typeof leaseId === 'string' && typeof operationId === 'string' && OPERATION_ID.test(operationId)
+    && BENCH_INTENTS.includes(intent as BenchIntent)
+    && (intent === 'scenario.start' ? SOURCE_SCENARIOS.includes(scenario as LabScenarioId) : scenario === undefined)
+    && (String(intent).startsWith('incident.')
+      ? typeof target === 'object' && target !== null && !Array.isArray(target) && Object.keys(target).length === 2 && typeof target.failureId === 'string' && FAILURE_ID.test(target.failureId) && Number.isSafeInteger(target.revision) && (target.revision as number) >= 0
+      : incident === undefined)
+    && (intent === 'incident.approve-reprocess' ? typeof planToken === 'string' && /^[A-Za-z0-9_-]{16,512}$/.test(planToken) : planToken === undefined);
+  if (!ok) throw new LabError('invalid-request', 400);
+  return { leaseId: leaseId as string, operationId: operationId as string, intent: intent as BenchIntent,
+    ...(scenario === undefined ? {} : { scenario: scenario as LabScenarioId }),
+    ...(target === undefined ? {} : { incident: { failureId: target.failureId as string, revision: target.revision as number } }),
+    ...(planToken === undefined ? {} : { planToken: planToken as string }) };
 }
 export function requireNoDevelopmentPrincipals(items: readonly unknown[]): void {
   if (items.length !== 0) throw new Error('Development principals are forbidden.');
@@ -76,6 +112,13 @@ export class BenchRuntime {
   #scenario: LabBenchState = { gateway: 'restarting', source: { status: 'starting' }, relay: 'up', calibration: 'present', satellite: 'idle', receiptTimeoutMs: 5000 };
   #gateway: Gateway | undefined;
   #management: BenchServices['management'] | undefined;
+  /** The running gateway's operator API; null without failure handling or while the gateway is down. */
+  #operator: OperatorApi | null = null;
+  /** The running gateway's own report that its incident store is the SQLite journal (section 8b). */
+  #durable = false;
+  #handlerBuildId: string | null = null;
+  /** The open study's intents, plan tokens, and steps (operator.ts); replaced with each study, closed by a reset. */
+  #failures: BenchFailures | null = null;
   #managementToken = randomBytes(32).toString('base64url');
   #traceCursor: string | null = null;
   /** The study this bench runs; null only before boot and between discarding one study and provisioning the next. */
@@ -94,6 +137,8 @@ export class BenchRuntime {
   #tail: Promise<unknown> = Promise.resolve();
   #timer?: NodeJS.Timeout;
   #principalCount = -1;
+  /** Fixture sources the running gateway's own configuration declares, as its management API reports it (S3); -1 until measured. */
+  #fixtureSources = -1;
   #ticking: Promise<void> | undefined;
   #pollFailingSince: number | null = null;
   readonly #now: () => number;
@@ -108,8 +153,9 @@ export class BenchRuntime {
   run<T>(fn: () => Promise<T>): Promise<T> { const p = this.#tail.then(fn); this.#tail = p.catch(() => undefined); return p; }
   status(): BenchStatus {
     const study = this.#study;
-    return { bench: this.#settings.number, state: this.#state, lease: this.#lease, scenario: structuredClone(this.#scenario), checks: { developmentPrincipals: this.#principalCount, fixtureSources: 0, managementHost: '127.0.0.1' }, readiness: this.readiness(),
-      study: study && { studyId: study.studyId, generation: study.generation, consumerGroup: study.consumerGroup, createdAt: study.createdAt, phase: study.phase, restarts: { ...study.restarts } } };
+    return { bench: this.#settings.number, state: this.#state, lease: this.#lease, scenario: structuredClone(this.#scenario), checks: { developmentPrincipals: this.#principalCount, fixtureSources: this.#fixtureSources, managementHost: '127.0.0.1' }, readiness: this.readiness(),
+      study: study && { studyId: study.studyId, generation: study.generation, consumerGroup: study.consumerGroup, createdAt: study.createdAt, phase: study.phase, restarts: { ...study.restarts } },
+      failures: { profile: this.#settings.profile, durable: this.#durable, handlerBuildId: this.#handlerBuildId } };
   }
   /**
    * LC11-ADR-02's three facts. Control: the gateway and its management API are up and
@@ -139,7 +185,7 @@ export class BenchRuntime {
     return envelope.data;
   }
   async #relay(cut: boolean): Promise<void> { const origin = this.#env['LAB_RELAY_ORIGIN'] ?? `http://lab-${this.#settings.number}-kafka:9180`; const response = await fetch(`${origin}/${cut ? 'cut' : 'restore'}`, { method: 'POST', headers: { authorization: `Bearer ${this.#settings.relayToken}` }, signal: AbortSignal.timeout(3000) }); if (!response.ok) throw new Error('Relay unavailable.'); this.#scenario.relay = cut ? 'cut' : 'up'; }
-  #config() { const study = this.#study; if (!study) throw new Error('No study.'); return benchConfig(this.#settings.number, { generation: study.generation, host: this.#env['BENCH_HOST'] ?? '0.0.0.0', port: Number(this.#env['BENCH_PORT'] ?? 7400), brokers: (this.#env['BENCH_KAFKA_BROKERS'] ?? `lab-${this.#settings.number}-kafka:${9100 + this.#settings.number}`).split(','), caFile: this.#env['KAFKA_CA_FILE'] ?? '/etc/lontra/kafka/ca.pem', consumerGroup: study.consumerGroup, allowedOrigins: (this.#env['SITE_ORIGIN'] ?? 'https://streamotter.dev').split(',') }); }
+  #config() { const study = this.#study; if (!study) throw new Error('No study.'); return benchConfig(this.#settings.number, { profile: this.#settings.profile, generation: study.generation, host: this.#env['BENCH_HOST'] ?? '0.0.0.0', port: Number(this.#env['BENCH_PORT'] ?? 7400), brokers: (this.#env['BENCH_KAFKA_BROKERS'] ?? `lab-${this.#settings.number}-kafka:${9100 + this.#settings.number}`).split(','), caFile: this.#env['KAFKA_CA_FILE'] ?? '/etc/lontra/kafka/ca.pem', consumerGroup: study.consumerGroup, allowedOrigins: (this.#env['SITE_ORIGIN'] ?? 'https://streamotter.dev').split(',') }); }
   /** Runs `fn` only while `scope` is the open study; otherwise counts a late callback against that study. */
   #within(scope: StudyScope, fn: () => void): void { if (scope.closed || scope !== this.#scope) { scope.counts.lateCallbacks++; return; } fn(); }
   /**
@@ -147,16 +193,36 @@ export class BenchRuntime {
    * With `graced`, a failed first poll starts the poll grace clock, as a background poll's would, instead of failing the start.
    */
   async #startGateway(graced = false): Promise<void> {
-    const config = this.#config(); const scope = this.#scope;
+    const config = this.#config(); const scope = this.#scope; const study = this.#study!; const profile = this.#settings.profile;
+    const open = () => scope === this.#scope && !scope.closed;
     const handlers = benchHandlers(this.#settings.number, { authenticate: token => this.authenticate(token), serviceToken: this.#settings.serviceToken, snapshotOrigin: this.#settings.snapshotOrigin, calibration: () => this.#scenario.calibration === 'present',
-      record: item => this.#within(scope, () => { if (item.kind === 'record') scope.counts[item.outcome === 'failed' ? 'recordsFailed' : 'recordsProcessed']++; this.#feed.add(item); }) });
-    const services = await this.#services(config, handlers, this.#managementToken, Number(this.#env['BENCH_MANAGEMENT_PORT'] ?? 7401)); this.#gateway = services.gateway; this.#management = services.management;
+      record: item => this.#within(scope, () => { if (item.kind === 'record') scope.counts[item.outcome === 'failed' ? 'recordsFailed' : 'recordsProcessed']++; this.#feed.add(item); }),
+      mapping: () => study.mapping,
+      // One armed blip per attempt. The count is persisted through the work queue, so it never races the study's other writes.
+      blip: () => {
+        if (!open() || study.blip <= 0) return false;
+        study.blip--; void this.run(async () => { if (open()) await this.#store.save(study); }).catch(() => undefined);
+        return true;
+      },
+      ...(profile === 'quarantine' ? { recovery: { study: () => open() ? { studyId: study.studyId, generation: study.generation } : null } } : {}) });
+    const build = handlerBuildId(study.mapping);
+    const journal = profile === 'off' ? null : { stateDirectory: this.#store.journal(study.studyId), handlerBuildId: build };
+    const services = await this.#services(config, handlers, this.#managementToken, Number(this.#env['BENCH_MANAGEMENT_PORT'] ?? 7401), journal); this.#gateway = services.gateway; this.#management = services.management;
     const principals = await this.#managementCall<{ items: unknown[] }>('dev/principals'); this.#principalCount = principals.items.length;
     requireNoDevelopmentPrincipals(principals.items);
+    // Measured from the running gateway, not from the config the bench meant to pass (S3).
+    const running = await this.#managementCall<{ config: ProjectConfig }>('config');
+    this.#fixtureSources = Object.values(running.config.sources).filter(source => source.kind === 'fixture').length;
+    if (journal) {
+      // The library's own report, never the bench's expectation: a gateway whose incidents aren't in the journal fails the start.
+      const operator = services.operator ?? null; const store = operator ? (await operator.status()).store : null;
+      if (!operator || store?.kind !== 'sqlite' || !store.durable) throw new Error('The gateway\'s failure journal is not durable.');
+      this.#operator = operator; this.#durable = true; this.#handlerBuildId = build;
+    }
     this.#traceCursor = null; this.#scenario.gateway = 'running'; this.#pollFailingSince = null;
     try { await this.#poll(false); } catch (error) { if (!graced) throw error; this.#pollFailingSince = this.#now(); }
   }
-  async #stopGateway(): Promise<void> { this.#scenario.gateway = 'restarting'; this.#satellite?.disconnect(); this.#satellite = undefined; this.#scenario.satellite = 'idle'; await this.#management?.close(); this.#management = undefined; await this.#gateway?.stop(); this.#gateway = undefined; }
+  async #stopGateway(): Promise<void> { this.#scenario.gateway = 'restarting'; this.#operator = null; this.#durable = false; this.#satellite?.disconnect(); this.#satellite = undefined; this.#scenario.satellite = 'idle'; await this.#management?.close(); this.#management = undefined; await this.#gateway?.stop(); this.#gateway = undefined; }
   async #deleteGroup(group: string): Promise<void> { const connection = benchConfig(this.#settings.number, { brokers: (this.#env['BENCH_KAFKA_BROKERS'] ?? `lab-${this.#settings.number}-kafka:${9100 + this.#settings.number}`).split(',') }).connections['field']!; const kafka = new Kafka({ brokers: [...connection.brokers], ssl: { ca: [readFileSync(this.#env['KAFKA_CA_FILE'] ?? '/etc/lontra/kafka/ca.pem', 'utf8')] }, sasl: { mechanism: 'scram-sha-512', username: this.#env['KAFKA_LAB_USERNAME']!, password: this.#env['KAFKA_LAB_PASSWORD']! }, logLevel: 0 }); const admin = kafka.admin(); try { await admin.connect(); await admin.deleteGroups([group]); }
     catch (error) { if (!((error as { groups?: { errorCode: number }[] }).groups ?? [{ errorCode: -1 }]).every(item => item.errorCode === GROUP_ID_NOT_FOUND)) throw error; }
     finally { await admin.disconnect(); } }
@@ -176,9 +242,11 @@ export class BenchRuntime {
     const loaded = await this.#store.load();
     const study = loaded === 'corrupt' ? null : loaded;
     const leaseLive = study?.lease ? Date.parse(study.lease.expiresAt) > this.#now() : false;
-    if (study && (study.phase === 'clean' || study.phase === 'open' && leaseLive)) {
+    // A study provisioned without a journal (failure handling was off) can't be resumed with failure handling on.
+    const journaled = !study || this.#settings.profile === 'off' || hasJournal(this.#store.journal(study.studyId));
+    if (study && journaled && (study.phase === 'clean' || study.phase === 'open' && leaseLive)) {
       study.restarts.process++; await this.#store.save(study);
-      this.#study = study; this.#scope = scopeFor(study.studyId); this.#scenario.calibration = study.calibration;
+      this.#study = study; this.#scope = scopeFor(study.studyId); this.#scenario.calibration = study.calibration; this.#failures = new BenchFailures({ number: this.#settings.number, studyId: study.studyId, now: this.#now });
       // The lease continues: report it at once, so the field station keeps it while the gateway starts (control stays false until then).
       // The feed starts a new epoch: the page's cursor from the old process is answered from here, with `gap`.
       if (study.phase === 'open') { this.#lease = study.lease; this.#feed.reset(study.lease!.leaseId, study.restarts.process); this.#feed.add({ kind: 'bench', event: 'gap' }); this.#state = 'leased'; }
@@ -212,7 +280,7 @@ export class BenchRuntime {
     const sources = await this.#managementCall<{ items: SourceStatus[] }>('sources'); const source = sources.items.find(s => s.sourceId === 'field');
     if (source) { const next = { status: source.status, ...(source.reason ? { reason: source.reason } : {}) }; this.#scope.lastSource = source.status; if (record && JSON.stringify(next) !== JSON.stringify(this.#scenario.source)) this.#feed.add({ kind: 'source', sourceId: 'field', ...next }); this.#scenario.source = next; }
     // Drain bounded management pages, retaining the last cursor even on an empty page.
-    for (let i = 0; i < 20; i++) { const traces = await this.#managementCall<Page<Trace>>(`traces?limit=500${this.#traceCursor ? `&cursor=${encodeURIComponent(this.#traceCursor)}` : ''}`); for (const trace of traces.items) if (record && this.#lease) this.#feed.trace(trace, this.#satelliteIds); if (traces.nextCursor) this.#traceCursor = traces.nextCursor; if (traces.items.length < 500) break; }
+    for (let i = 0; i < 20; i++) { const traces = await this.#managementCall<Page<Trace>>(`traces?limit=500${this.#traceCursor ? `&cursor=${encodeURIComponent(this.#traceCursor)}` : ''}`); for (const trace of traces.items) if (record && this.#lease) { this.#feed.trace(trace, this.#satelliteIds); if (trace.stage === 'snapshot' && trace.outcome === 'ok' && trace.subscriptionId !== undefined && !this.#satelliteIds.has(trace.subscriptionId)) this.#failures?.observeSnapshot(trace.at); } if (traces.nextCursor) this.#traceCursor = traces.nextCursor; if (traces.items.length < 500) break; }
   }
   /** Binds a lease to the clean study, which is open from now until a reset discards it. The lease is persisted with the study; its tokens are not. */
   async lease(leaseId: string, expiresAt: string): Promise<void> {
@@ -225,7 +293,7 @@ export class BenchRuntime {
   token(leaseId: unknown): { token: string; expiresAt: string } { this.#check(leaseId); const token = `lab${this.#settings.number}_${randomBytes(32).toString('base64url')}`; if (this.#tokens.size >= 128) return { token: [...this.#tokens][0]!, expiresAt: this.#lease!.expiresAt }; this.#tokens.add(token); return { token, expiresAt: this.#lease!.expiresAt }; }
   feed(leaseId: unknown, after?: string, limit?: number) { this.#check(leaseId); return this.#feed.page(after, limit); }
   /** LC11-ADR-02 step 1, synchronously: the lease, its tokens, and the study's callbacks stop now. */
-  #invalidate(): void { if (this.#lease) this.#ended = this.#lease; this.#lease = null; this.#tokens.clear(); this.#state = 'resetting'; this.#scope.closed = true; }
+  #invalidate(): void { if (this.#lease) this.#ended = this.#lease; this.#lease = null; this.#tokens.clear(); this.#state = 'resetting'; this.#scope.closed = true; this.#failures?.close(); }
   /**
    * Reset is study discard (LC11-ADR-02), in order: invalidate the lease and tokens;
    * revoke its subject; shut the field station's publisher gate for the study;
@@ -266,7 +334,9 @@ export class BenchRuntime {
   async #provision(): Promise<void> {
     const study = newStudy(this.#settings.number, this.#now());
     await this.#store.save(study);
-    this.#study = study; this.#scope = scopeFor(study.studyId);
+    this.#study = study; this.#scope = scopeFor(study.studyId); this.#failures = new BenchFailures({ number: this.#settings.number, studyId: study.studyId, now: this.#now });
+    // The only published way to create a journal; a gateway never creates one (journal.ts).
+    if (this.#settings.profile !== 'off') await createJournal(this.#config(), this.#store.journal(study.studyId), this.#store.directory(study.studyId));
     this.#scenario.calibration = 'present'; await this.#relay(false);
     await this.#startGateway();
     if (this.#scenario.source.status !== 'healthy') throw new Error('A new study\'s source did not become healthy.');
@@ -290,13 +360,7 @@ export class BenchRuntime {
       s.gateway = 'restarting';
       // Same study: same group and generation. A source that comes back held or
       // paused keeps the lease; only a gateway that can't start fails the bench.
-      void this.run(async () => {
-        if (scope.closed) return;
-        // Draining the old gateway's traces is best effort: one slow or failed poll changes nothing, and the `gap` below covers what it missed.
-        await this.#poll(true).catch(() => undefined); await this.#stopGateway(); this.#feed.add({ kind: 'bench', event: 'gateway-stopped' });
-        study.restarts.gateway++; await this.#store.save(study);
-        await this.#startGateway(true); this.#feed.add({ kind: 'bench', event: 'gateway-started' }); this.#feed.add({ kind: 'bench', event: 'gap' });
-      }).catch(() => { if (!scope.closed) this.#state = 'failed'; });
+      void this.run(() => this.#restartGateway(scope, study)).catch(() => { if (!scope.closed) this.#state = 'failed'; });
     }
     if (action === 'satellite.start') {
       const config = this.#config(); const token = this.token(leaseId).token;
@@ -311,6 +375,88 @@ export class BenchRuntime {
     // A failed action doesn't spend the visitor's one-a-second budget.
     this.#nextAction = this.#now() + 1000; scope.counts.actions++;
     this.#feed.add({ kind: 'action', action }); return { at: new Date(this.#now()).toISOString(), scenario: structuredClone(s) };
+  }
+  /** A same-study gateway restart, run from the work queue: same group, generation, and journal. */
+  async #restartGateway(scope: StudyScope, study: StudyDescriptor): Promise<void> {
+    if (scope.closed) return;
+    // Draining the old gateway's traces is best effort: one slow or failed poll changes nothing, and the `gap` below covers what it missed.
+    await this.#poll(true).catch(() => undefined); await this.#stopGateway(); this.#feed.add({ kind: 'bench', event: 'gateway-stopped' });
+    study.restarts.gateway++; await this.#store.save(study);
+    await this.#startGateway(true); this.#feed.add({ kind: 'bench', event: 'gateway-started' }); this.#feed.add({ kind: 'bench', event: 'gap' });
+  }
+  /**
+   * `POST /bench/v1/intents` (section 8b). Validates the request and its preconditions
+   * synchronously, records it, and carries it out in the background: `scenario.*` in
+   * the work queue (they change the study's handlers), `incident.*` outside it, since
+   * the library's retry and reassess wait up to 15 seconds for the source to settle.
+   * A repeated operation ID answers the recorded operation, whatever has changed since.
+   */
+  async intent(body: Record<string, unknown>): Promise<BenchOperation> {
+    const request = parseBenchIntent(body);
+    this.#check(request.leaseId);
+    const failures = this.#failures; const scope = this.#scope; const study = this.#study;
+    if (!failures || failures.closed || !study) throw new LabError('no-lease', 409);
+    const recorded = failures.recorded(request);
+    if (recorded) return recorded;
+    const profile = this.#settings.profile; const s = this.#scenario;
+    if (profile === 'off') throw new LabError('not-applicable', 409);
+    const leaseEnd = Date.parse(this.#lease!.expiresAt);
+    if (request.intent === 'scenario.start') {
+      const scenario = request.scenario!;
+      if (!runsUnder(scenario).includes(profile) || s.gateway !== 'running' || !this.#operator) throw new LabError('not-applicable', 409);
+      // One incident at a time: a scenario can't start while the source holds one (section 12.5).
+      if ((await this.#operator.status()).sources.find(source => source.sourceId === SOURCE_ID)?.heldIncident) throw new LabError('not-applicable', 409);
+      if (scenario === 'fouled-sensor' && s.calibration !== 'present') throw new LabError('not-applicable', 409);
+      return failures.accept(request, () => this.run(() => this.#arm(scope, study, scenario)));
+    }
+    if (request.intent === 'scenario.restore-calibration') {
+      if (s.calibration === 'present' && study.blip === 0) throw new LabError('not-applicable', 409);
+      return failures.accept(request, () => this.run(async (): Promise<Outcome> => {
+        if (scope.closed) return { status: 'cancelled', outcome: 'study-closed', incidentRevision: null };
+        s.calibration = 'present'; study.calibration = 'present'; study.blip = 0; await this.#store.save(study);
+        failures.step('LC-03 calibration restored');
+        return { status: 'succeeded', outcome: 'restored', incidentRevision: null };
+      }));
+    }
+    return failures.accept(request, () => failures.incident(this.#operator, request, leaseEnd));
+  }
+  /** What `scenario.start` arms on the bench (section 12.5). The field station publishes the scenario's records itself. */
+  async #arm(scope: StudyScope, study: StudyDescriptor, scenario: LabScenarioId): Promise<Outcome> {
+    if (scope.closed) return { status: 'cancelled', outcome: 'study-closed', incidentRevision: null };
+    const failures = this.#failures!; const s = this.#scenario;
+    if (scenario === 'fouled-sensor') {
+      if (s.calibration !== 'present') return { status: 'refused', outcome: 'not-applicable', incidentRevision: null };
+      s.calibration = 'removed'; study.calibration = 'removed'; await this.#store.save(study);
+      failures.step('LC-03 calibration removed');
+    }
+    if (scenario === 'calibration-blip') {
+      // The first blip in a study fails once, which a bounded retry absorbs; later ones last until calibration is restored.
+      study.blips++; study.blip = study.blips === 1 ? 1 : SUSTAINED_BLIP; await this.#store.save(study);
+      failures.step(study.blip === 1 ? 'One calibration lookup will time out' : 'The next calibration lookups will time out');
+    }
+    if (scenario === 'inspect-old-reading' && study.mapping !== 'corrected') {
+      // Corrected handlers are a new handler build: a same-study restart, so incidents record which build ran.
+      study.mapping = 'corrected'; await this.#store.save(study);
+      failures.step('Projection corrected; gateway restarted with the new handlers');
+      await this.#restartGateway(scope, study);
+    }
+    return { status: 'succeeded', outcome: 'armed', incidentRevision: null };
+  }
+  /** `GET /bench/v1/incident`: the study's incident facts. While the gateway restarts there is no operator to ask: 409, never a guess. */
+  async incident(leaseId: unknown): Promise<BenchIncidentFacts> {
+    this.#check(leaseId);
+    const failures = this.#failures; const study = this.#study;
+    if (!failures || failures.closed || !study) throw new LabError('no-lease', 409);
+    const profile = this.#settings.profile; const operator = this.#operator;
+    if (profile !== 'off' && (this.#scenario.gateway !== 'running' || !operator)) throw new LabError('not-applicable', 409);
+    const app = { calibration: this.#scenario.calibration, mapping: study.mapping, blips: study.blips };
+    try { return await failures.facts(operator, { profile, app }); }
+    catch (error) { if (operator !== this.#operator) throw new LabError('not-applicable', 409); throw error; }
+  }
+  /** `GET /bench/v1/operations/:operationId`: the lease's recorded operation, or null when there is none by that ID. */
+  operation(leaseId: unknown, operationId: string): BenchOperation | null {
+    this.#check(leaseId);
+    return this.#failures?.operation(leaseId as string, operationId) ?? null;
   }
   api(): Server {
     const expected = Buffer.from(`Bearer ${this.#settings.serviceToken}`);
@@ -349,6 +495,11 @@ export class BenchRuntime {
           if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new LabError('invalid-request', 400);
           return send(200, this.feed(url.searchParams.get('leaseId'), url.searchParams.get('after') ?? undefined, limit));
         }
+        // The intent surface (section 8b) answers at once, during a gateway restart too: the work runs in the background.
+        if (request.method === 'POST' && url.pathname === '/bench/v1/intents') return send(202, await this.intent(body));
+        if (request.method === 'GET' && url.pathname === '/bench/v1/incident') return send(200, await this.incident(url.searchParams.get('leaseId')));
+        const operation = request.method === 'GET' ? /^\/bench\/v1\/operations\/(lop_[A-Za-z0-9_-]{22})$/.exec(url.pathname) : null;
+        if (operation) { const found = this.operation(url.searchParams.get('leaseId'), operation[1]!); return found ? send(200, found) : send(404, { error: 'Not found.' }); }
         await this.run(async () => {
           if (request.method === 'GET' && url.pathname === '/bench/v1/status') return send(200, this.status());
           if (request.method === 'PUT' && url.pathname === '/bench/v1/lease') { if (typeof body['leaseId'] !== 'string' || typeof body['expiresAt'] !== 'string') throw new LabError('invalid-request', 400); await this.lease(body['leaseId'], body['expiresAt']); return send(200, this.status()); }

@@ -1,25 +1,25 @@
 # Lontra Creek V1.1 — Status
 
-Updated October 3, 2026 · The live tracker for [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Every slice PR updates its row in the same PR.
+Updated October 4, 2026 · The live tracker for [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Every slice PR updates its row in the same PR.
 
-**Overall:** buildable-now slices in review or in progress; nothing deployed. No native V1.1 capability is available yet. Installed library: `streamotter@0.1.0-rc.3`, which provides none of the native V1.1 capabilities ([BASELINE.md](BASELINE.md)).
+**Overall:** the buildable-now slices are combined in draft PR #40 (`review/v1.1`; the slice PRs #29–#39 are closed with their branches kept) and passed an [independent review](REVIEW_FINDINGS.md) with every finding fixed; nothing deployed. No native V1.1 capability is available yet. Installed library: `streamotter@0.1.0-rc.3`, which provides none of the native V1.1 capabilities ([BASELINE.md](BASELINE.md)).
 
 ## Slices
 
 | ID | Slice | State | Branch / PR | Acceptance evidence |
 | --- | --- | --- | --- | --- |
-| P0 | Planning, baseline, decisions, sandbox contract | In review | `docs/v1.1-implementation-plan` | A40 planning record |
-| W1 | Lab foundation hardening | In review | `fix/v1.1-lab-hardening` · #31 | A03, A27 (partly), A30, A37: unit and fixture |
-| W2 | Sandbox session service | In review | `feat/v1.1-sandbox-sessions` · #32 | Session layer only, unit and fixture; no sandbox runtime yet |
-| W3 | `/workbench/` page shell | In review | `feat/v1.1-workbench-page` · #34 | A35, A45; A41 and A46 partly: unit and fixture; real UI not mounted (W9a) |
-| W4 | Source failures track shell | In review | `feat/v1.1-failures-track` · #35 | A01, A04, A36 (new UI), A37: unit and fixture |
-| W5 | Study identity and coverage ledger | Fixing review findings | `feat/v1.1-study-identity` · #36 (draft) | A14 (app side), A25, A26, A33: unit; Lab workflow on local Kafka |
-| W6 | Local launcher (`dev:lab`) | In review | `feat/v1.1-dev-lab` · #30 | See #30 |
-| W7 | Kafka authorization (local and CI) | In review | `feat/v1.1-kafka-acls` · #33 | A29 at local and CI level; hosted broker unchanged |
-| W8 | Site content | In review | `feat/v1.1-site-content` · #37 | A01, A02, A40: unit and fixture |
+| P0 | Planning, baseline, decisions, sandbox contract | Combined in #40 | `docs/v1.1-implementation-plan` · #29 (closed) | A40 planning record |
+| W1 | Lab foundation hardening | Combined in #40 | `fix/v1.1-lab-hardening` · #31 (closed) | A03, A27 (partly), A30, A37: unit and fixture |
+| W2 | Sandbox session service | Combined in #40 | `feat/v1.1-sandbox-sessions` · #32 (closed) | Session layer only, unit and fixture; no sandbox runtime yet |
+| W3 | `/workbench/` page shell | Combined in #40 | `feat/v1.1-workbench-page` · #34 (closed) | A35, A45; A41 and A46 partly: unit and fixture; real UI not mounted (W9a) |
+| W4 | Source failures track shell | Combined in #40 | `feat/v1.1-failures-track` · #35 (closed) | A01, A04, A36 (new UI), A37: unit and fixture |
+| W5 | Study identity and coverage ledger | Combined in #40 | `feat/v1.1-study-identity` · #36 (closed) | A14 (app side), A25, A26, A33: unit; Lab workflow on local Kafka |
+| W6 | Local launcher (`dev:lab`) | Combined in #40 | `feat/v1.1-dev-lab` · #30 (closed) | See #30 |
+| W7 | Kafka authorization (local and CI) | Combined in #40 | `feat/v1.1-kafka-acls` · #33 (closed) | A29 at local and CI level; hosted broker unchanged |
+| W8 | Site content | Combined in #40 | `feat/v1.1-site-content` · #37 (closed) | A01, A02, A40: unit and fixture |
 | W9a | Actual sandbox | Blocked on upstream R1–R6 | | |
 | W9b | Source failure exercises | Blocked on upstream R7–R9 | | |
-| W10 | Verification and release review | Not started | | |
+| W10 | Verification and release review | Independent review done; cross-browser and hosted checks remain | `review/v1.1` · #40 | [REVIEW_FINDINGS.md](REVIEW_FINDINGS.md) |
 
 ## Gates
 

@@ -141,7 +141,6 @@ export function incidentView(incident: LabIncidentSummary, browser: readonly Bro
       ["Source coordinates", `${detail.topic} · partition ${detail.partition} · offset ${detail.offset}`],
       ["Evidence fingerprint", detail.evidenceFingerprint ?? "Not reported"],
       ["Handler identity", detail.handlerIdentity ?? "Not reported"],
-      ["Source generation", detail.sourceGeneration ?? "Not reported"],
       ["Incident revision", String(incident.scenarioRevision)]
     ],
     steps,

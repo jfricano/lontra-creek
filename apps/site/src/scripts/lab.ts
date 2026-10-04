@@ -102,6 +102,7 @@ async function mount(root: HTMLElement): Promise<void> {
   }
   async function disconnect(): Promise<void> {
     sequence++; const old = client; client = undefined; leaseId = undefined; connectingLeaseId = undefined; cursor = "";
+    tracks?.showBench({ leased: leased(), busy: intentBusy });
     signIn?.stop(); signIn = undefined;
     await old?.close(); actions.disabled = true;
   }
@@ -134,6 +135,7 @@ async function mount(root: HTMLElement): Promise<void> {
         getToken: ({ signal }) => retry.token(async () => (await request<LabToken>("lease/token", {}, "POST", signal)).token) });
       retry.attach(next);
       client = next; signIn = retry; leaseId = current.leaseId;
+      tracks?.showBench({ leased: leased(), busy: intentBusy });
       next.on("state", ({ state }) => { if (activeSequence !== sequence) return; connection = state; observe(`Connection ${state}`); applicationView(); });
       const view = client.subscribe("station", { channelVersion: channelVersions.station, params: { stationId: "LC-03" } });
       view.on("state", ({ state, reason }) => { if (activeSequence !== sequence) return; viewState = state; viewReason = reason; el("[data-lab-view-state]").textContent = `${state}${reason ? ` · ${reason}` : ""}`; observe(`LC-03 subscription ${state}${reason ? ` (${reason})` : ""}`); applicationView(); });
@@ -152,7 +154,7 @@ async function mount(root: HTMLElement): Promise<void> {
     const changed = lease?.status !== next.status || ("leaseId" in next && (!lease || !("leaseId" in lease) || lease.leaseId !== next.leaseId));
     lease = next; offset = Date.parse(next.now) - Date.now();
     incident.explain(capabilities, next.status === "ready" || next.status === "active");
-    tracks?.showBench({ leased: next.status === "ready" || next.status === "active", busy: intentBusy });
+    tracks?.showBench({ leased: leased(), busy: intentBusy });
     returns.disabled = next.status === "none" || next.status === "ended";
     joins.disabled = !returns.disabled;
     if (next.status === "queued") { message.textContent = `All benches are busy. Your place in line: ${next.position} of ${next.queueLength}.`; await disconnect(); resetPanel(); }
@@ -258,7 +260,8 @@ async function mount(root: HTMLElement): Promise<void> {
       announced = state;
     } catch { /* The lease poll reports a lost lease; the panel keeps its last served state. */ }
   }
-  function leased(): boolean { return lease?.status === "ready" || lease?.status === "active"; }
+  /** Intents need a claimed lease (Lab contract 12.8): the bench token has arrived and the page holds its lease ID. */
+  function leased(): boolean { return leaseId !== undefined; }
   function setIntentBusy(on: boolean): void {
     intentBusy = on; incident.busy(on);
     tracks?.showBench({ leased: leased(), busy: on });

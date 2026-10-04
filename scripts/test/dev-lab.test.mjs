@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import {
-  DEFAULT_DIR, DEFAULT_PROJECT, ROOT, UsageError,
-  checkOwnDirectory, checkPrerequisites, compareVersions, confirmDiscard, extraCaDockerfile, localDirectory, parseArgs, readEnv, urls, waitForReadyBench
+  COMPOSE_FILES, DEFAULT_DIR, DEFAULT_PROJECT, ROOT, UsageError,
+  checkOwnDirectory, checkPrerequisites, compareVersions, confirmDiscard, extraCaDockerfile, localDirectory, parseArgs, readEnv, sandboxSecret, urls, waitForReadyBench
 } from "../dev-lab.mjs";
 
 describe("parseArgs", () => {
@@ -225,6 +225,26 @@ describe("readEnv and urls", () => {
 
   test("every printed URL is on the loopback HTTPS origin", () => {
     for (const url of Object.values(urls())) assert.match(url, /^https:\/\/localhost:8443\//);
+    assert.equal(urls().workbench, "https://localhost:8443/workbench/");
+    assert.equal(urls().sandboxStatus, "https://localhost:8443/api/sandbox/status");
+  });
+});
+
+describe("the workbench sandbox", () => {
+  test("its overlay comes after the Lab's and before the local overrides, and exists", () => {
+    assert.deepEqual(COMPOSE_FILES, ["deploy/compose.yaml", "deploy/compose.lab.yaml", "deploy/compose.sandbox.yaml", "deploy/compose.local-lab.yaml"]);
+    for (const file of COMPOSE_FILES) assert.ok(readFileSync(join(ROOT, file), "utf8").length > 0, file);
+  });
+
+  test("its service token is appended only to an env file without one", () => {
+    assert.equal(sandboxSecret({ SANDBOX_SERVICE_TOKEN: "kept" }, () => assert.fail("no new token")), "");
+    const added = sandboxSecret({ LAB_RELAY_TOKEN: "x" }, () => "f".repeat(64));
+    assert.deepEqual(readEnv(added), { SANDBOX_SERVICE_TOKEN: "f".repeat(64) });
+    assert.match(sandboxSecret({}), /^\n# .*\nSANDBOX_SERVICE_TOKEN=[0-9a-f]{64}\n$/, "32 random bytes, hex");
+  });
+
+  test("new env files get one from deploy/make-secrets.sh", () => {
+    assert.match(readFileSync(join(ROOT, "deploy/make-secrets.sh"), "utf8"), /^SANDBOX_SERVICE_TOKEN=\$\(secret\)$/m);
   });
 });
 

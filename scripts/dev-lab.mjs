@@ -1,7 +1,8 @@
 /**
  * The real-Kafka Failure Lab on this machine, built from source: the
  * docs/LOCAL_LAB.md recipe as one command. Three benches, Kafka over TLS, the
- * field station, the gateway, and Caddy, served at https://localhost:8443 only.
+ * field station, the gateway, the workbench sandbox, and Caddy, served at
+ * https://localhost:8443 only.
  *
  *   npm run dev:lab                         # same as `up`
  *   npm run dev:lab -- up [--no-build] [--extra-ca <file>]
@@ -21,6 +22,7 @@
  * OpenSSL, and the repository's own scripts. See docs/LOCAL_LAB.md.
  */
 import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, appendFileSync, copyFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { request } from "node:https";
@@ -40,7 +42,8 @@ export const ORIGIN = `https://localhost:${PORT}`;
 export const MIN_NODE = "24.0.0";
 /** `!override` in deploy/compose.local-lab.yaml needs Compose 2.24.4. */
 export const MIN_COMPOSE = "2.24.4";
-const COMPOSE_FILES = ["deploy/compose.yaml", "deploy/compose.lab.yaml", "deploy/compose.local-lab.yaml"];
+/** In order: the local overlay comes last so its overrides win. */
+export const COMPOSE_FILES = ["deploy/compose.yaml", "deploy/compose.lab.yaml", "deploy/compose.sandbox.yaml", "deploy/compose.local-lab.yaml"];
 const STATE_FILE = "dev-lab.json";
 const COMMANDS = ["up", "stop", "status", "logs", "discard"];
 
@@ -48,7 +51,8 @@ export class UsageError extends Error {}
 
 export const USAGE = `Usage: npm run dev:lab -- [command] [options]
 
-Runs the real-Kafka Failure Lab locally from source at ${ORIGIN}/lab/.
+Runs the real-Kafka Failure Lab locally from source at ${ORIGIN}/lab/,
+with the workbench sandbox at ${ORIGIN}/workbench/.
 Not the same as \`npm run dev\` (fixture walkthrough, no Kafka) or
 \`npm run dev:kafka\` (native Kafka walkthrough, no Lab benches).
 
@@ -280,8 +284,20 @@ export function urls() {
     site: `${ORIGIN}/`,
     lab: `${ORIGIN}/lab/`,
     health: `${ORIGIN}/api/status`,
-    labStatus: `${ORIGIN}/api/lab/status`
+    labStatus: `${ORIGIN}/api/lab/status`,
+    workbench: `${ORIGIN}/workbench/`,
+    sandboxStatus: `${ORIGIN}/api/sandbox/status`
   };
+}
+
+/**
+ * The env-file lines that give the workbench sandbox its service token, or "" when
+ * the file has one. deploy/make-secrets.sh writes it into new files; an env file
+ * made before the sandbox existed gets one here, once.
+ */
+export function sandboxSecret(env, token = () => randomBytes(32).toString("hex")) {
+  if (env.SANDBOX_SERVICE_TOKEN !== undefined) return "";
+  return `\n# Workbench sandbox service token, added by scripts/dev-lab.mjs.\nSANDBOX_SERVICE_TOKEN=${token()}\n`;
 }
 
 // ---------------------------------------------------------------------------
@@ -345,12 +361,14 @@ function prepare(path, project) {
   }
   const missing = Object.keys(wanted).filter(key => env[key] === undefined);
   if (missing.length > 0) appendFileSync(envFile, `\n# Local Lab settings, added by scripts/dev-lab.mjs.\n${missing.map(key => `${key}=${wanted[key]}`).join("\n")}\n`);
+  const sandbox = sandboxSecret(env);
+  if (sandbox !== "") appendFileSync(envFile, sandbox);
   return { ...wanted, ...env };
 }
 
 async function report(ca) {
   const u = urls();
-  for (const [label, url] of [["Site", u.site], ["Lab page", u.lab], ["Health (field station)", u.health], ["Lab status", u.labStatus]]) {
+  for (const [label, url] of [["Site", u.site], ["Lab page", u.lab], ["Health (field station)", u.health], ["Lab status", u.labStatus], ["Workbench page", u.workbench], ["Sandbox status", u.sandboxStatus]]) {
     const result = await probe(url, ca);
     let detail = result.status === null ? `unreachable (${result.error})` : `HTTP ${result.status}`;
     if (result.status === 200 && url === u.labStatus) {
@@ -359,13 +377,19 @@ async function report(ca) {
         detail += status.enabled === false ? ", Lab disabled" : `, benches: ${status.benches.map(b => `${b.bench}=${b.state}`).join(" ") || "none"}`;
       } catch { /* the HTTP status is enough */ }
     }
+    if (result.status === 200 && url === u.sandboxStatus) {
+      try {
+        const status = JSON.parse(result.body);
+        detail += `, ${status.availability}${status.reason ? ` (${status.reason})` : ""}, slots: ${status.slots.map(s => `${s.slot}=${s.state}`).join(" ") || "none"}`;
+      } catch { /* the HTTP status is enough */ }
+    }
     if (result.status === 200 && url === u.health) {
       try {
         const status = JSON.parse(result.body);
         if (status.kafka !== undefined) detail += `, kafka ${status.kafka}`;
       } catch { /* the HTTP status is enough */ }
     }
-    console.log(`  ${label.padEnd(24)} ${url.padEnd(38)} ${detail}`);
+    console.log(`  ${label.padEnd(24)} ${url.padEnd(42)} ${detail}`);
   }
 }
 
@@ -417,7 +441,7 @@ async function up(options) {
     if (capture("docker", ["image", "inspect", env.LONTRA_IMAGE]).status !== 0) throw new Error(`--no-build: image ${env.LONTRA_IMAGE} does not exist. Run without --no-build.`);
   }
 
-  step("Starting the stack (Kafka, field station, gateway, three benches, Caddy); this can take a few minutes");
+  step("Starting the stack (Kafka, field station, gateway, three benches, the workbench sandbox, Caddy); this can take a few minutes");
   const started = spawnSync("docker", compose(project, path, ["up", "-d", "--wait", "--wait-timeout", "300"]), { cwd: ROOT, stdio: "inherit" });
   if (started.status !== 0) {
     throw new Error(`The stack did not become healthy. It was left running for inspection:\n  npm run dev:lab -- status\n  npm run dev:lab -- logs\nStop it with \`npm run dev:lab -- stop\` (keeps data).`);
@@ -431,8 +455,9 @@ async function up(options) {
   if (!ready) console.log("\nBenches can take longer on a slow machine. Check again with `npm run dev:lab -- status`, or read `npm run dev:lab -- logs lab-1`.");
   trustAdvice(path);
   console.log(`
-Open ${urls().lab} . Only 127.0.0.1:${PORT} is published; Kafka, bench APIs, relay
-controls and management listeners are private to the Compose network.
+Open ${urls().lab} or ${urls().workbench} . Only 127.0.0.1:${PORT} is published;
+Kafka, bench and sandbox APIs, relay controls and management listeners are private
+to the Compose network.
 
   npm run dev:lab -- status     # containers and URL checks
   npm run dev:lab -- logs -f    # stream logs

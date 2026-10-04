@@ -2,8 +2,9 @@
 
 `npm run dev:lab` runs the actual three-bench Kafka Failure Lab on your machine,
 built from this checkout: Kafka 4.1.2 over TLS with SCRAM, the field station, the
-production gateway, three Lab benches with their relay proxies, and Caddy, in
-Docker, served only at `https://localhost:8443`. It publishes no image, uses no
+production gateway, three Lab benches with their relay proxies, the workbench
+sandbox (three synthetic slots on the published StreamOtter workbench seam), and
+Caddy, in Docker, served only at `https://localhost:8443`. It publishes no image, uses no
 hosted service, and deploys nothing.
 
 ## Which local mode?
@@ -14,7 +15,7 @@ Lontra Creek has three ways to run locally. They are not interchangeable.
 | --- | --- | --- | --- | --- |
 | `npm run dev` | Field station replaying the simulation through a development gateway, the Astro dev server, and the StreamOtter workbench, at `http://127.0.0.1:4321` | No (fixture replay) | No | Node 24 |
 | `npm run dev:kafka` | The walkthrough on a native, loopback-only, plaintext Kafka broker, with persistent private notebooks (chapter six), at `http://127.0.0.1:4321/field-station/` | Yes, your own Kafka 4.1.2 and JDK 21 install | No | Node 24, `KAFKA_HOME`, `JAVA_HOME` |
-| `npm run dev:lab` | The production container topology plus three Lab benches, behind local HTTPS, at `https://localhost:8443/lab/` | Yes, in Docker, over TLS with SCRAM | Yes, three benches | Node 24, Docker, Compose 2.24.4+, OpenSSL |
+| `npm run dev:lab` | The production container topology plus three Lab benches and the workbench sandbox, behind local HTTPS, at `https://localhost:8443/lab/` and `/workbench/` | Yes, in Docker, over TLS with SCRAM | Yes, three benches | Node 24, Docker, Compose 2.24.4+, OpenSSL |
 
 `npm run dev` and `npm run dev:kafka` start no Lab benches; the `/lab/` page
 there has no live benches. Only `dev:lab` exercises the real Lab, and only
@@ -30,7 +31,7 @@ demonstrate it.
 - Port 8443 free on 127.0.0.1.
 - Network access to pull the pinned Kafka, Caddy and Node base images and npm
   packages on the first build. Kafka runs with a 512 MB heap here; the other
-  nine containers are small Node and Caddy processes.
+  ten containers are small Node and Caddy processes.
 
 The launcher checks each of these before doing anything and says what is
 missing.
@@ -51,13 +52,15 @@ npm run dev:lab
    certificate for Caddy (`deploy/make-certs.sh test-origin`), the gateway
    configuration with `https://localhost:8443` as its only allowed origin, and
    the local settings in `.local/lab/.env`, including the study epoch
-   (`FIELD_EPOCH`). Anything already there is kept, so a restart resumes the
+   (`FIELD_EPOCH`) and the sandbox service token (`SANDBOX_SERVICE_TOKEN`,
+   appended once to an env file made before the sandbox existed). Anything already there is kept, so a restart resumes the
    same study with the same secrets and test CA.
 3. Builds the site for the `https://localhost:8443` origin, and the image
    `lontra-creek:local` from `deploy/Dockerfile`. The image stays on this machine.
 4. Starts the Compose project `lontra-local-lab` from `deploy/compose.yaml`,
-   `deploy/compose.lab.yaml` and `deploy/compose.local-lab.yaml`, and waits up to
-   five minutes for every service to report healthy.
+   `deploy/compose.lab.yaml`, `deploy/compose.sandbox.yaml` and
+   `deploy/compose.local-lab.yaml`, and waits up to five minutes for every
+   service to report healthy.
 5. Checks and prints the URLs below, and how to handle the test certificate.
 
 | URL | What it is |
@@ -66,9 +69,12 @@ npm run dev:lab
 | `https://localhost:8443/lab/` | The Failure Lab page |
 | `https://localhost:8443/api/status` | Field station health and study status (Kafka connection, tick) |
 | `https://localhost:8443/api/lab/status` | Lab status: each bench's state, queue length, next free time |
+| `https://localhost:8443/workbench/` | The workbench sandbox page |
+| `https://localhost:8443/api/sandbox/status` | Sandbox status: availability, the running StreamOtter and workbench versions, each slot's state |
 
-Only `127.0.0.1:8443` is published. Kafka, the bench APIs, relay controls and
-management listeners are not host ports. The static site and API share one
+Only `127.0.0.1:8443` is published. Kafka, the bench and sandbox APIs, relay
+controls, slot gateways, and management listeners are not host ports; Caddy
+routes only each slot's `/sandbox/N/socket.io/` for this origin. The static site and API share one
 HTTPS origin, so the Lab's secure `Strict` session cookies work without
 changing browser cookie policy. No hosts-file change is needed: `localhost`
 resolves to your own machine.
@@ -83,8 +89,8 @@ Pass options after `--`, for example `npm run dev:lab -- logs -f caddy`.
 | Command | Effect |
 | --- | --- |
 | `up` (default) | Check, prepare, build, start, and print URLs. Safe to repeat. |
-| `status` | `docker compose ps` for the project, then probe the four URLs. |
-| `logs [--follow] [service...]` | The last 200 log lines, optionally streaming, optionally for named services (`caddy`, `kafka`, `field-station`, `gateway`, `lab-1`, `lab-1-kafka`, and so on). |
+| `status` | `docker compose ps` for the project, then probe the six URLs. |
+| `logs [--follow] [service...]` | The last 200 log lines, optionally streaming, optionally for named services (`caddy`, `kafka`, `field-station`, `gateway`, `lab-1`, `lab-1-kafka`, `sandbox`, and so on). |
 | `stop` | Remove the containers and network. **Keeps** the volumes and `.local/lab/`. |
 | `discard [--yes]` | **Deletes** the local study: the project's containers and volumes, and `.local/lab/`. Asks first. |
 
@@ -157,6 +163,17 @@ LAB_SERVES_SITE=1 LAB_API_ORIGIN=https://localhost:8443 LAB_SITE_ORIGIN=https://
 production's separate demo-only host returns 404 for that path. All private
 backend and Origin assertions still run.
 
+The workbench sandbox suite runs against the same stack: status and versions,
+a session through every allowlisted operation, a 64 KB candidate through Caddy,
+previews of `station` and `jobProgress` through `/sandbox/N/socket.io/`, closed
+edge paths, and a reset ending the old study's previews:
+
+```sh
+SANDBOX_API_ORIGIN=https://localhost:8443 SANDBOX_SITE_ORIGIN=https://localhost:8443 \
+  NODE_EXTRA_CA_CERTS="$PWD/.local/lab/secrets/origin/ca.pem" \
+  node --test --test-force-exit deploy/test/sandbox.test.ts
+```
+
 ## Behind a TLS-intercepting proxy
 
 If `npm ci` inside the image build fails with `SELF_SIGNED_CERT_IN_CHAIN` or a
@@ -192,6 +209,16 @@ checked by the Lab CI on amd64 and arm64. macOS and Windows hosts have not
 been tried; the launcher calls `bash` for the repository's certificate and
 secret scripts.
 
+On October 4, 2026, with the workbench sandbox added (W9a), a cold `up` in the
+same kind of container (with `--extra-ca`, its own `--dir` and `--project`)
+had all eleven services healthy, all three benches ready, and the sandbox
+`available` on StreamOtter 0.2.0-rc.1 with host contract 1 and all three slots
+ready. `deploy/test/sandbox.test.ts` passed all five tests against it, and
+again after `stop` and `up --no-build`; that restart, with
+`SANDBOX_SERVICE_TOKEN` removed from the env file first, appended a new token
+once. Only Caddy's port was published: the sandbox API, the slot gateways, and
+each slot's loopback management listener were not reachable from the host.
+
 ## What the launcher runs (manual recipe)
 
 The same steps by hand, for debugging or for a machine without the launcher.
@@ -216,7 +243,7 @@ writeFileSync(`${dir}/dev-lab.json`, JSON.stringify({ project: 'lontra-local-lab
 JS
 PUBLIC_FIELD_STATION_ORIGIN=https://localhost:8443 npm run build -w @lontra-creek/site
 docker build -f deploy/Dockerfile -t lontra-creek:local .
-docker compose -p lontra-local-lab -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.local-lab.yaml --env-file "$LOCAL_LAB_DIR/.env" up -d --wait --wait-timeout 300
+docker compose -p lontra-local-lab -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.sandbox.yaml -f deploy/compose.local-lab.yaml --env-file "$LOCAL_LAB_DIR/.env" up -d --wait --wait-timeout 300
 ```
 
 The local overlay runs Kafka with least-privilege ACLs (`KAFKA_AUTHORIZATION`
@@ -225,7 +252,7 @@ section 10.9): each bench's Kafka user reaches only its own `lab-N.*` topics
 and `streamotter-lab-N-` groups. To check every principal's grants and refusals:
 
 ```sh
-STACK_KAFKA_EXEC="docker compose -p lontra-local-lab -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.local-lab.yaml --env-file $LOCAL_LAB_DIR/.env exec -T" STACK_KAFKA_BENCHES="1 2 3" node --test --test-force-exit deploy/test/kafka-acls.test.ts
+STACK_KAFKA_EXEC="docker compose -p lontra-local-lab -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.sandbox.yaml -f deploy/compose.local-lab.yaml --env-file $LOCAL_LAB_DIR/.env exec -T" STACK_KAFKA_BENCHES="1 2 3" node --test --test-force-exit deploy/test/kafka-acls.test.ts
 ```
 
 An existing local Kafka volume picks the ACLs up on its next start; no
@@ -234,7 +261,7 @@ migration is needed for local data.
 Stop, keeping data (what `stop` runs):
 
 ```sh
-docker compose -p lontra-local-lab -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.local-lab.yaml --env-file "$LOCAL_LAB_DIR/.env" down
+docker compose -p lontra-local-lab -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.sandbox.yaml -f deploy/compose.local-lab.yaml --env-file "$LOCAL_LAB_DIR/.env" down
 ```
 
 Discard (what `discard` runs after confirmation): the same command with

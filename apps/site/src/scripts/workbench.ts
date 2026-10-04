@@ -9,7 +9,7 @@
  */
 import { WORKBENCH_REQUEST_HEADER, type WorkbenchDiscovery } from "streamotter/contracts";
 import type { SandboxConnection, SandboxLease, SandboxReproDownload, SandboxStatus } from "../../../field-station/src/sandbox/contract.ts";
-import { API_BASE, availabilityView, BOOT_ELEMENT_ID, cspConnectSources, MOUNT_ELEMENT_ID, mountDecision, problemText, refusal, runtimeLabels, sessionView, type Problem } from "./workbench-model.ts";
+import { API_BASE, availabilityView, BOOT_ELEMENT_ID, cspConnectSources, MOUNT_ELEMENT_ID, mountDecision, NO_DISCOVERY, problemText, refusal, runtimeLabels, sessionView, type Problem } from "./workbench-model.ts";
 import { PUBLISHED_SEAM } from "./workbench-seam.ts";
 
 const origin = (import.meta.env?.PUBLIC_FIELD_STATION_ORIGIN ?? "").replace(/\/+$/, "");
@@ -39,6 +39,8 @@ function mount(root: HTMLElement): void {
   let lease: SandboxLease | null = null;
   let connection: SandboxConnection | null = null;
   let discovery: WorkbenchDiscovery | null = null;
+  /** Why the last discovery request failed, shown with the mount note. */
+  let discoveryProblem: Problem | null = null;
   let mountNote = "";
   let mountedStudy: string | null = null;
   /** Set once app.js has run in this document; it cannot be torn down or booted again (G1). */
@@ -103,7 +105,13 @@ function mount(root: HTMLElement): void {
    */
   function mountWorkbench(): void {
     const decision = mountDecision({ lease, connection, discovery, seam: PUBLISHED_SEAM, apiOrigin: origin, pageOrigin: location.origin, connectSrc: connectSrc() });
-    if (!decision.mount) { mountNote = lease?.status === "active" ? decision.reason : ""; return; }
+    if (!decision.mount) {
+      const unanswered = decision.reason === NO_DISCOVERY ? discoveryProblem : null;
+      mountNote = lease?.status === "active" ? (unanswered ? `${decision.reason} ${problemText(unanswered)}` : decision.reason) : "";
+      // Only the discovery request kept it closed: leaving the slot unclaimed here offers Open the workbench, which asks again.
+      if (unanswered) connection = null;
+      return;
+    }
     if (lease?.status !== "active" || mountedStudy === lease.studyId) return;
     if (mountedOnce) {
       // An old instance would keep polling, under the same cookie, against the new study (A42).
@@ -167,14 +175,16 @@ function mount(root: HTMLElement): void {
     if (!answer.ok) { note = problemText(answer.problem); await refreshLease(); return; }
     connection = answer.data;
     await refreshLease(); if (g !== generation) return;
-    discovery = null;
+    discovery = null; discoveryProblem = null;
     // Discovery matters only when this site pins a release with the seam; until then nothing is asked.
     if (PUBLISHED_SEAM && lease?.status === "active") {
       try {
         const response = await fetch(`${origin}${API_BASE}/workbench`, { credentials: "include", cache: "no-store", headers: { [WORKBENCH_REQUEST_HEADER]: "1" }, signal: AbortSignal.timeout(8_000) });
-        const body = await response.json() as { ok?: boolean; data?: WorkbenchDiscovery };
-        if (g === generation && response.ok && body.ok === true && body.data) discovery = body.data;
-      } catch { /* mountDecision reports the missing discovery */ }
+        const body = await response.json().catch(() => null) as { ok?: boolean; data?: WorkbenchDiscovery; error?: { details?: unknown } } | null;
+        if (response.ok && body?.ok === true && body.data) discovery = body.data;
+        // A WHC-1 refusal carries the sandbox's own code in error.details (sandbox contract §6).
+        else discoveryProblem = refusal(response.status, body?.error?.details ?? null, response.headers.get("retry-after"));
+      } catch (error) { discoveryProblem = { kind: "network", message: error instanceof Error && error.name === "TimeoutError" ? "no answer within 8 s" : "the request failed" }; }
     }
     if (g === generation) mountWorkbench();
   }
@@ -222,11 +232,13 @@ function mount(root: HTMLElement): void {
   async function tick(): Promise<void> {
     const g = generation; ticking = true;
     try {
-      if (holding()) {
+      const held = holding();
+      if (held) {
         await refreshLease(); if (g !== generation) return;
         if (autoClaim && !busy && (lease?.status === "ready" || (lease?.status === "active" && connection?.studyId !== lease.studyId))) await act(claim);
       }
-      if (g === generation && Date.now() - lastStatusAt >= STATUS_MS) await refreshStatus();
+      // A session that just ended (a failed slot, an unreachable service) asks for the status at once, so Start is never offered on an old one.
+      if (g === generation && (Date.now() - lastStatusAt >= STATUS_MS || (held && !holding()))) await refreshStatus();
       if (g !== generation) return;
       render(); poll = setTimeout(() => { void tick(); }, HEARTBEAT_MS);
     } finally { if (g === generation) ticking = false; }

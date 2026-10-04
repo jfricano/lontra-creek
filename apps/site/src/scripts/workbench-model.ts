@@ -15,6 +15,8 @@ export const BOOT_ELEMENT_ID = WORKBENCH_BOOT_ELEMENT_ID;
 export const MOUNT_ELEMENT_ID = WORKBENCH_MOUNT_ELEMENT_ID;
 /** WHC-1 §4: without all of these the workbench shows only "Not available in this environment". */
 export const SHELL_OPERATIONS = ["config", "health", "channels", "sources"] as const;
+/** mountDecision's reason when discovery is missing; workbench.ts offers to ask again only then. */
+export const NO_DISCOVERY = "The sandbox did not describe its host API.";
 
 /** A request that did not succeed: no answer at all, or the field station's refusal. */
 export type Problem =
@@ -239,7 +241,7 @@ export function mountDecision(input: MountInput): MountDecision {
   const runtime = lease.runtime;
   if (runtime.contractVersion !== String(seam.hostContract)) return { mount: false, reason: `The sandbox service reports ${runtime.contractVersion === null ? "no host contract" : `host contract ${runtime.contractVersion}`}; this page mounts host contract ${seam.hostContract}.` };
   if (runtime.packages.workbench !== seam.version) return { mount: false, reason: `The sandbox runs @streamotter/workbench@${runtime.packages.workbench}; this page pins ${seam.version}.` };
-  if (!discovery || discovery.hostContract !== seam.hostContract) return { mount: false, reason: "The sandbox did not describe its host API." };
+  if (!discovery || discovery.hostContract !== seam.hostContract) return { mount: false, reason: NO_DISCOVERY };
   const missing = SHELL_OPERATIONS.filter(op => !discovery.operations.includes(op));
   if (missing.length) return { mount: false, reason: `The sandbox does not serve ${missing.join(", ")}, which the workbench needs to open.` };
   const apiOrigin = input.apiOrigin === "" || input.apiOrigin === input.pageOrigin ? null : input.apiOrigin;

@@ -388,6 +388,28 @@ test("LC11-S03: hold, make coverage ready, reassess, each bound to the revision 
   await expect(page.locator("[data-lab-outcome]")).toHaveText("Incident 1: Evidence saved; Source advanced past quarantined record; View resynchronized.");
 });
 
+test("when the incident goes (status none) while its next step has focus, focus moves to the panel's heading, not the page (fixture)", async ({ page }) => {
+  const lab = await exercise(page, [], { incident: projection() });
+  await borrow(page);
+  await expect(act(page)).toHaveText("Make snapshot coverage ready (application action)");
+  await act(page).focus();
+  lab.setIncident(null);
+  await expect(panel(page).locator("[data-lab-incident-empty]")).toBeVisible({ timeout: 5_000 });
+  await expect(panel(page).locator("[data-lab-incident-title]")).toBeFocused();
+});
+
+test("when the lease ends while the next step has focus, focus moves to the panel's heading, not the page (fixture)", async ({ page }) => {
+  await exercise(page, [], { incident: projection() });
+  await borrow(page);
+  await expect(act(page)).toHaveText("Make snapshot coverage ready (application action)");
+  await act(page).focus();
+  // Registered last, so it answers the lease poll before the scripted station does.
+  await page.route("**/api/lab/lease", route => route.fulfill({ json: { status: "ended", now: now(), reason: "expired", endedAt: now(), bench: 1 } }));
+  await expect(page.locator("[data-lab-message]")).toContainText("Your lease ended", { timeout: 5_000 });
+  await expect(panel(page).locator("[data-lab-incident-empty]")).toBeVisible();
+  await expect(panel(page).locator("[data-lab-incident-title]")).toBeFocused();
+});
+
 test("LC11-S02: a garbled reading stays held; evaluation fails and nothing is offered after it (fixture)", async ({ page }) => {
   const garbled = (rest: Partial<LabIncidentSummary>) => projection({ scenario: "garbled-reading", reason: "LC-03 sent bytes that aren't JSON.", failure: { stage: "decode", class: "invalid-json" }, policy: "quarantine-hold", recovery: "none", ...rest });
   await exercise(page, [

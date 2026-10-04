@@ -6,7 +6,8 @@
  * focus or closes the coordinates disclosure. The steps list keeps its scroll position.
  * The next-intent button is one node: its label changes with the incident, it stays
  * focusable (`aria-disabled`) while a request waits, and if the incident stops offering
- * an intent while it has focus, focus moves to the text that says so.
+ * an intent while it has focus, focus moves to the text that says so. When the panel
+ * empties with focus inside it, focus moves to the panel's heading.
  */
 import type { LabIncidentSummary, LabIncidentView } from "../../../field-station/src/lab/contract.ts";
 import type { CapabilityAnswer } from "./lab-catalog-model.ts";
@@ -73,11 +74,15 @@ export class IncidentPanel {
       : leased ? "Nothing is held on your bench right now." : "Borrow a bench and start a scenario to see an incident here.";
   }
 
+  /** Empties the panel (no incident, or the lease ended or changed). Focus inside it moves to the panel's heading, never to the page. */
   clear(): void {
     this.#shown = false; this.#incident = null;
-    this.#offer(null, "");
+    const body = this.#el("[data-lab-incident-body]");
+    const focused = body.contains(document.activeElement);
     this.#el("[data-lab-incident-empty]").hidden = false;
-    this.#el("[data-lab-incident-body]").hidden = true;
+    body.hidden = true;
+    this.#offer(null, "");
+    if (focused) this.#el("[data-lab-incident-title]").focus();
   }
 
   /** Shows the next-intent button with `label`, or hides it; a hidden button's focus moves to the text beside it. */

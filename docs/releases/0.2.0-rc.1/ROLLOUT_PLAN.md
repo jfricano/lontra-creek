@@ -101,11 +101,25 @@ Rollback: Cloudflare Pages → Deployments → roll back to the previous product
    - `@streamotter/workbench` mounted on `/workbench/`, with a Pages `_headers` policy for it (`frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff`).
    - A workbench sandbox Compose overlay (`deploy/compose.sandbox.yaml`) with a new `SANDBOX_SERVICE_TOKEN`, routed in the standalone `Caddyfile` and the local Lab's `Caddyfile.local-lab`. `Caddyfile.shared` does not route it, and it has no shared-host overlay or adapter tests yet.
    - A release-pin guard (`scripts/check-release-pins.mjs`) that `images.yml` and `site.yml` run first: it refuses to build while StreamOtter comes from anywhere but the npm registry. The branch's temporary pre-publish tarballs (`vendor/`) must be removed, so this PR can only be built after step 1 is verified on npm.
-   jason merges on his go, after the Lab security checks are re-run.
-2. Repeat 1a (new image, record the current release, activate, acceptance), then 1b (preview, production, acceptance) with one change to 1b's Lab check: on 0.2.0-rc.1 with the Lab off, every source-failure exercise reads as unavailable on this backend ("This backend has no Lab benches.", or not yet verified against 0.2.0-rc.1), none has a working Start button, and `/releases/` reports 0 of 8 exercises verified. The rc.3 wording ("waiting for a StreamOtter release") no longer applies.
+   Before it merges, after step 1 is verified on npm:
+   - Re-run the real-Kafka exercise suite and the sandbox suites against the registry install, and re-record their evidence. A test keyed to the published package integrity enforces this.
+   - Recapture the recordings, and re-check the `v0.2.0-rc.1` tag anchors the site links to.
+   - Re-run the Lab security checks.
+   - Every PR workflow is green on the pin commit itself, on both architectures. #40's and #41's green runs don't carry over, and no CI has run on that branch yet.
+   jason merges on his go.
+2. Repeat 1a (new image, record the current release, activate, acceptance), then 1b (preview, production, acceptance) with one change to 1b's Lab check: on 0.2.0-rc.1 with the Lab off, every source-failure exercise reads as unavailable on this backend ("This backend has no Lab benches.", or not yet verified against 0.2.0-rc.1), none has a working Start button, and `/releases/` reports 0 of 8 exercises verified. The rc.3 wording ("waiting for a StreamOtter release") no longer applies. On both the preview and production Pages deployments, also check:
+   - `curl -sI https://streamotter.dev/workbench/` returns `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` and `X-Content-Type-Options: nosniff` (on the preview, the same path on its `pages.dev` host).
+   - The page's meta Content-Security-Policy `connect-src` names `https://demo.streamotter.dev` and `wss://demo.streamotter.dev`.
+   - `/workbench/assets/0.2.0-rc.1/app.js` answers 200 as JavaScript.
+   - `/workbench/` says the sandbox is not enabled on this deployment.
 3. The pin PR alone does not turn on the Lab benches or the sandbox. The phase 2 release layout carries neither the Lab nor the sandbox overlay, and no `SANDBOX_SERVICE_TOKEN` is created on the host. They stay unavailable on the hosted demo, with accurate labels, until jason approves enabling them: a `lab.enabled` release, and a shared-host sandbox overlay with adapter tests, each with its own acceptance. Any Kafka permission change stays behind the separate, owner-approved authorization migration and never weakens existing authorization.
 
-Rollback: re-activate the phase 1 release and roll Pages back to the phase 1 deployment. Both still run rc.3.
+Rollback, in reverse of the deploy order: roll Pages back to the phase 1 deployment first, then re-activate the phase 1 backend release, so the rc.1 site never talks to an rc.3 backend. Both phase 1 pieces run rc.3.
+
+Before enabling either feature on the hosted demo later (not part of either phase):
+
+- **Workbench sandbox.** The overlay has no CPU, memory or PID limits and shares the default Compose network. It has no shared-host routes. Its config routes need a 72 KB body limit, against the shared `/api/*` limit of 8 KB. There is no rotation procedure for `SANDBOX_SERVICE_TOKEN`. Measured locally: about 53–69 MiB, under 0.2% CPU idle and up to 3% live, 12–18 PIDs.
+- **Lab (`lab.enabled`).** The field station and the benches must share one `LAB_FAILURE_HANDLING` (the Compose default is `retry`). The first such deploy resets every bench study and creates per-study SQLite journals, which are unmeasured under the shared bench limits (0.06 CPU, 256 MiB). Recreating bench containers ends running leases: the journal lock names the old host, and a reset recovers in about a minute. On a broker with ACLs on, the six new grants stay after a rollback until removed by hand, and until then the previous release's exact-listing check fails.
 
 ## After the rollout
 

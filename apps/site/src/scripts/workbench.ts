@@ -67,10 +67,10 @@ function mount(root: HTMLElement): void {
   /** True while a heartbeat is in flight, so a visibility change doesn't start a second one. */
   let ticking = false;
 
-  async function call<T>(path: string, method: "GET" | "POST" = "GET"): Promise<Answer<T>> {
+  async function call<T>(path: string, method: "GET" | "POST" = "GET", timeoutMs = 8_000): Promise<Answer<T>> {
     let response: Response;
-    try { response = await fetch(`${origin}/api/sandbox/${path}`, { method, credentials: "include", cache: "no-store", signal: AbortSignal.timeout(8_000) }); }
-    catch (error) { return { ok: false, problem: { kind: "network", message: error instanceof Error && error.name === "TimeoutError" ? "no answer within 8 s" : "the request failed" } }; }
+    try { response = await fetch(`${origin}/api/sandbox/${path}`, { method, credentials: "include", cache: "no-store", signal: AbortSignal.timeout(timeoutMs) }); }
+    catch (error) { return { ok: false, problem: { kind: "network", message: error instanceof Error && error.name === "TimeoutError" ? `no answer within ${timeoutMs / 1000} s` : "the request failed" } }; }
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) return { ok: false, problem: refusal(response.status, body, response.headers.get("retry-after")) };
     if (body === null) return { ok: false, problem: { kind: "network", message: "the answer was not JSON" } };
@@ -220,7 +220,8 @@ function mount(root: HTMLElement): void {
     if (answer.ok) { autoClaim = true; setLease(answer.data); } else { note = problemText(answer.problem); await refreshLease(); }
   }, buttons.reset); });
   buttons.repro.addEventListener("click", () => { void act(async () => {
-    const answer = await call<SandboxReproDownload>("session/repro", "POST");
+    // The field station waits up to 15 s for the slot's traces (sandbox contract §9), so the page waits longer.
+    const answer = await call<SandboxReproDownload>("session/repro", "POST", 20_000);
     if (!answer.ok) { note = problemText(answer.problem); return; }
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob([answer.data.content], { type: "application/json" })); link.download = answer.data.filename;

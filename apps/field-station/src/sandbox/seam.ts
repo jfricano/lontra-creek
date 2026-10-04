@@ -26,7 +26,12 @@ import { SLOT_MAXIMA, SLOT_PRINCIPALS, slotConfig, slotRuntimeParts, type SlotCh
 const KEY_HEADER = 'x-lc-slot-key';
 /** Above the 64 KB candidate limit, which the service checks first. */
 const HANDLER_BODY_BYTES = 131_072;
-const CALL_TIMEOUT_MS = 10_000;
+/**
+ * How long one call to a slot's handler may take. Below the field station's wait for a
+ * slot operation (leases.ts, SANDBOX_OPS_TIMEOUT_MS), so a slow call is answered as
+ * StreamOtter's TIMEOUT and keeps the lease, rather than looking like a failed slot.
+ */
+export const CALL_TIMEOUT_MS = 10_000;
 const STOP_TIMEOUT_MS = 5000;
 
 export interface PublishedBackendOptions {
@@ -66,6 +71,21 @@ export class SlotError extends Error {
     this.code = typeof e['code'] === 'string' ? e['code'] : 'INTERNAL'; this.retryable = e['retryable'] === true;
     this.details = isPlainObject(e['details']) ? e['details'] as Readonly<Record<string, Json>> : undefined;
   }
+}
+
+/**
+ * One request to a slot's management listener: the handler's `data`, or a SlotError with
+ * its public fields. No answer within the timeout is StreamOtter's TIMEOUT (retryable).
+ */
+export async function slotRequest<T>(url: string, init: RequestInit, timeoutMs = CALL_TIMEOUT_MS): Promise<T> {
+  let result: unknown;
+  try { const response = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) }); result = await response.json(); }
+  catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') throw new SlotError({ code: 'TIMEOUT', message: `The sandbox slot did not answer within ${timeoutMs / 1000} s.`, retryable: true });
+    throw error;
+  }
+  if (isPlainObject(result) && result['ok'] === true) return result['data'] as T;
+  throw new SlotError(isPlainObject(result) ? result['error'] : undefined);
 }
 
 /**
@@ -143,13 +163,10 @@ export class PublishedRuntime implements SlotRuntime {
 
   async #request<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
     if (this.#closing) throw new Error('Runtime closed.');
-    const response = await fetch(`${this.#origin}${path}`, {
+    return slotRequest<T>(`${this.#origin}${path}`, {
       method, headers: { [KEY_HEADER]: this.#key, ...(method === 'POST' ? { 'content-type': 'application/json', [WORKBENCH_REQUEST_HEADER]: '1' } : {}) },
-      ...(method === 'POST' ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(CALL_TIMEOUT_MS)
+      ...(method === 'POST' ? { body: JSON.stringify(body) } : {})
     });
-    const result = await response.json() as unknown;
-    if (isPlainObject(result) && result['ok'] === true) return result['data'] as T;
-    throw new SlotError(isPlainObject(result) ? result['error'] : undefined);
   }
 
   /** One operation, rebuilt from the service's checked input: a GET with a query only for `traces`, a POST with a JSON body otherwise. */

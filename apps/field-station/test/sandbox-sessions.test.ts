@@ -12,6 +12,7 @@ import { LabError } from '../src/lab/errors.ts';
 import { AddressCap } from '../src/places.ts';
 import type { SessionClaims } from '../src/sessions.ts';
 import { SANDBOX_SWEEP_MS } from '../src/sandbox/leases.ts';
+import { SlotError } from '../src/sandbox/seam.ts';
 import { SandboxService } from '../src/sandbox/service.ts';
 import { StreamOtterError } from 'streamotter/contracts';
 import { code, harness, wb } from './support/sandbox-harness.ts';
@@ -267,4 +268,18 @@ test('A42: the service refuses another lease, an old study, or an unclaimed leas
   while (!runtime.hold) await new Promise(r => setImmediate(r));
   service.reset(1, { leaseId: v.leaseId, studyId: 'next-study' });
   const answer = await late; assert.equal(answer.status, 401); assert.equal((answer.body as { error: { details: { code: string } } }).error.details.code, 'stale-study');
+});
+
+test('A44: a slot call that times out answers TIMEOUT and keeps the lease and the slot', async () => {
+  const h = await harness({ slots: 1 }); const s = h.session('s'); const next = h.session('next'); await h.join(s); await h.claim(s); await h.join(next);
+  const first = h.view(s); assert.ok(first.status === 'active');
+  h.fixture.current(1).failNext = new SlotError({ code: 'TIMEOUT', message: 'The sandbox slot did not answer within 10 s.', retryable: true });
+  await assert.rejects(h.opSlow(s, 'source-checks', { sourceId: 'creek' }), (error: unknown) => {
+    const failure = error as { status?: number; error?: { code?: string; retryable?: boolean } };
+    return failure.status === 504 && failure.error?.code === 'TIMEOUT' && failure.error.retryable === true;
+  });
+  await h.settle();
+  const kept = h.view(s); assert.ok(kept.status === 'active'); assert.equal(kept.leaseId, first.leaseId);
+  assert.equal(h.view(next).status, 'queued', 'the slot was not taken out of service');
+  assert.equal((await h.opSlow(s, 'health') as { ready: boolean }).ready, true, 'the next call is answered');
 });

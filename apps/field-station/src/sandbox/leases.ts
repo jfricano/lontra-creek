@@ -21,6 +21,12 @@ export interface SandboxTimings {
 }
 /** LC11-ADR-04 defaults; the queue idle limit and the poll, failure, and reset timings are the Lab's. */
 export const SANDBOX_DEFAULTS: SandboxTimings = { leaseMs: 600_000, claimMs: 30_000, idleMs: 60_000, queueIdleMs: 90_000, endedMs: 60_000, queueMax: 30, opsPerSecond: 2, opsBurst: 8, pollMs: 5000, failMs: 15_000, resetDeadlineMs: 60_000, retryMs: 30_000 };
+/**
+ * How long the field station waits for a slot operation or a reproduction bundle: longer
+ * than the service's own wait for the slot (seam.ts, CALL_TIMEOUT_MS), so a slow slot call
+ * comes back as the slot's TIMEOUT and keeps the lease; only no answer at all ends it.
+ */
+export const SANDBOX_OPS_TIMEOUT_MS = 15_000;
 /** How often the field station sweeps the pool: the service poll interval while a slot or study resets. A sweep polls only when the poll is due. */
 export const SANDBOX_SWEEP_MS = 1000;
 interface Lease { id: string; studyId: string; slot: SlotId; granted: number; expires: number; claimed: boolean; resetting: boolean; resetAt: number; ops: { tokens: number; at: number }; runtime: SandboxRuntime; }
@@ -258,7 +264,8 @@ export function configuredSandbox(env: NodeJS.ProcessEnv, gatewayOrigin: string,
   const count = positive('SANDBOX_SLOTS', 3); if (count > 3) throw new Error('At most three sandbox slots are supported.');
   const client: SandboxClient = {
     async request(path, method = 'GET', body) {
-      const response = await fetch(`${origin}${path}`, { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(10_000) });
+      const timeout = /\/(?:ops|repro)$/.test(path) ? SANDBOX_OPS_TIMEOUT_MS : 10_000;
+      const response = await fetch(`${origin}${path}`, { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(timeout) });
       return { status: response.status, body: await response.json() as unknown };
     }
   };

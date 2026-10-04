@@ -100,11 +100,14 @@ async function mount(root: HTMLElement): Promise<void> {
   function benchState(state: LabBenchState): void {
     benchStateNow = state;
     el("[data-lab-state]").textContent = `Gateway ${state.gateway} · source ${state.source.status}${state.source.reason ? ` (${state.source.reason})` : ""} · relay ${state.relay} · calibration ${state.calibration} · satellite ${state.satellite} · receipt timeout ${state.receiptTimeoutMs / 1000}s`;
+    // The bench's own predicates (field-station lab/runtime.ts), so a button is never offered for a 409 `not-applicable`.
+    // Every action needs a running gateway; Resume also waits for the calibration, or the record would only fail again.
+    const running = state.gateway === "running";
     const allowed: Record<LabAction, boolean> = {
-      "sensor.foul": state.calibration === "present", "sensor.restore": state.calibration === "removed",
-      "source.resume": state.source.status === "paused" && state.calibration === "present",
-      "relay.cut": state.relay === "up", "relay.restore": state.relay === "cut",
-      "satellite.start": state.satellite === "idle", "gateway.restart": state.gateway === "running"
+      "sensor.foul": running && state.calibration === "present", "sensor.restore": running && state.calibration === "removed",
+      "source.resume": running && state.source.status === "paused" && state.calibration === "present",
+      "relay.cut": running && state.relay === "up", "relay.restore": running && state.relay === "cut",
+      "satellite.start": running && state.satellite === "idle" && state.source.status === "healthy", "gateway.restart": running && state.relay === "up"
     };
     root.querySelectorAll<HTMLButtonElement>("[data-lab-action]").forEach(button => { button.disabled = !allowed[button.dataset["labAction"] as LabAction]; });
   }

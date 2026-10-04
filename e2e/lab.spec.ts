@@ -213,3 +213,25 @@ test("a too-many-places refusal names the cap the Lab shares with the workbench 
   await expect(page.locator("[data-lab-message]")).toHaveText("This network address already holds two places across the Failure Lab and the workbench sandbox. Return one of them, then try again.");
   await expect(page.locator("[data-lab-join]")).toBeEnabled();
 });
+
+test("bench buttons are enabled only for actions the bench accepts in its current state", async ({ page }) => {
+  let bench: Record<string, unknown> = { ...state, source:{ status:"paused", reason:"HANDLER_FAILED" }, calibration:"removed" };
+  await page.route("**/api/lab/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/status")) return route.fulfill({ json:{ enabled:true, now:now(), benches:[{ bench:1, state:"leased" }], queueLength:0, nextFreeAt:null } });
+    if (path.endsWith("/lease/token")) return route.fulfill({ json:token });
+    if (path.endsWith("/trace")) return route.fulfill({ json:{ items:[], next:"", gap:false } });
+    return route.fulfill({ json:{ ...ready(), benchState:bench } });
+  });
+  const enabled = () => page.locator("[data-lab-action]").evaluateAll(buttons => (buttons as HTMLButtonElement[]).filter(button => !button.disabled).map(button => button.dataset["labAction"]));
+  await page.goto("/lab/"); await page.locator("[data-lab-join]").click();
+  await expect(page.locator("[data-lab-actions]")).toBeEnabled();
+  // A fouled sensor paused the source: no slow client until it is healthy again.
+  await expect.poll(enabled).toEqual(["sensor.restore", "relay.cut", "gateway.restart"]);
+  bench = { ...state, relay:"cut" }; // no gateway restart while the relay is cut
+  await expect.poll(enabled).toEqual(["sensor.foul", "relay.restore", "satellite.start"]);
+  bench = { ...state, gateway:"restarting" }; // nothing while the gateway restarts
+  await expect.poll(enabled).toEqual([]);
+  bench = state;
+  await expect.poll(enabled).toEqual(["sensor.foul", "relay.cut", "satellite.start", "gateway.restart"]);
+});

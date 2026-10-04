@@ -172,7 +172,7 @@ export class SandboxService {
     return result;
   }
   #source(runtime: SlotRuntime, sourceId: string, fixtureOnly = false): void {
-    const source = runtime.base.sources[sourceId];
+    const source = Object.hasOwn(runtime.base.sources, sourceId) ? runtime.base.sources[sourceId] : undefined;
     if (!source || fixtureOnly && source.kind !== 'fixture') throw invalid('sourceId must be one of this sandbox\'s fixture sources.');
   }
   async #execute(slot: Slot, study: Study, runtime: SlotRuntime, op: SandboxOperation, input: unknown): Promise<unknown> {

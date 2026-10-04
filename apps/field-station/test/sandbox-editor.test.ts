@@ -104,6 +104,12 @@ test('A43: the service applies the editor before validating, never applies a can
   const config = await h.opSlow(s, 'config') as { config: ProjectConfig }; assert.deepEqual(config.config, fixtureBase(1), 'the running project is unchanged');
 
   await assert.rejects(h.opSlow(s, 'source-checks', { sourceId: 'production' }), wb('INVALID_REQUEST'));
+  for (const sourceId of ['constructor', 'toString', '__proto__']) {
+    await assert.rejects(h.opSlow(s, 'source-checks', { sourceId }), wb('INVALID_REQUEST'), `${sourceId} is not one of the slot's sources`);
+    await assert.rejects(h.opSlow(s, 'traces', { sourceId }), wb('INVALID_REQUEST'));
+    await assert.rejects(h.opSlow(s, 'sources.resume', { sourceId }), wb('INVALID_REQUEST'));
+  }
+  assert.ok(!runtime.calls.some(c => c.op === 'source-checks' || c.op === 'traces' || c.op === 'sources.resume'), 'no refused source reaches the runtime');
   await assert.rejects(h.opSlow(s, 'dev.fixtures.advance', { sourceId: 'nope', count: 1 }), wb('INVALID_REQUEST'));
   await assert.rejects(h.opSlow(s, 'traces', { channel: 'holt' }), wb('INVALID_REQUEST'));
   await assert.rejects(h.opSlow(s, 'preview-sessions', { fixturePrincipalRef: 'operator-only' }), wb('INVALID_REQUEST'));

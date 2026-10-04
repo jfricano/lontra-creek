@@ -6,7 +6,7 @@ import { ApprovalDialog, reviewFrom } from "./lab-approval.ts";
 import { capabilityAnswer, type CapabilityAnswer } from "./lab-catalog-model.ts";
 import type { BrowserStep } from "./lab-incident.ts";
 import { IncidentPanel } from "./lab-incident-panel.ts";
-import { approveRequest, isPending, newRequestId, nextRequest, operationText, runIntent, startRequest, type RunIo } from "./lab-operation.ts";
+import { abortableWait, approveRequest, isPending, newRequestId, nextRequest, operationText, runIntent, startRequest, type RunIo } from "./lab-operation.ts";
 import { mountTracks } from "./lab-tracks.ts";
 import { HttpStatusError, SignInRetry } from "./sign-in-retry.ts";
 import { installTabletNetwork } from "./tablet-network.ts";
@@ -270,7 +270,7 @@ async function mount(root: HTMLElement): Promise<void> {
     const io: RunIo = {
       post: (intent, signal) => request<LabOperation>("actions", intent, "POST", signal),
       get: (id, signal) => request<LabOperation>(`operations/${encodeURIComponent(id)}`, undefined, "GET", signal),
-      wait: (ms, signal) => new Promise(resolve => { const t = setTimeout(resolve, ms); signal.addEventListener("abort", () => { clearTimeout(t); resolve(); }, { once: true }); })
+      wait: abortableWait
     };
     setIntentBusy(true);
     incident.operation("Sending your request…");

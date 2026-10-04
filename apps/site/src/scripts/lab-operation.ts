@@ -116,6 +116,15 @@ export interface RunIo {
   wait(ms: number, signal: AbortSignal): Promise<void>;
 }
 
+/** `RunIo.wait` for the page: resolves after `ms`, or at once when `signal` aborts. Either way it leaves no listener on `signal` behind. */
+export function abortableWait(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise(resolve => {
+    const done = (): void => { clearTimeout(timer); signal.removeEventListener("abort", done); resolve(); };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener("abort", done, { once: true });
+  });
+}
+
 /**
  * Sends one intent and follows its operation until the bench reports how it ended, the
  * lease ends (`signal`), or the answer is lost for good. Each update is passed to

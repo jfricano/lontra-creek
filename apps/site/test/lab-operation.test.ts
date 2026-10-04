@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { getEventListeners } from "node:events";
 import { test } from "node:test";
 import type { LabIntentRequest, LabOperation } from "../../field-station/src/lab/contract.ts";
-import { OPERATION_POLL_MS, RESEND_LIMIT, approveRequest, newRequestId, nextRequest, operationText, refusalText, runIntent, startRequest, type RunIo, type RunUpdate } from "../src/scripts/lab-operation.ts";
+import { OPERATION_POLL_MS, RESEND_LIMIT, abortableWait, approveRequest, newRequestId, nextRequest, operationText, refusalText, runIntent, startRequest, type RunIo, type RunUpdate } from "../src/scripts/lab-operation.ts";
 import { HttpStatusError } from "../src/scripts/sign-in-retry.ts";
 
 /** Operation answers here are fixtures: they test what the page does with an answer, not that a backend gives it. */
@@ -130,4 +131,16 @@ test("the operation line claims only what the bench reported", () => {
   assert.equal(operationText(op("failed")), "Reassess: failed. The bench gave no reason.");
   assert.match(operationText(op("unknown", { detail: "The bench didn't answer." })), /outcome unknown\. The bench didn't answer\. The page doesn't send it again/);
   for (const status of ["refused", "failed", "unknown", "cancelled"] as const) assert.doesNotMatch(operationText(op(status)), /done/, status);
+});
+
+test("the page's wait leaves no abort listener behind, whether it times out or is aborted", async () => {
+  const controller = new AbortController();
+  // An operation looked up every second waits many times on one lease's signal.
+  for (let i = 0; i < 5; i++) await abortableWait(1, controller.signal);
+  assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+  const pending = abortableWait(60_000, controller.signal);
+  assert.equal(getEventListeners(controller.signal, "abort").length, 1);
+  controller.abort();
+  await pending; // resolves at once, its timer cleared
+  assert.equal(getEventListeners(controller.signal, "abort").length, 0);
 });

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, test, type Request } from "@playwright/test";
 import { validateProjectConfig } from "streamotter/contracts";
+import { labCapabilities, NEW_SCENARIOS } from "../apps/field-station/src/lab/capabilities.ts";
 import { PLAYGROUND_PRESETS, presetText } from "../apps/site/src/data/playground-presets.ts";
 
 /** The StreamOtter version the site pins, read from its package.json as the site itself does. */
@@ -166,7 +167,7 @@ test("releases keep the site release, library package, demo availability, and ve
   await expect(page.locator("[data-release-library]")).not.toContainText(/planned|REQUIRED|UNKNOWN_KEY/);
   const rows = page.locator("[data-release-demo] tbody tr");
   await expect(rows).toHaveCount(5);
-  await expect(rows.filter({ hasText: "Source failures" })).toContainText("Fouled sensor, on the same benches. The other 8 stories");
+  await expect(rows.filter({ hasText: "Source failures" })).toContainText("Fouled sensor, on the same benches, and 8 more stories, each only where this field station's backend reports it can run it.");
   const service = page.locator("[data-release-service]");
   await expect(service).toHaveAttribute("data-service", "answered", { timeout: 15_000 });
   await expect(service.locator("li").first()).toHaveText("Field station: answering, replaying fixture data without Kafka.");
@@ -191,11 +192,34 @@ test("version and availability facts agree across pages (LC11-A40)", async ({ pa
   }
   expect(versions.size).toBeGreaterThan(3);
   for (const entry of versions) expect(entry.split(" ")[1], entry).toBe(release);
-  // The Lab's count of exercises that can't run matches the releases page's.
   await page.goto("/lab/#source-failures");
-  const waiting = await page.locator('[data-lab-track="source-failures"] [data-lab-start]').count();
   await expect(page.locator("main")).not.toContainText(/four controlled failures/i);
   await expect(page.getByRole("heading", { name: "Bench controls" })).toBeVisible();
-  await page.goto("/releases/");
-  await expect(page.locator("[data-release-demo]")).toContainText(`The other ${waiting} stories are listed`);
 });
+
+// Summaries the field station's own code produces for each deployment (the backend is the source of truth):
+// the hosted demo without benches, in both rollout phases, and Lab benches under each failure-handling profile.
+// A bench's verified set is injected so the counts don't depend on which releases have been verified.
+const verified = new Map([[release, new Set(NEW_SCENARIOS)]]);
+for (const [name, summary, runs] of [
+  ["the hosted demo on 0.1.0-rc.3 (phase 1)", labCapabilities({ labEnabled: false, now: Date.now(), version: "0.1.0-rc.3" }), 0],
+  [`the hosted demo on ${release} (phase 2)`, labCapabilities({ labEnabled: false, now: Date.now(), version: release }), 0],
+  ["a Lab with failure handling off", labCapabilities({ labEnabled: true, now: Date.now(), version: release, verified }), 0],
+  ["a Lab on the retry profile", labCapabilities({ labEnabled: true, now: Date.now(), version: release, verified, profile: "retry" }), 1],
+  ["a local Lab on the quarantine profile", labCapabilities({ labEnabled: true, now: Date.now(), version: release, verified, profile: "quarantine", localExercises: true }), 8]
+] as const) {
+  test(`the Lab and the releases page count the same runnable source-failure exercises for ${name}`, async ({ page }) => {
+    await page.route("**/api/lab/capabilities", route => route.fulfill({ json: summary }));
+    await page.goto("/lab/#source-failures");
+    const track = page.locator('[data-lab-track="source-failures"]');
+    await expect(page.locator("[data-lab-capability]")).toContainText(`${runs} of 8 new exercises can run here.`);
+    const stories = await track.locator("[data-lab-start]").count();
+    const available = await track.locator('[data-lab-scenario]:has([data-lab-start]) [data-lab-availability][data-state="available"]').count();
+    expect([stories, available]).toEqual([8, runs]);
+    await page.goto("/releases/");
+    // The static row counts the stories and leaves whether they run to the report below it, which reads the same summary.
+    await expect(page.locator("[data-release-demo]")).toContainText(`and ${stories} more stories, each only where this field station's backend reports it can run it.`);
+    await expect(page.locator("[data-release-service]")).toHaveAttribute("data-service", "answered", { timeout: 15_000 });
+    await expect(page.locator("[data-release-service] li")).toContainText([`New source-failure exercises it can run: ${available} of ${stories}.`]);
+  });
+}

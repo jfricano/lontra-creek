@@ -10,7 +10,7 @@
  * that doesn't list a scenario all leave it unavailable. There is no mock fallback.
  */
 import type { LabCapabilities, LabScenarioId, LabTrack } from "../../../field-station/src/lab/contract.ts";
-import { SCENARIOS, TRACKS, homeTrack } from "../lab-catalog.ts";
+import { NEW_SOURCE_EXERCISES, SCENARIOS, TRACKS, homeTrack } from "../lab-catalog.ts";
 
 export type CapabilityAnswer =
   | { kind: "pending" }
@@ -129,11 +129,10 @@ export function capabilityNote(answer: CapabilityAnswer, builtWith: string): str
     case "unreachable": return "This backend's capability check didn't answer, so every new exercise is unavailable. The rest of the page still works.";
     case "summary": {
       const { summary } = answer;
-      const fresh = TRACKS["source-failures"].filter(id => SCENARIOS[id].controls === null);
-      const runnable = fresh.filter(id => scenarioAvailability(id, answer).state === "available").length;
+      const runnable = NEW_SOURCE_EXERCISES.filter(id => scenarioAvailability(id, answer).state === "available").length;
       const lab = summary.backend.lab === "enabled" ? "Lab benches enabled" : "no Lab benches";
       const skew = summary.library.version === builtWith ? "" : ` This page was built for StreamOtter ${builtWith}.`;
-      return `This backend runs StreamOtter ${summary.library.version} on real Kafka with synthetic data (${lab}). ${runnable} of ${fresh.length} new exercises can run here.${skew}`;
+      return `This backend runs StreamOtter ${summary.library.version} on real Kafka with synthetic data (${lab}). ${runnable} of ${NEW_SOURCE_EXERCISES.length} new exercises can run here.${skew}`;
     }
   }
 }

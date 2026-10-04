@@ -19,7 +19,8 @@ import {
   POLICY_MATRIX, REDRIVE_OUTCOMES
 } from "../src/failure-handling.ts";
 import { RELEASE_TAG } from "../src/release-facts.ts";
-import { benchConfig } from "../../field-station/src/lab/bench.ts";
+import { benchConfig, benchEnvironment } from "../../field-station/src/lab/bench.ts";
+import { capabilityOptions } from "../../field-station/src/lab/leases.ts";
 
 const FIELD_STATION = new URL("../../field-station/", import.meta.url);
 
@@ -103,11 +104,18 @@ test("source-failure links point at the release tag, never a branch or a plannin
   for (const stage of DISPOSITION_LIFECYCLE) assert.ok((Object.values(FAILURE_SOURCES) as string[]).includes(stage.source), stage.name);
 });
 
-test("the live creek configures no failure policies and only Lab benches do, as /when-it-breaks/ says", () => {
+test("the live creek configures no failure policies, and only Lab benches can when their deployment turns it on, as /when-it-breaks/ says", () => {
   for (const file of ["streamotter.json", "streamotter.fixture.json", "streamotter.production.json"]) {
     const config = JSON.parse(readFileSync(new URL(file, FIELD_STATION), "utf8")) as Record<string, unknown>;
     assert.equal(config["failureHandling"], undefined, `${file} now has failureHandling; update "What this demo runs" on /when-it-breaks/`);
   }
+  // Benches run failure handling only when their deployment sets LAB_FAILURE_HANDLING: the bench and the field station both default to `off`.
+  const tokens = { LAB_BENCH: "1", LAB_BENCH_1_SERVICE_TOKEN: "s".repeat(32), LAB_BENCH_1_RELAY_TOKEN: "r".repeat(32) };
+  assert.equal(benchEnvironment(tokens).profile, "off");
+  assert.equal(capabilityOptions({}).profile, "off");
+  assert.equal(benchEnvironment({ ...tokens, LAB_FAILURE_HANDLING: "retry" }).profile, "retry");
+  const page = readFileSync(new URL("../src/pages/when-it-breaks.astro", import.meta.url), "utf8");
+  assert.match(page, /only when the Lab's deployment turns it on with <code>LAB_FAILURE_HANDLING<\/code>; it is off unless set\./);
   // Each bench's own project, built in code: retries under every profile but `off`, quarantine with a guard only under `quarantine`.
   assert.equal(benchConfig(1, { profile: "off" }).failureHandling, undefined);
   const retry = benchConfig(1, { profile: "retry" }).failureHandling;

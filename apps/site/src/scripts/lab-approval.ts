@@ -5,7 +5,9 @@
  * Opening it approves nothing. It shows the evaluation the visitor is approving and
  * binds the approval to that projection's revision and plan token, captured when it
  * opened: if the incident moves on, the plan changes, or the approval expires while it
- * is open, Approve sends nothing and the dialog says why. Focus moves into the dialog
+ * is open, Approve sends nothing and the dialog says why. Approve checks again when it is
+ * pressed, against the latest projection and the clock at that moment, not only the
+ * check last drawn. Focus moves into the dialog
  * when it opens and back to the button that opened it when it closes. A page restored
  * from the back-forward cache reloads (lab.ts), so a review is never carried over.
  */
@@ -57,6 +59,7 @@ export class ApprovalDialog {
   #opener: HTMLElement | null = null;
   #fallback: (() => HTMLElement | null) | undefined;
   #approve: ((review: Review) => void) | undefined;
+  #latest: (() => { current: LabIncidentSummary | null; nowMs: number }) | undefined;
   #problem: string | null = null;
 
   constructor(dialog: HTMLDialogElement) {
@@ -64,7 +67,11 @@ export class ApprovalDialog {
     this.#el("[data-lab-approval-cancel]").addEventListener("click", () => dialog.close());
     this.#el("[data-lab-approval-approve]").addEventListener("click", () => {
       const review = this.#review;
-      if (review === null || this.#problem !== null) return;
+      if (review === null) return;
+      // The drawn check can be up to one clock tick old: an approval may have expired since.
+      const latest = this.#latest?.();
+      if (latest) this.update(latest.current, latest.nowMs);
+      if (this.#problem !== null) return;
       dialog.close();
       this.#approve?.(review);
     });
@@ -87,13 +94,17 @@ export class ApprovalDialog {
 
   get open(): boolean { return this.#dialog.open; }
 
-  /** Opens the review; `fallback` names where focus goes when the opener is gone by the time it closes. */
-  show(review: Review, opener: HTMLElement, current: LabIncidentSummary | null, nowMs: number, options: { fallback: () => HTMLElement | null; approve: (review: Review) => void }): void {
-    this.#review = review; this.#opener = opener; this.#fallback = options.fallback; this.#approve = options.approve;
+  /**
+   * Opens the review; `fallback` names where focus goes when the opener is gone by the time it
+   * closes, and `latest` gives the projection and the clock now, checked when it opens and again at Approve.
+   */
+  show(review: Review, opener: HTMLElement, options: { fallback: () => HTMLElement | null; approve: (review: Review) => void; latest: () => { current: LabIncidentSummary | null; nowMs: number } }): void {
+    this.#review = review; this.#opener = opener; this.#fallback = options.fallback; this.#approve = options.approve; this.#latest = options.latest;
     const text = reviewText(review);
     this.#el("[data-lab-approval-incident]").textContent = text.incident;
     this.#el("[data-lab-approval-evaluation]").textContent = text.evaluation;
     this.#el("[data-lab-approval-expiry]").textContent = text.expiry;
+    const { current, nowMs } = options.latest();
     this.update(current, nowMs);
     this.#dialog.showModal();
     this.#el("#approval-title").focus();

@@ -6,7 +6,7 @@ import { ApprovalDialog, reviewFrom } from "./lab-approval.ts";
 import { capabilityAnswer, type CapabilityAnswer } from "./lab-catalog-model.ts";
 import type { BrowserStep } from "./lab-incident.ts";
 import { IncidentPanel } from "./lab-incident-panel.ts";
-import { approveRequest, isPending, newRequestId, nextRequest, operationText, runIntent, startRequest, type RunIo } from "./lab-operation.ts";
+import { abortableWait, approveRequest, isPending, newRequestId, nextRequest, operationText, runIntent, startRequest, type RunIo } from "./lab-operation.ts";
 import { mountTracks } from "./lab-tracks.ts";
 import { HttpStatusError, SignInRetry } from "./sign-in-retry.ts";
 import { installTabletNetwork } from "./tablet-network.ts";
@@ -235,13 +235,22 @@ async function mount(root: HTMLElement): Promise<void> {
     tracks?.showCapabilities(capabilities);
     incident.explain(capabilities, lease?.status === "ready" || lease?.status === "active");
   }
-  /** The current-incident projection: fetched only when the backend says it serves one. */
+  /** Numbers each projection fetch; `incidentShown` is the latest one rendered. */
+  let incidentAsked = 0;
+  let incidentShown = 0;
+  /**
+   * The current-incident projection: fetched only when the backend says it serves one. The
+   * poll and a finished step's own fetch can overlap: an answer to an older fetch than the
+   * one already shown is dropped, so the panel never steps back.
+   */
   async function incidentPoll(): Promise<void> {
     if (!leaseId || capabilities.kind !== "summary" || !capabilities.summary.features.incidentProjection.available) return;
     const activeSequence = sequence;
+    const asked = ++incidentAsked;
     try {
       const view = await request<LabIncidentView>("incident");
-      if (activeSequence !== sequence) return;
+      if (activeSequence !== sequence || asked < incidentShown) return;
+      incidentShown = asked;
       const state = incident.render(view, browserSteps);
       approval.update(incident.incident, Date.now() + offset);
       if (state !== null) applicationView();
@@ -261,7 +270,7 @@ async function mount(root: HTMLElement): Promise<void> {
     const io: RunIo = {
       post: (intent, signal) => request<LabOperation>("actions", intent, "POST", signal),
       get: (id, signal) => request<LabOperation>(`operations/${encodeURIComponent(id)}`, undefined, "GET", signal),
-      wait: (ms, signal) => new Promise(resolve => { const t = setTimeout(resolve, ms); signal.addEventListener("abort", () => { clearTimeout(t); resolve(); }, { once: true }); })
+      wait: abortableWait
     };
     setIntentBusy(true);
     incident.operation("Sending your request…");
@@ -283,8 +292,9 @@ async function mount(root: HTMLElement): Promise<void> {
     if (current.nextIntent !== "incident.approve-reprocess") { const body = nextRequest(current, newRequestId()); if (body) sendIntent(body); return; }
     const review = reviewFrom(current);
     if (review === null) { incident.operation("The incident offers approval, but its evaluation has no plan this page can approve. Evaluate again."); return; }
-    approval.show(review, button, current, Date.now() + offset, {
+    approval.show(review, button, {
       fallback: () => root.querySelector<HTMLElement>("[data-lab-incident-title]"),
+      latest: () => ({ current: incident.incident, nowMs: Date.now() + offset }),
       // One approval, one request: the reviewed plan's token and revision, never the latest ones.
       approve: reviewed => { if (!intentBusy && leaseId) sendIntent(approveRequest({ expectedRevision: reviewed.revision, planToken: reviewed.planToken }, newRequestId())); }
     });

@@ -8,7 +8,7 @@
  * 404, as `npm run dev` does.
  */
 import { AxeBuilder } from "@axe-core/playwright";
-import { expect, test, type Page, type Request } from "@playwright/test";
+import { expect, test, type Page, type Request, type Route } from "@playwright/test";
 import type { LabIncidentSummary, LabIntentRequest, LabOperation } from "../apps/field-station/src/lab/contract.ts";
 
 const now = () => new Date().toISOString();
@@ -368,10 +368,13 @@ test("LC11-S03: hold, make coverage ready, reassess, each bound to the revision 
   await act(page).focus(); await page.keyboard.press("Enter");
   await expect(operation(page)).toHaveText("Make snapshot coverage ready: running on your bench.");
   await expect(act(page)).toHaveAttribute("aria-disabled", "true");
+  // While it waits, the button is described by the operation line that says why, then the line beside it.
+  await expect(act(page)).toHaveAccessibleDescription(/^Make snapshot coverage ready: running on your bench\. Lontra Creek's application releases/);
   await expect(operation(page)).toContainText("Make snapshot coverage ready: done. The application released its snapshot coverage. The source is still held");
   await expect(act(page)).toHaveText("Reassess continuation");
   await expect(act(page)).toBeFocused();
   await expect(act(page)).toHaveAttribute("aria-disabled", "false");
+  await expect(act(page)).toHaveAttribute("aria-describedby", "incident-next");
   await page.keyboard.press("Enter");
   await expect(operation(page)).toHaveText("Reassess: done. The gateway asked the recovery guard again. Current incident shows its decision.", { timeout: 10_000 });
   await expect(panel(page).locator("[data-lab-incident-source]")).toContainText("Source advanced past quarantined record");
@@ -386,6 +389,52 @@ test("LC11-S03: hold, make coverage ready, reassess, each bound to the revision 
   ]);
   expect(new Set(lab.intents.map(intent => intent.requestId)).size).toBe(3);
   await expect(page.locator("[data-lab-outcome]")).toHaveText("Incident 1: Evidence saved; Source advanced past quarantined record; View resynchronized.");
+});
+
+test("when the incident goes (status none) while its next step has focus, focus moves to the panel's heading, not the page (fixture)", async ({ page }) => {
+  const lab = await exercise(page, [], { incident: projection() });
+  await borrow(page);
+  await expect(act(page)).toHaveText("Make snapshot coverage ready (application action)");
+  await act(page).focus();
+  lab.setIncident(null);
+  await expect(panel(page).locator("[data-lab-incident-empty]")).toBeVisible({ timeout: 5_000 });
+  await expect(panel(page).locator("[data-lab-incident-title]")).toBeFocused();
+});
+
+test("when the lease ends while the next step has focus, focus moves to the panel's heading, not the page (fixture)", async ({ page }) => {
+  await exercise(page, [], { incident: projection() });
+  await borrow(page);
+  await expect(act(page)).toHaveText("Make snapshot coverage ready (application action)");
+  await act(page).focus();
+  // Registered last, so it answers the lease poll before the scripted station does.
+  await page.route("**/api/lab/lease", route => route.fulfill({ json: { status: "ended", now: now(), reason: "expired", endedAt: now(), bench: 1 } }));
+  await expect(page.locator("[data-lab-message]")).toContainText("Your lease ended", { timeout: 5_000 });
+  await expect(panel(page).locator("[data-lab-incident-empty]")).toBeVisible();
+  await expect(panel(page).locator("[data-lab-incident-title]")).toBeFocused();
+});
+
+test("an incident answer that arrives after a newer one is dropped, so the panel never steps back (fixture)", async ({ page }) => {
+  const established = projection({ scenarioRevision: 2, recovery: "coverage-established", nextIntent: "incident.reassess" });
+  await exercise(page, [{ statuses: ["accepted", "succeeded"], incident: established }], { incident: projection() });
+  await borrow(page);
+  await expect(act(page)).toHaveText("Make snapshot coverage ready (application action)");
+  // Hold the next poll's answer (asked while revision 1 was current) until the step's own fetch has shown revision 2.
+  const held: Route[] = [];
+  let holding = true;
+  await page.route("**/api/lab/incident", route => { if (holding) { held.push(route); return; } return route.fallback(); });
+  await expect.poll(() => held.length, { timeout: 5_000 }).toBeGreaterThan(0);
+  holding = false;
+  // Every label the next-step button shows from here on, so a step back can't hide between polls.
+  await act(page).evaluate(button => {
+    const labels: string[] = (window as unknown as { labels: string[] }).labels = [];
+    new MutationObserver(() => labels.push(button.textContent ?? "")).observe(button, { childList: true, characterData: true, subtree: true });
+  });
+  await act(page).click();
+  await expect(act(page)).toHaveText("Reassess continuation");
+  for (const route of held) await route.fulfill({ json: { status: "open", now: now(), incident: projection() } });
+  await page.waitForTimeout(1_000);
+  expect(await page.evaluate(() => (window as unknown as { labels: string[] }).labels)).toEqual(["Reassess continuation"]);
+  await expect(panel(page).locator("[data-lab-incident-recovery]")).not.toContainText("snapshot coverage not ready");
 });
 
 test("LC11-S02: a garbled reading stays held; evaluation fails and nothing is offered after it (fixture)", async ({ page }) => {
@@ -475,6 +524,28 @@ test("an approval whose plan expired or whose incident moved on sends nothing (f
   await expect(dialog.locator("[data-lab-approval-problem]")).toHaveText("The incident changed while this review was open. Cancel, then review the current evaluation.", { timeout: 5_000 });
   await expect(approve).toHaveAttribute("aria-disabled", "true");
   await approve.click({ force: true });
+  await page.waitForTimeout(300);
+  expect(lab.intents).toEqual([]);
+});
+
+test("Approve checks the plan's expiry again when pressed, not only at the last clock tick (fixture)", async ({ page }) => {
+  await page.clock.install();
+  const expiresAt = Date.now() + 120_000;
+  const evaluation = { result: "passed" as const, at: ago(60), expiresAt: new Date(expiresAt).toISOString(), planToken: "pt_fixture_reviewed_0123", summary: "The saved record maps." };
+  const lab = await exercise(page, [], { incident: projection({ scenario: "inspect-old-reading", scenarioRevision: 5, source: "advanced", recovery: "view-resynchronized", evaluation, nextIntent: "incident.approve-reprocess" }) });
+  await borrow(page);
+  await act(page).click();
+  const dialog = page.locator("[data-lab-approval]");
+  const approve = dialog.getByRole("button", { name: "Approve reprocessing" });
+  await expect(approve).toHaveAttribute("aria-disabled", "false");
+  // Stop the page's timers, then let the plan expire: the dialog's periodic check can't have seen it.
+  await page.clock.pauseAt(Date.now() + 100);
+  await page.clock.setSystemTime(expiresAt + 1_000);
+  await expect(approve).toHaveAttribute("aria-disabled", "false");
+  await approve.evaluate((button: HTMLElement) => button.click());
+  await expect(dialog.locator("[data-lab-approval-problem]")).toHaveText(/^This approval expired at \d\d:\d\d:\d\d UTC\. Cancel, then evaluate again for a new plan\.$/);
+  await expect(approve).toHaveAttribute("aria-disabled", "true");
+  await expect(dialog).toBeVisible();
   await page.waitForTimeout(300);
   expect(lab.intents).toEqual([]);
 });

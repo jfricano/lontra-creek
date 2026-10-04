@@ -139,6 +139,40 @@ test("a back-forward cache restore revalidates before showing anything active, a
   expect(allocations(seen)).toBe(1);
 });
 
+test("a second tab on the same session leaves the slot alone when it closes; only a tab that took the slot returns it", async ({ page, context }) => {
+  let state: SandboxLease = { status: "none", now: iso() };
+  const handler: Handler = ({ method, path }) => {
+    if (path === "status") return { json: available() };
+    if (method === "POST" && path === "session") { state = lease("ready"); return { json: state }; }
+    if (path === "session/claim") { state = lease("active"); return { json: connection() }; }
+    if (path === "session/return") { state = ended("returned"); return { json: state }; }
+    if (path === "session") return { json: state };
+    return undefined;
+  };
+  const first = await stubSandbox(page, handler);
+  const ui = panel(page);
+  await page.goto("/workbench/");
+  await ui.start.click();
+  await expect(ui.root).toHaveAttribute("data-phase", "active");
+  // The same browser session in a second tab: it shows the slot, but did not take it.
+  const tab = await context.newPage(); const second = await stubSandbox(tab, handler); const other = panel(tab);
+  await tab.goto("/workbench/");
+  await expect(other.root).toHaveAttribute("data-phase", "active");
+  await tab.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })));
+  await tab.waitForTimeout(1_000);
+  expect(second).not.toContain("POST session/return");
+  expect(state.status).toBe("active");
+  // Once it opens the workbench itself, it is using the slot too, and leaving returns it.
+  await tab.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+  await expect(other.claim).toBeEnabled();
+  await other.claim.click();
+  await expect(other.claim).toBeHidden();
+  await tab.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })));
+  await expect.poll(() => second.includes("POST session/return")).toBe(true);
+  expect(first).not.toContain("POST session/return");
+  await tab.close();
+});
+
 test("a full pool queues with position, and leaving the line returns the place", async ({ page }) => {
   const seen = await stubSandbox(page, ({ method, path }) => {
     // One clock reading per answer: two Date.now() calls a millisecond apart would round "4 min" up to 5.

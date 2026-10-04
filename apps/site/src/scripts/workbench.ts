@@ -57,6 +57,11 @@ function mount(root: HTMLElement): void {
   let busy = false;
   /** True while this page's Start request is in flight: the field station may already hold a place for it. */
   let starting = false;
+  /**
+   * True once this page started or claimed the session's place. Other tabs share the session cookie and show the
+   * same place, so only a page that took it returns it on leaving; one that only shows it leaves it alone.
+   */
+  let owned = false;
   /** Claim without a second click: only right after this page's own Start or Reset. */
   let autoClaim = false;
   /** Bumped on pagehide and pageshow, so answers to requests from before are dropped. */
@@ -81,6 +86,7 @@ function mount(root: HTMLElement): void {
 
   function setLease(next: SandboxLease): void {
     lease = next; offset = Date.parse(next.now) - Date.now();
+    if (next.status === "none" || next.status === "ended") owned = false;
     if (next.status !== "active" && next.status !== "ready") connection = null;
     if (next.status !== "ready" && next.status !== "active" && next.status !== "resetting") autoClaim = false;
     if (next.status !== "active" || (mountedStudy !== null && mountedStudy !== next.studyId)) unmount();
@@ -173,7 +179,7 @@ function mount(root: HTMLElement): void {
     const g = generation; const answer = await call<SandboxConnection>("session/claim", "POST"); if (g !== generation) return;
     autoClaim = false;
     if (!answer.ok) { note = problemText(answer.problem); await refreshLease(); return; }
-    connection = answer.data;
+    connection = answer.data; owned = true;
     await refreshLease(); if (g !== generation) return;
     discovery = null; discoveryProblem = null;
     // Discovery matters only when this site pins a release with the seam; until then nothing is asked.
@@ -207,7 +213,7 @@ function mount(root: HTMLElement): void {
     const g = generation; starting = true;
     const answer = await call<SandboxLease>("session", "POST").finally(() => { starting = false; }); if (g !== generation) return;
     if (!answer.ok) { note = problemText(answer.problem); if (answer.problem.kind === "refused" && answer.problem.code === "sandbox-unavailable") await refreshStatus(); return; }
-    autoClaim = true; setLease(answer.data);
+    autoClaim = true; setLease(answer.data); owned = true;
     if (lease?.status === "ready") await claim();
   }, buttons.start); });
   buttons.claim.addEventListener("click", () => { void act(claim, buttons.claim); });
@@ -267,10 +273,10 @@ function mount(root: HTMLElement): void {
   function stop(): void { generation++; ticking = false; clearTimeout(poll); clearInterval(clock); }
 
   window.addEventListener("pagehide", () => {
-    // A reload for a new study keeps the lease: the reloaded page reopens it.
-    const held = !reloading && (holding() || starting);
+    // A reload for a new study keeps the lease: the reloaded page reopens it. Another tab's place is that tab's to return.
+    const held = !reloading && ((owned && holding()) || starting);
     stop(); unmount(); connection = null; discovery = null; autoClaim = false; checking = true;
-    // Leaving the page returns the slot or place, including one a Start still in flight may get; the empty body keeps keepalive preflight-free.
+    // Leaving the page returns the slot or place it took, including one a Start still in flight may get; the empty body keeps keepalive preflight-free.
     if (held) void fetch(`${origin}/api/sandbox/session/return`, { method: "POST", credentials: "include", keepalive: true }).catch(() => undefined);
   });
   // A restore from the back-forward cache revalidates and never allocates.

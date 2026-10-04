@@ -4,6 +4,8 @@ import type { BenchId, BenchStatus, LabAction, LabActionResult, LabEndReason, La
 import { LabError, MAX_LEASE_MS } from './errors.ts';
 import { AddressCap } from '../places.ts';
 export interface BenchClient { call<T>(bench: BenchId, path: string, method?: string, body?: unknown): Promise<T>; }
+/** The publisher gate (studies.ts): opened when a lease is granted on a study, closed before any reset is asked for. `current` is the study it holds open. */
+export interface StudyGate { open(bench: BenchId, studyId: string): void; close(bench: BenchId, studyId: string): Promise<unknown>; current(bench: BenchId): string | null; }
 interface Place { session: SessionClaims; address: string; joined: number; heartbeat: number; lease?: { id: string; bench: BenchId; granted: number; expires: number; claimed: boolean; nextAction: number }; }
 interface Slot { state: LabStatus['benches'][number]['state']; status?: BenchStatus; resetAt: number; retryAt: number; lastSeen: number; nextPoll: number; }
 const iso = (n: number): string => new Date(n).toISOString();
@@ -18,9 +20,10 @@ export class LeasePool {
   readonly #queueMax: number;
   readonly #origin: string;
   readonly #cap: AddressCap;
+  readonly #studies: StudyGate | undefined;
   #tail: Promise<unknown> = Promise.resolve();
-  constructor(options: { client: BenchClient; benches: BenchId[]; gatewayOrigin: string; now?: () => number; leaseMs?: number; queueMax?: number; cap?: AddressCap }) {
-    this.#client = options.client; this.#now = options.now ?? Date.now; this.#leaseMs = options.leaseMs ?? MAX_LEASE_MS; this.#queueMax = options.queueMax ?? 50; this.#origin = options.gatewayOrigin;
+  constructor(options: { client: BenchClient; benches: BenchId[]; gatewayOrigin: string; now?: () => number; leaseMs?: number; queueMax?: number; cap?: AddressCap; studies?: StudyGate }) {
+    this.#client = options.client; this.#studies = options.studies; this.#now = options.now ?? Date.now; this.#leaseMs = options.leaseMs ?? MAX_LEASE_MS; this.#queueMax = options.queueMax ?? 50; this.#origin = options.gatewayOrigin;
     if (this.#leaseMs > MAX_LEASE_MS) throw new RangeError(`A lease can last at most ${MAX_LEASE_MS / 1000} seconds; benches refuse longer ones.`);
     this.#cap = options.cap ?? new AddressCap(); this.#cap.register(this);
     for (const bench of options.benches) this.#slots.set(bench, { state: 'unavailable', resetAt: 0, retryAt: 0, lastSeen: this.#now(), nextPoll: 0 });
@@ -32,6 +35,10 @@ export class LeasePool {
   async initialize(): Promise<void> { await this.run(async () => { for (const bench of this.#slots.keys()) await this.#reset(bench); }); }
   async #reset(bench: BenchId): Promise<void> {
     const slot = this.#slots.get(bench)!; slot.state = 'resetting'; slot.resetAt = this.#now(); slot.nextPoll = 0;
+    // Shut the publisher gate on the study the field station opened, before the bench is asked to discard it (LC11-ADR-02
+    // step 3). Never one named only by a polled status: that may be a study the bench is still provisioning.
+    const study = this.#studies?.current(bench);
+    if (study) await this.#studies!.close(bench, study).catch(() => undefined);
     try { await this.#client.call(bench, '/bench/v1/reset', 'POST', { leaseId: null }); }
     catch { slot.state = 'unavailable'; slot.retryAt = this.#now() + 30_000; }
   }
@@ -54,10 +61,14 @@ export class LeasePool {
       slot.nextPoll = now + 5000;
       try {
         const status = await this.#client.call<BenchStatus>(bench, '/bench/v1/status');
-        slot.status = status; slot.lastSeen = now;
         const place = [...this.#places.values()].find(p => p.lease?.bench === bench);
+        // A leased bench whose process restarted reports `starting` until it has read its study back: as long as an unanswered one.
+        if (place && status.state === 'starting' && now - slot.lastSeen < 15_000) { slot.status = status; continue; }
+        slot.status = status; slot.lastSeen = now;
         if (place && (status.state !== 'leased' || status.lease?.leaseId !== place.lease!.id)) { await this.#end(place, 'bench-failed'); continue; }
-        if (!place && status.state === 'ready') slot.state = 'ready';
+        // Only a clean-lease-eligible bench is granted (LC11-ADR-02). A leased bench whose source is held stays leased.
+        // A ready bench that isn't eligible (its last cleanup didn't finish) is reset again on the usual schedule.
+        if (!place && status.state === 'ready') { if (status.readiness?.cleanLease === true) slot.state = 'ready'; else { slot.state = 'unavailable'; slot.retryAt = now + 30_000; } }
         else if (status.state === 'failed' || slot.state === 'resetting' && now - slot.resetAt >= 60_000) { slot.state = 'unavailable'; slot.retryAt = now + 30_000; }
       } catch { if (now - slot.lastSeen < 15_000) continue; const place = [...this.#places.values()].find(p => p.lease?.bench === bench); if (place) await this.#end(place, 'bench-failed'); slot.state = 'unavailable'; slot.retryAt = now + 30_000; }
     }
@@ -66,10 +77,17 @@ export class LeasePool {
       const place = [...this.#places.values()].find(p => !p.lease);
       if (!place) break;
       const lease = { id: randomUUID(), bench, granted: now, expires: Math.min(now + this.#leaseMs, place.session.exp), claimed: false, nextAction: now };
-      try { slot.status = await this.#client.call<BenchStatus>(bench, '/bench/v1/lease', 'PUT', { leaseId: lease.id, expiresAt: iso(lease.expires) }); place.lease = lease; slot.state = 'leased'; }
+      try {
+        slot.status = await this.#client.call<BenchStatus>(bench, '/bench/v1/lease', 'PUT', { leaseId: lease.id, expiresAt: iso(lease.expires) });
+        // The leased study is now open for scenario publication. One the gate refuses (closed before, or none named) is
+        // never handed to a visitor: the bench is reset instead, and the visitor keeps their place.
+        if (this.#studies && !this.#open(bench, slot.status.study?.studyId)) { await this.#reset(bench); continue; }
+        place.lease = lease; slot.state = 'leased';
+      }
       catch { slot.state = 'unavailable'; slot.retryAt = now + 30_000; }
     }
   }
+  #open(bench: BenchId, studyId: string | undefined): boolean { if (!studyId) return false; try { this.#studies!.open(bench, studyId); return true; } catch { return false; } }
   heartbeat(session: SessionClaims): void { const place = this.#places.get(session.subject); if (place && this.#now() - place.heartbeat < (place.lease ? 30_000 : 90_000)) place.heartbeat = this.#now(); }
   status(): LabStatus {
     const leases = [...this.#places.values()].flatMap(p => p.lease ? [p.lease] : []);
@@ -108,7 +126,7 @@ export function benchError(status: number, code: unknown): LabError {
   if (status === 400) return new LabError('invalid-request', 400);
   return new LabError('bench-unavailable', 503);
 }
-export function configuredLab(env: NodeJS.ProcessEnv, gatewayOrigin: string, cap?: AddressCap): { pool: LeasePool; tokens: string[] } {
+export function configuredLab(env: NodeJS.ProcessEnv, gatewayOrigin: string, cap?: AddressCap, studies?: StudyGate): { pool: LeasePool; tokens: string[] } {
   const urls = (env['LAB_BENCH_API_URLS'] ?? '').split(',').filter(Boolean).map(value => new URL(value).origin);
   if (urls.length > 3) throw new Error('At most three Lab benches are supported.');
   const tokens = urls.map((_, i) => { const token = env[`LAB_BENCH_${i + 1}_SERVICE_TOKEN`]; if (!token || token.length < 32) throw new Error('Each Lab service token needs 32 characters.'); return token; });
@@ -116,5 +134,5 @@ export function configuredLab(env: NodeJS.ProcessEnv, gatewayOrigin: string, cap
   const client: BenchClient = { async call<T>(bench: BenchId, path: string, method = 'GET', body?: unknown): Promise<T> { const response = await fetch(`${urls[bench - 1]}${path}`, { method, headers: { authorization: `Bearer ${tokens[bench - 1]}`, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(5000) }); if (!response.ok) { const error = benchError(response.status, (await response.json().catch(() => ({})) as { code?: unknown }).code); if (error.code === 'bench-unavailable') console.error(`${new Date().toISOString()} Lab bench ${bench} answered ${response.status} to ${method} ${path.split('?')[0]}.`); throw error; } return await response.json() as T; } };
   const leaseSeconds = positive('LAB_LEASE_SECONDS', MAX_LEASE_MS / 1000);
   if (leaseSeconds * 1000 > MAX_LEASE_MS) throw new Error(`LAB_LEASE_SECONDS must be at most ${MAX_LEASE_MS / 1000}: each bench refuses longer leases.`);
-  return { pool: new LeasePool({ client, benches: urls.map((_, i) => i + 1 as BenchId), gatewayOrigin, leaseMs: leaseSeconds * 1000, queueMax: positive('LAB_QUEUE_MAX', 50), ...(cap ? { cap } : {}) }), tokens };
+  return { pool: new LeasePool({ client, benches: urls.map((_, i) => i + 1 as BenchId), gatewayOrigin, leaseMs: leaseSeconds * 1000, queueMax: positive('LAB_QUEUE_MAX', 50), ...(cap ? { cap } : {}), ...(studies ? { studies } : {}) }), tokens };
 }

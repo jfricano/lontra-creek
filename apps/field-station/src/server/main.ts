@@ -14,6 +14,7 @@ import { configuredLab } from "../lab/leases.ts";
 import { AddressCap } from "../places.ts";
 import { configuredSandbox } from "../sandbox/leases.ts";
 import { benches } from "../lab/benches.ts";
+import { LabStudies } from "../lab/studies.ts";
 import { NOTEBOOK_TOPIC } from "../records.ts";
 import { readConfig } from "./config.ts";
 import { internalApi, publicApi } from "./http.ts";
@@ -45,10 +46,13 @@ function listen(server: Server, port: number, name: string): Promise<void> {
 // Listen first so the health check can say "catching up" instead of timing out.
 // One per-address cap across the Lab and the workbench sandbox (LC11-ADR-04).
 const places = new AddressCap();
-const lab = configuredLab(process.env, config.gatewayOrigin, places);
+// Each bench study's publisher gate, coverage ledger, and served state (lab/studies.ts).
+// Scenario runs publish through it with kafka.scenario once W9b's scenarios exist.
+const studies = new LabStudies({ dataDir: config.dataDir, world: station, log });
+const lab = configuredLab(process.env, config.gatewayOrigin, places, studies);
 const sandbox = configuredSandbox(process.env, config.gatewayOrigin, places);
 const api = publicApi({ config, station, notebooks, log, lab: lab.pool, ...(sandbox ? { sandbox } : {}) });
-const internal = internalApi({ serviceToken: config.serviceToken, station, notebooks, labTokens: lab.tokens });
+const internal = internalApi({ serviceToken: config.serviceToken, station, notebooks, labTokens: lab.tokens, studies });
 await listen(api, config.port, "Site API");
 await listen(internal, config.internalPort, "Internal API");
 

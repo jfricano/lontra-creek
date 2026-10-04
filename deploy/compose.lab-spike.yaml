@@ -68,8 +68,10 @@ services:
       LAB_BENCH_1_RELAY_TOKEN: ${LAB_BENCH_1_RELAY_TOKEN:?}
       LAB_SNAPSHOT_ORIGIN: http://field-station:7410
       SITE_ORIGIN: ${SITE_ORIGIN:-https://streamotter.app}
+      LAB_STATE_DIR: /var/lib/lontra
     volumes:
       - ${LONTRA_SECRETS:?}/kafka/ca.pem:/etc/lontra/kafka/ca.pem:ro
+      - lab-1-state:/var/lib/lontra
     ports:
       - "127.0.0.1:7500:7400"
     depends_on:
@@ -85,3 +87,6 @@ services:
     logging:
       driver: json-file
       options: { max-size: 10m, max-file: "3" }
+
+volumes:
+  lab-1-state:

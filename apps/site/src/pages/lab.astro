@@ -21,7 +21,7 @@ const pending = { kind: "pending" } as const;
     <section class="lab-track" id={track.id} data-lab-track={track.id} aria-labelledby={`${track.id}-title`}>
       <h2 id={`${track.id}-title`}>{TRACK_LABELS[track.id]}</h2>
       <p>{track.intro}</p>
-      {track.id === "source-failures" && <p class="lab-capability" data-lab-capability>Every new exercise stays unavailable until this backend reports that it can run it. Of these nine stories, this version of the site runs only Fouled sensor.</p>}
+      {track.id === "source-failures" && <p class="lab-capability" data-lab-capability>Every new exercise stays unavailable until this backend reports that it can run it.</p>}
       <ol class="lab-catalog">
         {TRACKS[track.id].map(id => {
           const entry = SCENARIOS[id]; const availability = scenarioAvailability(id, pending); const key = `${track.id}-${id}`;
@@ -60,7 +60,8 @@ npm run dev</code></pre><p>The fixture demo does not include failure benches. Th
       </fieldset></section>
     </div>
     <section class="content-card lab-incident" data-lab-incident aria-labelledby="incident-title">
-      <h2 id="incident-title">Current incident</h2>
+      <h2 id="incident-title" tabindex="-1" data-lab-incident-title>Current incident</h2>
+      <p class="lab-operation" aria-live="polite" data-lab-operation></p>
       <div data-lab-incident-empty>
         <p><strong>No incident to show.</strong> This panel shows a quarantine incident only when the backend reports one for your leased bench. It never shows sample data.</p>
         <p data-lab-incident-reason>Until this backend reports that it supports incidents, this panel stays empty.</p>
@@ -72,12 +73,22 @@ npm run dev</code></pre><p>The fixture demo does not include failure benches. Th
           <section aria-labelledby="incident-view-title"><h3 id="incident-view-title">Application view</h3><p class="muted">What your page's SDK reports.</p>
             <dl><dt>Connection</dt><dd data-lab-incident-connection>—</dd><dt>LC-03 subscription</dt><dd data-lab-incident-subscription>—</dd><dt>Last observed</dt><dd data-lab-incident-last>—</dd></dl><p data-lab-incident-stale></p></section>
           <section aria-labelledby="incident-disposition-title"><h3 id="incident-disposition-title">Record disposition</h3><p class="muted">What the backend observed.</p>
-            <dl><dt>Failure</dt><dd data-lab-incident-failure></dd><dt>Policy</dt><dd data-lab-incident-policy></dd><dt>Evidence</dt><dd data-lab-incident-evidence></dd><dt>Source</dt><dd data-lab-incident-source></dd><dt>Recovery</dt><dd data-lab-incident-recovery></dd><dt data-lab-incident-evaluation-term>Evaluation</dt><dd data-lab-incident-evaluation></dd><dt data-lab-incident-reprocess-term>Reprocessing</dt><dd data-lab-incident-reprocess></dd><dt>Next supported action</dt><dd data-lab-incident-next></dd></dl>
+            <dl><dt>Failure</dt><dd data-lab-incident-failure></dd><dt>Policy</dt><dd data-lab-incident-policy></dd><dt>Evidence</dt><dd data-lab-incident-evidence></dd><dt>Source</dt><dd data-lab-incident-source></dd><dt>Recovery</dt><dd data-lab-incident-recovery></dd><dt data-lab-incident-evaluation-term>Evaluation</dt><dd data-lab-incident-evaluation></dd><dt data-lab-incident-reprocess-term>Reprocessing</dt><dd data-lab-incident-reprocess></dd><dt>Next supported action</dt><dd><button type="button" class="button button-quiet" data-lab-incident-act hidden></button><span tabindex="-1" data-lab-incident-next></span></dd></dl>
             <details data-lab-incident-detail><summary>Source coordinates and fingerprints</summary><dl data-lab-incident-detail-list></dl></details></section>
           <section aria-labelledby="incident-steps-title"><h3 id="incident-steps-title">Observed steps</h3><p class="muted">Oldest first. Missing steps stay missing.</p>
             <ol tabindex="0" aria-labelledby="incident-steps-title" data-lab-incident-steps></ol></section>
         </div>
       </div>
+      <dialog class="lab-approval" aria-labelledby="approval-title" aria-describedby="approval-effect" data-lab-approval>
+        <h2 id="approval-title" tabindex="-1">Review reprocessing</h2>
+        <p data-lab-approval-incident></p>
+        <p data-lab-approval-evaluation></p>
+        <p id="approval-effect"><strong>This evaluation changed no source offset, sent no state, and published no business event.</strong> Nothing has been reprocessed.</p>
+        <p>Approving asks your bench's gateway to reprocess the saved record once, locally, with the mapper it evaluated. The source's Kafka position doesn't move. If a newer snapshot already covers this reading, the result is <strong>Superseded by a newer snapshot</strong>: a safe outcome, not an error.</p>
+        <p data-lab-approval-expiry></p>
+        <p class="lab-approval-problem" role="status" data-lab-approval-problem hidden></p>
+        <div class="lab-controls"><button type="button" class="button button-primary" data-lab-approval-approve>Approve reprocessing</button><button type="button" class="button button-quiet" data-lab-approval-cancel>Cancel</button></div>
+      </dialog>
     </section>
     <section class="content-card"><h2>Redacted gateway feed</h2><p>Actual actions, source states, and traces from your current lease. No payloads, credentials, or other visitors' data.</p>
       <p>The scenario view shows what each scenario turns on: your actions, failed or rejected traces, source state changes, the LC-03 record a fouled sensor stopped on (topic, partition, and offset), and trace gaps. A record retried after Resume is marked <strong>Retried</strong>. “Mapper returned” means the bench's map handler finished for that record; it isn't proof that the gateway delivered it or committed its offset.</p>
@@ -109,6 +120,16 @@ npm run dev</code></pre><p>The fixture demo does not include failure benches. Th
 .lab-incident-areas > section { min-width:0; }
 [data-lab-incident-steps] { max-height:320px; overflow:auto; font:.8rem/1.6 var(--mono); padding-inline-start:20px; }
 details summary { cursor:pointer; font-weight:650; }
+[data-lab-incident-act] { margin-block-end:6px; }
+[data-lab-incident-act][aria-disabled="true"] { opacity:.6; cursor:not-allowed; }
+[data-lab-incident-act]:not([hidden]) + [data-lab-incident-next] { display:block; font-size:.88rem; color:var(--ink-2); }
+.lab-operation:empty { display:none; }
+.lab-operation { padding:10px 14px; background:var(--surface-2); border-radius:10px; }
+.lab-approval { width:min(560px,calc(100vw - 32px)); max-height:85vh; overflow:auto; color:var(--ink); background:var(--surface); border:1px solid var(--line-strong); border-radius:var(--radius); padding:24px; }
+.lab-approval::backdrop { background:rgba(0,0,0,.6); }
+.lab-approval h2 { margin-block-start:0; }
+.lab-approval [aria-disabled="true"] { opacity:.6; cursor:not-allowed; }
+.lab-approval-problem { font-weight:650; color:var(--failed); }
 @media (max-width:1000px) { .lab-incident-areas { grid-template-columns:1fr; } }
 </style>
 <style is:global>

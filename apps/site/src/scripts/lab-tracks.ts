@@ -6,14 +6,23 @@
  * by rewriting the URL in place, so a link can be shared. Selecting explains; it never
  * borrows a bench, starts a scenario, or sends any request. Focus stays where the
  * visitor put it.
+ *
+ * A card's Start button sends `scenario.start` only when the backend reports the exercise
+ * available and the visitor holds a bench with nothing else waiting. Otherwise it stays
+ * focusable with `aria-disabled="true"`, its availability line says why, and a press
+ * sends nothing.
  */
-import type { LabTrack } from "../../../field-station/src/lab/contract.ts";
+import type { LabScenarioId, LabTrack } from "../../../field-station/src/lab/contract.ts";
 import { RELEASE } from "../site.ts";
-import { AVAILABILITY_ICONS, capabilityNote, isScenario, scenarioAvailability, selectionFromUrl, urlFor, type CapabilityAnswer, type Selection } from "./lab-catalog-model.ts";
+import { AVAILABILITY_ICONS, capabilityNote, isScenario, scenarioAvailability, selectionFromUrl, startState, urlFor, type BenchContext, type CapabilityAnswer, type Selection } from "./lab-catalog-model.ts";
 
 export interface Tracks {
   /** Rewrites every availability line and the backend note from the capability answer. */
   showCapabilities(answer: CapabilityAnswer): void;
+  /** Rewrites the Start buttons and lines from the visitor's bench. */
+  showBench(bench: BenchContext): void;
+  /** Called when the visitor presses an enabled Start button. */
+  onStart(handler: (scenario: LabScenarioId) => void): void;
 }
 
 /** A click the browser handles itself: another button, or a modifier that opens a new tab or window. */
@@ -67,20 +76,38 @@ export function mountTracks(root: ParentNode): Tracks | null {
   apply(selection, true);
 
   const note = root.querySelector<HTMLElement>("[data-lab-capability]");
-  return {
-    showCapabilities(answer) {
-      if (note) note.textContent = capabilityNote(answer, RELEASE);
-      for (const card of cards) {
-        const id = card.dataset["labScenario"] ?? null;
-        if (!isScenario(id)) continue;
-        const availability = scenarioAvailability(id, answer);
-        const line = card.querySelector<HTMLElement>("[data-lab-availability]");
-        if (line) line.dataset["state"] = availability.state;
-        const icon = card.querySelector("[data-lab-availability-icon]"); if (icon) icon.textContent = AVAILABILITY_ICONS[availability.state];
-        const text = card.querySelector("[data-lab-availability-text]"); if (text) text.textContent = availability.text;
-        // No exercise in this build is available (PAGE_RUNS is empty); one that is adds its own handler.
-        card.querySelector("[data-lab-start]")?.setAttribute("aria-disabled", String(availability.state !== "available"));
-      }
+  let answer: CapabilityAnswer = { kind: "pending" };
+  let bench: BenchContext = { leased: false, busy: false };
+  let started: ((scenario: LabScenarioId) => void) | undefined;
+  function render(): void {
+    for (const card of cards) {
+      const id = card.dataset["labScenario"] ?? null;
+      if (!isScenario(id)) continue;
+      const availability = scenarioAvailability(id, answer);
+      const start = startState(availability, bench);
+      const line = card.querySelector<HTMLElement>("[data-lab-availability]");
+      if (line) line.dataset["state"] = availability.state;
+      const icon = card.querySelector("[data-lab-availability-icon]"); if (icon) icon.textContent = AVAILABILITY_ICONS[availability.state];
+      const text = card.querySelector("[data-lab-availability-text]"); if (text) text.textContent = start.text;
+      card.querySelector("[data-lab-start]")?.setAttribute("aria-disabled", String(!start.enabled));
     }
+  }
+  for (const button of root.querySelectorAll<HTMLButtonElement>("[data-lab-start]")) button.addEventListener("click", () => {
+    const id = button.dataset["labStart"] ?? null;
+    // Checked again at the press, not only when the line was drawn.
+    if (!isScenario(id) || !startState(scenarioAvailability(id, answer), bench).enabled) return;
+    started?.(id);
+  });
+  return {
+    showCapabilities(next) {
+      answer = next;
+      if (note) note.textContent = capabilityNote(answer, RELEASE);
+      render();
+    },
+    showBench(next) {
+      if (next.leased === bench.leased && next.busy === bench.busy) return;
+      bench = next; render();
+    },
+    onStart(handler) { started = handler; }
   };
 }

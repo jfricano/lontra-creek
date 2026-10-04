@@ -123,11 +123,14 @@ test('A43: the sandbox service API needs its bearer token, and production cannot
   const env = { SANDBOX_SERVICE_TOKEN: SERVICE_TOKEN, SANDBOX_RUNTIME: 'fixture' };
   assert.deepEqual(sandboxEnvironment(env).slots, [1, 2, 3]);
   for (const key of ['FIELD_STATION_SECRET', 'KAFKA_GATEWAY_PASSWORD', 'KAFKA_LAB_USERNAME', 'LAB_BENCH_1_SERVICE_TOKEN', 'LAB_PROXY_TOKEN']) assert.throws(() => sandboxEnvironment({ ...env, [key]: 'secret' }), /forbidden/);
-  // A shared env file: every secret deploy/make-secrets.sh writes is refused; the service's own and other non-secret settings are not.
+  // An allowlist: every secret deploy/make-secrets.sh writes is refused, and so is any other setting that is not the service's own.
   const generated = [...readFileSync(new URL('../../../deploy/make-secrets.sh', import.meta.url), 'utf8').matchAll(/^([A-Z][A-Z0-9_]*)=\$\(secret\)$/gm)].map(m => m[1]!);
   assert.ok(generated.includes('LAB_RELAY_TOKEN') && generated.includes('SANDBOX_SERVICE_TOKEN') && generated.length >= 15, 'the secrets the script writes');
   for (const key of generated.filter(k => k !== 'SANDBOX_SERVICE_TOKEN')) assert.throws(() => sandboxEnvironment({ ...env, [key]: 'secret' }), /forbidden/, key);
-  assert.deepEqual(sandboxEnvironment({ ...env, SANDBOX_SLOTS: '2', SANDBOX_API_PORT: '7620', LAB_BENCH_API_URLS: 'http://lab-1:7420', LAB_LEASE_SECONDS: '600', NODE_ENV: 'production', SITE_ORIGIN: 'https://streamotter.dev' }).slots, [1, 2]);
+  for (const key of ['LAB_BENCH_API_URLS', 'LAB_LEASE_SECONDS', 'KAFKA_BROKERS', 'GATEWAY_TOKEN', 'AWS_SECRET_ACCESS_KEY', 'NODE_OPTIONS', 'sandbox_token']) assert.throws(() => sandboxEnvironment({ ...env, [key]: 'x' }), /forbidden in the sandbox environment/, key);
+  // What deploy/compose.sandbox.yaml sets, and what the node image and the container runtime add.
+  const container = { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: '/home/node', HOSTNAME: 'a1b2c3', PWD: '/app/apps/field-station', NODE_VERSION: '24.21.0', YARN_VERSION: '1.22.22', TERM: 'xterm' };
+  assert.deepEqual(sandboxEnvironment({ ...env, ...container, SANDBOX_SLOTS: '2', SANDBOX_API_PORT: '7620', NODE_ENV: 'production', SITE_ORIGIN: 'https://streamotter.dev' }).slots, [1, 2]);
   assert.throws(() => sandboxEnvironment({ SANDBOX_SERVICE_TOKEN: 'short' }), /32/);
   const settings = sandboxEnvironment(env);
   assert.deepEqual([settings.siteOrigins, settings.gatewayHost, settings.portBase, settings.port], [['https://localhost:8443'], '0.0.0.0', 7600, 7620], 'slot N listens on 7600 + N, clear of the API on 7620');

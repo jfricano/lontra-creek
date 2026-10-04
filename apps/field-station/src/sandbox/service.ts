@@ -40,10 +40,12 @@ export interface SlotBackend {
 
 export interface SandboxSettings { serviceToken: string; slots: SlotId[]; host: string; port: number; siteOrigins: string[]; gatewayHost: string; portBase: number }
 
-/** The service's settings. Production and other services' secrets are refused, as for Lab benches. */
+/** What Node's image and the container runtime set; with SANDBOX_*, SITE_ORIGIN and NODE_ENV, the only variables the service runs with. */
+export const RUNTIME_ENV: readonly string[] = ['PATH', 'HOME', 'HOSTNAME', 'PWD', 'TERM', 'TZ', 'LANG', 'NODE_VERSION', 'YARN_VERSION'];
+/** The service's settings. Its environment is an allowlist: anything else, a production or Lab secret above all, stops it. */
 export function sandboxEnvironment(env: NodeJS.ProcessEnv): SandboxSettings {
   for (const key of Object.keys(env)) {
-    if (key.startsWith('FIELD_STATION_') || /^KAFKA_.*(PASSWORD|USERNAME)$/.test(key) || /^LAB_\w+_TOKEN$/.test(key)) throw new Error(`Production or Lab secret forbidden: ${key}`);
+    if (!/^SANDBOX_[A-Z0-9_]+$/.test(key) && key !== 'SITE_ORIGIN' && key !== 'NODE_ENV' && !RUNTIME_ENV.includes(key)) throw new Error(`Setting forbidden in the sandbox environment: ${key.slice(0, 64)}`);
   }
   const serviceToken = env['SANDBOX_SERVICE_TOKEN'];
   if (!serviceToken || serviceToken.length < 32) throw new Error('SANDBOX_SERVICE_TOKEN needs 32 characters.');

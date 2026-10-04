@@ -206,8 +206,10 @@ Kafka. `https://localhost:8443/workbench/` mounts the published
 The field station and the sandbox share `SANDBOX_SERVICE_TOKEN`, a 32-byte random
 value in `.local/lab/.env`. `deploy/make-secrets.sh` writes it into a new env
 file; for an env file made before the sandbox existed, `up` appends one once.
-The sandbox refuses to start with any `FIELD_STATION_*` value, Kafka credential,
-or `LAB_*_TOKEN` in its environment, and it publishes no port.
+The sandbox starts only with an allowlisted environment (`SANDBOX_*`,
+`SITE_ORIGIN`, `NODE_ENV`, and what the container sets), so no
+`FIELD_STATION_*` value, Kafka credential, or Lab token reaches it, and it
+publishes no port.
 
 Lab benches and sandbox slots share one place limit: a client address holds at
 most two places across both (`too-many-places` otherwise). A session ends after

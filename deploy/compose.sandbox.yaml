@@ -27,8 +27,8 @@ services:
   sandbox:
     <<: *sandbox-node
     command: ["node", "src/sandbox/sandbox-main.ts"]
-    # SANDBOX_* and SITE_ORIGIN only: the service refuses to start with FIELD_STATION_*,
-    # Kafka credentials, or any LAB_*_TOKEN in its environment.
+    # SANDBOX_*, SITE_ORIGIN, and NODE_ENV only: the service's environment is an allowlist,
+    # and any other variable (FIELD_STATION_*, Kafka credentials, Lab tokens) stops it.
     environment:
       NODE_ENV: production
       SANDBOX_SERVICE_TOKEN: ${SANDBOX_SERVICE_TOKEN:?}

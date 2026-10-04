@@ -82,7 +82,8 @@ export class LeasePool {
         // The leased study is now open for scenario publication. One the gate refuses (closed before, or none named) is
         // never handed to a visitor: the bench is reset instead, and the visitor keeps their place.
         if (this.#studies && !this.#open(bench, slot.status.study?.studyId)) { await this.#reset(bench); continue; }
-        place.lease = lease; slot.state = 'leased';
+        // A lease's 30-second idle limit counts from the grant, not from a poll made in line under the queue's 90-second limit.
+        place.lease = lease; place.heartbeat = lease.granted; slot.state = 'leased';
       }
       catch { slot.state = 'unavailable'; slot.retryAt = now + 30_000; }
     }

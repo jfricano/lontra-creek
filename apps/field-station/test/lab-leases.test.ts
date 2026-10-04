@@ -221,3 +221,20 @@ test('a leased bench that reports starting while its process restarts keeps the 
   for (let i = 0; i < 3; i++) { f.advance(5000); f.pool.heartbeat(a); await f.pool.sweep(); }
   assert.equal((f.pool.view(a) as { reason: string }).reason, 'bench-failed', 'a bench that never resumes ends the lease');
 });
+
+test('a place granted after a slow poll in line gets the whole 30-second claim window, not an idle end', async () => {
+  const f = fixture(1); await f.pool.initialize(); await f.pool.sweep();
+  const a = f.session('a'), b = f.session('b');
+  await f.pool.join(a, 'a'); await f.pool.token(a);
+  assert.equal((await f.pool.join(b, 'b')).status, 'queued');
+  // b's tab is in the background: its last poll was 50 s ago, inside the queue's 90 s limit. a keeps polling.
+  f.advance(50_000); f.pool.heartbeat(a);
+  await f.pool.leave(a);
+  assert.equal(f.pool.view(b).status, 'ready');
+  f.advance(5000); await f.pool.sweep();
+  assert.equal(f.pool.view(b).status, 'ready', 'the next sweep leaves the grant alone');
+  // The tab comes back 25 s after the grant: its poll counts, and it can still claim.
+  f.advance(20_000); f.pool.heartbeat(b); await f.pool.sweep();
+  assert.equal(f.pool.view(b).status, 'ready');
+  await f.pool.token(b); assert.equal(f.pool.view(b).status, 'active');
+});

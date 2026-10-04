@@ -61,6 +61,8 @@ StreamOtter 0.2.0-rc.1 publishes the seam: `@streamotter/workbench` with a WHC-1
 
 Also recorded: WHC-1 has no unmount and reads its boot block once per evaluation of `app.js`, so the page runs one workbench instance per document and reloads to remount after a reset. Trace pages are narrowed to 100 items while the workbench may ask for up to 500 (WHC-1 lets a host narrow results). The operation budget is a token bucket that allows a burst of 8: the published workbench reads seven operations within a few milliseconds when it mounts (five at once, then its first view's two), which a strict 2 a second refused. The sandbox contract (draft 0.3) carries the details; the session layer (W2) did not change.
 
+Review fixes (October 4, 2026), within decision 2: the field station never waits on the sandbox service while holding a lock, so a hung service delays no other visitor's request; its sweeps start at most one status poll at a time and apply each answer only to slots it has not called about since. Waits are ordered so a slow slot is never mistaken for a failed one: 3 s for a status poll or lifecycle call, 10 s for the service's call to a slot (then StreamOtter's `TIMEOUT`, and the lease is kept), 15 s for the field station's wait on an operation.
+
 ## Open questions
 
 1. **Failures view in the sandbox.** Native quarantine needs Kafka. When a release supplies the Failures view, decide between a real-Kafka sandbox slot type and leaving Failures to the Lab, based on what the release supports in fixture mode.

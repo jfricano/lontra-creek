@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
-import type { Server } from 'node:http';
+import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -15,7 +15,8 @@ import type { FieldStation } from '../src/server/station.ts';
 import type { Notebooks } from '../src/server/notebooks.ts';
 import { publishedBackend } from '../src/sandbox/seam.ts';
 import { SandboxService, sandboxEnvironment } from '../src/sandbox/service.ts';
-import { configuredSandbox } from '../src/sandbox/leases.ts';
+import { configuredSandbox, SANDBOX_CALL_TIMEOUT_MS, SANDBOX_DEFAULTS, SANDBOX_OPS_TIMEOUT_MS } from '../src/sandbox/leases.ts';
+import { CALL_TIMEOUT_MS } from '../src/sandbox/seam.ts';
 import { harness, SERVICE_TOKEN } from './support/sandbox-harness.ts';
 
 const SITE = 'https://site.test';
@@ -143,4 +144,33 @@ test('A43: the sandbox service API needs its bearer token, and production cannot
   for (const file of files) assert.doesNotMatch(readFileSync(join(src, file), 'utf8'), /from ['"][^'"]*(test\/|sandbox-fixture)/, file);
   assert.equal(configuredSandbox({}, 'https://demo.test'), undefined, 'no SANDBOX_API_URL, no sandbox');
   assert.throws(() => configuredSandbox({ SANDBOX_API_URL: 'http://sandbox:7620', SANDBOX_SERVICE_TOKEN: 'short' }, 'https://demo.test'), /32/);
+});
+
+test('A44: while one visitor\'s call to the sandbox service hangs, every other sandbox request is still answered', async () => {
+  let hang: Promise<void> | null = null; let entered = false;
+  const h = await harness({ client: inner => ({ async request(path, method, body) { if (hang && path.endsWith('/claim')) { entered = true; await hang; } return inner.request(path, method, body); } }) });
+  await serving(api(h.pool), async origin => {
+    const join = (ip: string) => fetch(`${origin}/api/sandbox/session`, { method: 'POST', headers: { origin: SITE, 'x-client-ip': ip } });
+    const a = (await join('192.0.2.1')).headers.get('set-cookie')!.split(';')[0]!; const b = (await join('192.0.2.2')).headers.get('set-cookie')!.split(';')[0]!;
+    let release!: () => void; hang = new Promise(r => { release = r; });
+    const claiming = fetch(`${origin}/api/sandbox/session/claim`, { method: 'POST', headers: { origin: SITE, cookie: a } });
+    while (!entered) await new Promise(r => setTimeout(r, 5));
+    const quick = async (path: string, init: RequestInit = {}) => { const started = Date.now(); const r = await fetch(`${origin}/api/sandbox/${path}`, { ...init, signal: AbortSignal.timeout(2000) }); assert.ok(Date.now() - started < 1000, path); return r; };
+    assert.equal((await quick('status')).status, 200);
+    assert.equal((await quick('session', { headers: { cookie: b } })).status, 200);
+    assert.equal((await quick('session', { method: 'POST', headers: { origin: SITE, 'x-client-ip': '192.0.2.3' } })).status, 200, 'a new session gets the last free slot');
+    hang = null; release(); assert.equal((await claiming).status, 200);
+  });
+});
+
+test('A44: the field station waits 3 s for a lifecycle call or status poll, and longer than the service for a slot operation', async () => {
+  assert.ok(SANDBOX_CALL_TIMEOUT_MS < SANDBOX_DEFAULTS.failMs && SANDBOX_CALL_TIMEOUT_MS < SANDBOX_DEFAULTS.pollMs, 'a poll times out before the next is due, well inside the outage limit');
+  assert.ok(CALL_TIMEOUT_MS < SANDBOX_OPS_TIMEOUT_MS, 'the service gives up on a slot before the field station gives up on the service');
+  const silent = createServer(() => undefined); await new Promise<void>(r => silent.listen(0, '127.0.0.1', r));
+  try {
+    const pool = configuredSandbox({ SANDBOX_API_URL: `http://127.0.0.1:${(silent.address() as AddressInfo).port}`, SANDBOX_SERVICE_TOKEN: SERVICE_TOKEN, SANDBOX_SLOTS: '1' }, 'https://demo.test')!;
+    const started = Date.now(); await pool.initialize(); const waited = Date.now() - started;
+    assert.ok(waited >= SANDBOX_CALL_TIMEOUT_MS - 100 && waited < SANDBOX_CALL_TIMEOUT_MS + 2000, `returned after ${waited} ms`);
+    assert.deepEqual(pool.status().slots, [{ slot: 1, state: 'unavailable' }]);
+  } finally { silent.closeAllConnections(); silent.close(); }
 });

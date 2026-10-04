@@ -107,7 +107,7 @@ test('A44: without visitor traffic, maintenance polls every 1 s while a slot res
   await h.leave(a); assert.equal(h.view(b).status, 'queued', 'the slot is still being cleaned');
   await h.sweepAfter(SANDBOX_SWEEP_MS); assert.equal(h.view(b).status, 'ready', 'one maintenance sweep later');
   const main = readFileSync(new URL('../src/server/main.ts', import.meta.url), 'utf8');
-  assert.match(main, /sandbox\.sweep\(\)\)[^\n]*\}, SANDBOX_SWEEP_MS\);/, 'main.ts sweeps the sandbox pool every SANDBOX_SWEEP_MS');
+  assert.match(main, /sandbox\.sweep\(\);[^\n]*\}, SANDBOX_SWEEP_MS\);/, 'main.ts sweeps the sandbox pool every SANDBOX_SWEEP_MS');
   assert.equal(SANDBOX_SWEEP_MS, 1000);
 });
 
@@ -282,4 +282,55 @@ test('A44: a slot call that times out answers TIMEOUT and keeps the lease and th
   const kept = h.view(s); assert.ok(kept.status === 'active'); assert.equal(kept.leaseId, first.leaseId);
   assert.equal(h.view(next).status, 'queued', 'the slot was not taken out of service');
   assert.equal((await h.opSlow(s, 'health') as { ready: boolean }).ready, true, 'the next call is answered');
+});
+
+test('A44: a hung sandbox service holds up nothing: sweeps never wait and poll one at a time, and operations still answer', async () => {
+  let hang: Promise<void> | null = null; let polls = 0;
+  const h = await harness({ slots: 2, client: inner => ({ async request(path, method, body) { if (path === '/sandbox/v1/status') { polls++; if (hang) await hang; } return inner.request(path, method, body); } }) });
+  const s = h.session('s'); await h.join(s); await h.claim(s);
+  let release!: () => void; hang = new Promise(r => { release = r; }); polls = 0;
+  for (let i = 0; i < 30; i++) { h.pool.refresh(); h.pool.sweep(); await new Promise(r => setImmediate(r)); }
+  assert.equal(polls, 1, 'one status poll in flight, however many sweeps run');
+  assert.equal((await h.opSlow(s, 'health') as { ready: boolean }).ready, true, 'an operation is answered while the poll hangs');
+  const other = h.session('other'); assert.equal((await h.join(other)).status, 'ready', 'and a join is granted');
+  assert.equal(h.pool.status().availability, 'available');
+  hang = null; release(); await h.settle();
+  assert.ok(polls > 1, 'polling resumes once the service answers'); assert.equal(h.view(s).status, 'active'); assert.equal(h.view(other).status, 'ready');
+});
+
+test('A44: a status answer from before a grant or return is not applied to that slot', async () => {
+  let held: Promise<void> | null = null; let sent = false;
+  // The service answers the poll at once, but the answer arrives only later, after the field station has changed the slot.
+  const h = await harness({ slots: 1, client: inner => ({ async request(path, method, body) { const answer = await inner.request(path, method, body); if (path === '/sandbox/v1/status' && held) { sent = true; await held; } return answer; } }) });
+  let deliver!: () => void; held = new Promise(r => { deliver = r; });
+  h.pool.refresh(); h.pool.sweep();
+  while (!sent) await new Promise(r => setImmediate(r));
+  held = null;
+  const s = h.session('s'); const lease = await h.join(s); assert.equal(lease.status, 'ready');
+  deliver(); await h.pool.settled();
+  assert.equal(h.view(s).status, 'ready', 'the old answer (a free slot, no lease) did not end the new lease');
+  await h.claim(s); await h.settle(); assert.equal(h.view(s).status, 'active');
+
+  held = new Promise(r => { deliver = r; }); sent = false;
+  h.pool.refresh(); h.pool.sweep();
+  while (!sent) await new Promise(r => setImmediate(r));
+  held = null;
+  await h.leave(s); const next = h.session('next'); await h.join(next);
+  deliver(); await h.pool.settled();
+  assert.notEqual(h.pool.status().slots[0]!.state, 'ready', 'the old answer (a leased slot) did not mark the returned slot ready mid-cleanup');
+  await h.settle(); assert.equal(h.view(next).status, 'ready', 'the next in line gets the slot once it is clean');
+});
+
+test('A44: a grant answered after its place left returns the slot', async () => {
+  let gate: Promise<void> | null = null; let entered = false;
+  const h = await harness({ slots: 1, client: inner => ({ async request(path, method, body) { if (gate && path.endsWith('/lease')) { entered = true; await gate; } return inner.request(path, method, body); } }) });
+  let open!: () => void; gate = new Promise(r => { open = r; });
+  const s = h.session('s'); const joining = h.join(s);
+  while (!entered) await new Promise(r => setImmediate(r));
+  assert.equal(h.view(s).status, 'queued', 'nothing is held until the service grants it');
+  await h.leave(s); assert.equal(h.reason(s), 'left');
+  gate = null; open(); assert.ok((await joining).status === 'ended');
+  await h.settle();
+  assert.deepEqual(h.pool.status().slots, [{ slot: 1, state: 'ready' }], 'the late grant was returned and the slot cleaned');
+  const b = h.session('b'); assert.equal((await h.join(b)).status, 'ready');
 });

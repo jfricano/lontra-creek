@@ -17,12 +17,13 @@ Nothing here merges, publishes or deploys anything: every one of those steps wai
 ## StreamOtter version consumed
 
 - **#40 and #41: `streamotter@0.1.0-rc.3`**, pinned exactly in `apps/field-station`, `apps/site` and `package-lock.json`. Publishing 0.2.0-rc.1 changes nothing in Lontra Creek until the pin PR merges.
-- **Pin PR: `streamotter@0.2.0-rc.1`**, exact. A trial against a local pack of StreamOtter `4e67ef8` (the #56 head) passed config validation, code generation (unchanged), typecheck, the site build and the link check. Three unit tests fail on purpose until the pin PR handles them:
-  1. The one-version check (LC11-A40) passes once the pin is a registry version.
-  2. The validator now accepts `failureHandling`, so the site stops labeling V1.1 failure policies as planned.
-  3. The workbench publishes the WHC-1 host manifest, so `apps/site/src/scripts/workbench-seam.ts` gets its version and integrity hashes, taken from the **published** tarball.
-  
-  The pin PR also re-runs the Lab threat model's §10.2 and checks S1–S6 against the new package (Lab contract R4).
+- **Phase 2 PR: `streamotter@0.2.0-rc.1`**, exact. The draft branch already builds against a pre-publish pack of StreamOtter `4e67ef8` (the #56 head) and handles the three unit tests that guard the bump:
+  1. The one-version check (LC11-A40) accepts the temporary pack now and an exact registry version after publish.
+  2. The site describes V1.1 failure policies (`failureHandling`) as shipped instead of planned.
+  3. `apps/site/src/scripts/workbench-seam.ts` carries the WHC-1 host manifest's version and integrity hashes, taken from the pack.
+
+  What remains after publish: the exact registry pin, a lockfile regenerated from the registry, and re-pinning the workbench integrity hashes from the **published** tarball.
+  The phase 2 PR also re-runs the Lab threat model's §10.2 and checks S1–S6 against the new package (Lab contract R4).
 
 ## Unfinished integrations (none ship in this release)
 
@@ -57,7 +58,7 @@ Nothing here merges, publishes or deploys anything: every one of those steps wai
   - Setup rehearsal.
   
   All of these are green on #40 at `d5c1b7b`.
-- **Locally:** run `npm run typecheck`, `npm test`, `npm run check:site` and `npm run test:browser`. They need **Node 24**: under Node 22, eight tests in `lab-coverage.test.ts` are cancelled by the test runner, and that is not a product failure.
+- **Locally:** run `npm run typecheck`, `npm test`, `npm run check:site` and `npm run test:browser`. They need **Node 24** (24.15 or later on the phase 2 branch, whose failure journal needs it): under Node 22, eight tests in `lab-coverage.test.ts` are cancelled by the test runner, and that is not a product failure.
 - **After activation:** the acceptance in the [rollout plan](https://github.com/jfricano/lontra-creek/blob/fix/streamotter-dev-domain/docs/releases/0.2.0-rc.1/ROLLOUT_PLAN.md): the backend (1a) before the website (1b) in each phase, especially checking on the real site that "Drop my connection" actually drops it, and that the Lab and the sandbox read as unavailable.
 
 ## Rollback

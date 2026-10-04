@@ -85,7 +85,7 @@ export interface SandboxConnection {
   leaseId: string;
   studyId: string;
   expiresAt: string;
-  /** Where the preview SDK connects, for example https://demo.streamotter.app */
+  /** Where the preview SDK connects, for example https://demo.streamotter.dev */
   gatewayOrigin: string;
   /** /sandbox/<slot>/socket.io */
   gatewayPath: string;
@@ -279,7 +279,7 @@ The service refuses to start with production or Lab secrets in its environment (
 ## 11. Open points
 
 - Final operation types and names follow the published WHC-1 (`@streamotter/contracts`); this document is revised then, with `contractVersion` filled in.
-- WHC-1 rev 0.1 refuses a cross-origin `apiBase`; the site is static on `streamotter.app` while `/api` is on `demo.streamotter.app`. R11 (same-site API base) decides whether the page can point the workbench at `/api/sandbox/wb/v1` on the field station's origin as specified here, or whether the deployment slice must route it on the site origin.
+- WHC-1 rev 0.1 refuses a cross-origin `apiBase`; the site is static on `streamotter.dev` while `/api` is on `demo.streamotter.dev`. R11 (same-site API base) decides whether the page can point the workbench at `/api/sandbox/wb/v1` on the field station's origin as specified here, or whether the deployment slice must route it on the site origin.
 - Failures operations and a possible real-Kafka slot type (ADR-04 open question 1).
 
 ## Changes

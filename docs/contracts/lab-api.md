@@ -11,9 +11,9 @@ Section 1 fixes the relay-cut mechanism's shape, as E2.0's spike (PR #17, `spike
 ## 1. The pieces
 
 ```
-browser, https://streamotter.app/lab/
-  ├─ fetch, credentials ──▶ https://demo.streamotter.app/api/lab/*            Caddy ─▶ field-station:7402   leases, queue, feed relay
-  └─ SDK WebSocket ───────▶ https://demo.streamotter.app/lab/N/socket.io/     Caddy (Origin check) ─▶ bench-N:7400   dev-mode gateway
+browser, https://streamotter.dev/lab/
+  ├─ fetch, credentials ──▶ https://demo.streamotter.dev/api/lab/*            Caddy ─▶ field-station:7402   leases, queue, feed relay
+  └─ SDK WebSocket ───────▶ https://demo.streamotter.dev/lab/N/socket.io/     Caddy (Origin check) ─▶ bench-N:7400   dev-mode gateway
 
 field-station ──service token N──▶ bench-N:7420   bench API, Compose network only
 
@@ -71,7 +71,7 @@ StreamOtter timings the Lab relies on, from `0.1.0-rc.3`:
 
 ## 3. The public Lab API
 
-Routes on the field station's public listener, behind Caddy at `https://demo.streamotter.app/api/lab/*`. The types in this section are normative: `be-lab` lands them verbatim as a type-only module, `apps/field-station/src/lab/contract.ts`, and the site and the tests import them with `import type`.
+Routes on the field station's public listener, behind Caddy at `https://demo.streamotter.dev/api/lab/*`. The types in this section are normative: `be-lab` lands them verbatim as a type-only module, `apps/field-station/src/lab/contract.ts`, and the site and the tests import them with `import type`.
 
 ### Rules for every route
 
@@ -163,7 +163,7 @@ export interface LabToken {
   /** The lease's end. The bench closes the connection then, whatever the page does. */
   expiresAt: string;
   bench: BenchId;
-  /** Where the SDK connects, for example https://demo.streamotter.app */
+  /** Where the SDK connects, for example https://demo.streamotter.dev */
   gatewayOrigin: string;
   /** /lab/<bench>/socket.io */
   gatewayPath: string;
@@ -316,11 +316,11 @@ At most one a second per lease (field station, 429 `too-many-actions` with `Retr
 
 ## 7. Reaching the bench gateway
 
-- **Bench gateway configuration**: its own `projectId` (for example `lontra-creek-lab-1`; V1 supports one gateway per project), `gateway.host` `0.0.0.0` on the Compose network (only Caddy publishes a port), `gateway.port` 7400, `gateway.path` `/lab/N/socket.io`, and `allowedOrigins: [SITE_ORIGIN]` (`https://streamotter.app` in production; the dev origins from F.1 locally). Kafka over TLS with SCRAM, like production. Limits: `maxConnections` 8 (a few tabs plus the satellite) and `maxSubscriptionsPerConnection` 12. The E2.0 spike's `BENCH_LIMITS` used 16; E2.1 changes it to 8 to match this contract.
+- **Bench gateway configuration**: its own `projectId` (for example `lontra-creek-lab-1`; V1 supports one gateway per project), `gateway.host` `0.0.0.0` on the Compose network (only Caddy publishes a port), `gateway.port` 7400, `gateway.path` `/lab/N/socket.io`, and `allowedOrigins: [SITE_ORIGIN]` (`https://streamotter.dev` in production; the dev origins from F.1 locally). Kafka over TLS with SCRAM, like production. Limits: `maxConnections` 8 (a few tabs plus the satellite) and `maxSubscriptionsPerConnection` 12. The E2.0 spike's `BENCH_LIMITS` used 16; E2.1 changes it to 8 to match this contract.
 - **Caddy**, one route per bench: `/lab/N/socket.io/*` goes to `bench-N:7400`, only with `Origin` exactly the site's origin; a missing or different `Origin` gets 403 before the upgrade. Everything else under `/lab/` gets 404. The bench API (7420) and the management API have no route. Illustrative only; `devops` owns the Caddyfile:
 
   ```caddy
-  @foreignOrigin not header Origin {$SITE_ORIGIN:https://streamotter.app}
+  @foreignOrigin not header Origin {$SITE_ORIGIN:https://streamotter.dev}
 
   handle /lab/1/socket.io/* {
   	respond @foreignOrigin 403

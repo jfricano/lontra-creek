@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 const mode = process.argv[2];
-const edge = 'https://demo.streamotter.app';
+const edge = 'https://demo.streamotter.dev';
 if (mode === 'attacker') {
   for (const path of ['/api/config', '/streamotter/', '/lab/1/socket.io/?EIO=4&transport=polling']) {
-    const response = await fetch(`http://lontra-caddy:8080${path}`, { headers: { origin: 'https://streamotter.app', 'x-forwarded-for': '10.203.43.2', 'x-client-ip': '10.203.43.2' } });
+    const response = await fetch(`http://lontra-caddy:8080${path}`, { headers: { origin: 'https://streamotter.dev', 'x-forwarded-for': '10.203.43.2', 'x-client-ip': '10.203.43.2' } });
     assert.equal(response.status, 403, 'Untrusted peer cannot bypass the edge, even with forged headers');
   }
   for (const host of ['field-station', 'gateway', 'kafka', 'lab-1', 'lab-1-kafka']) {

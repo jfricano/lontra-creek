@@ -67,7 +67,7 @@ jobs:
           deploy/make-secrets.sh "$stack/.env"
           # The broker's certificate also names the bench's proxy, which the broker advertises to the bench.
           deploy/make-certs.sh kafka "$stack/secrets/kafka" lab-1-kafka
-          deploy/make-certs.sh test-origin "$stack/secrets/origin" demo.streamotter.app
+          deploy/make-certs.sh test-origin "$stack/secrets/origin" demo.streamotter.dev
           {
             echo "KAFKA_LAB_PASSWORD=$(openssl rand -hex 32)"
             echo "LAB_BENCH_1_SERVICE_TOKEN=$(openssl rand -hex 32)"
@@ -81,7 +81,7 @@ jobs:
           echo "STACK_ENV=$stack/.env" >> "$GITHUB_ENV"
           echo "COMPOSE=docker compose -f deploy/compose.yaml -f deploy/compose.lab-spike.yaml --env-file $stack/.env" >> "$GITHUB_ENV"
           # The test reaches Caddy by the production host name.
-          echo "127.0.0.1 demo.streamotter.app" | sudo tee -a /etc/hosts
+          echo "127.0.0.1 demo.streamotter.dev" | sudo tee -a /etc/hosts
 
       - name: Start the stack and the bench
         run: $COMPOSE up --detach --wait --wait-timeout 300
@@ -91,7 +91,7 @@ jobs:
           set -a; . "$STACK_ENV"; set +a
           LAB_PROXY_TOKEN="$LAB_BENCH_1_RELAY_TOKEN" \
           NODE_EXTRA_CA_CERTS="$LONTRA_SECRETS/origin/ca.pem" \
-          STACK_ORIGIN=https://demo.streamotter.app \
+          STACK_ORIGIN=https://demo.streamotter.dev \
           LAB_STOP_PROXY="$COMPOSE stop lab-1-kafka" \
           LAB_START_PROXY="$COMPOSE start lab-1-kafka" \
           LAB_SPIKE_LABEL="GitHub Actions ${{ matrix.runner }} (${{ matrix.arch }}), containers" \
@@ -110,8 +110,8 @@ jobs:
             docker compose -f deploy/compose.yaml -f deploy/compose.lab.yaml --env-file "$STACK_ENV" exec -T "lab-$bench" node --input-type=module - bench < deploy/test/lab-private-checks.mjs
           done
           docker compose -f deploy/compose.yaml -f deploy/compose.lab.yaml --env-file "$STACK_ENV" exec -T field-station node --input-type=module - field < deploy/test/lab-private-checks.mjs
-          LAB_API_ORIGIN=https://demo.streamotter.app \
-          LAB_SITE_ORIGIN=https://streamotter.app \
+          LAB_API_ORIGIN=https://demo.streamotter.dev \
+          LAB_SITE_ORIGIN=https://streamotter.dev \
           NODE_EXTRA_CA_CERTS="$LONTRA_SECRETS/origin/ca.pem" \
             node --test --test-force-exit deploy/test/lab.test.ts
           # Each bench's Kafka user is confined to its own topics and groups (lab-api.md S12).

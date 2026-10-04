@@ -24,7 +24,7 @@ export const WAITING_EXERCISES = TRACKS["source-failures"].filter(id => SCENARIO
 const failureHandlingIssue = INSTALLED_VALIDATOR_ON_FAILURE_HANDLING.issues[0]?.code ?? "no issue";
 
 export const SITE_RELEASE = {
-  name: "streamotter.app: StreamOtter's home site and the fictional Lontra Creek demo",
+  name: "streamotter.dev: StreamOtter's home site and the fictional Lontra Creek demo",
   launch: SITE.launched ? "Launched." : "Pre-launch. This build is a candidate; no public release of the site or its hosted demo has been accepted.",
   milestone: `${SITE.milestone.name}, ${SITE.milestone.state}.`,
   versioning: `The site's milestones are its own. Site ${SITE.milestone.name} is a different milestone from StreamOtter V1.1, and neither one is npm version 1.1.0. Each ships on its own schedule.`

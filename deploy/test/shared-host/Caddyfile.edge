@@ -2,7 +2,7 @@
 {
   auto_https off
 }
-https://demo.streamotter.app:443 {
+https://demo.streamotter.dev:443 {
   tls /etc/caddy/origin/cert.pem /etc/caddy/origin/key.pem
   reverse_proxy lontra-caddy:8080 {
     header_up -CF-Connecting-IP

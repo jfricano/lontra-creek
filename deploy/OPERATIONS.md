@@ -41,7 +41,7 @@ public preview URL remain prerequisites. No claim about present free-tier
 capacity is made here.
 
 **Preview limitation:** a `pages.dev` preview is suitable for static review.
-The production demo accepts only the `streamotter.app` origin and its session
+The production demo accepts only the `streamotter.dev` origin and its session
 cookie is SameSite=Strict. Cross-site previews therefore cannot complete the
 live walkthrough. Full staging needs an explicitly approved same-site staging
 host and matching server/gateway origin configuration, or testing at the final

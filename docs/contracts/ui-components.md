@@ -58,7 +58,7 @@ The SDK log (`.lc-log` in `LiveCreek.astro`, `field-log.ts` in #13) is the sixth
 
 **Today.** Fiction: the footer's "Lontra Creek, its field station, and its otters are fictional. The data pipeline is real." (`Base.astro`, `.fiction`) and the note under the home page's live panel (`.panel-note`). Recordings: none yet; E4.6 adds the first.
 
-**Becomes.** `components/FictionNote.astro` (a short line and a longer variant) and `components/RecordingLabel.astro`, whose props are all required: `recordedAt` (a date), `where` (for example "a local run" or "staging, demo.streamotter.app"), and `what` (for example "the live panel's SDK events, replayed through the same UI"). Every recording player renders one, so a recording without its date and place fails the typecheck.
+**Becomes.** `components/FictionNote.astro` (a short line and a longer variant) and `components/RecordingLabel.astro`, whose props are all required: `recordedAt` (a date), `where` (for example "a local run" or "staging, demo.streamotter.dev"), and `what` (for example "the live panel's SDK events, replayed through the same UI"). Every recording player renders one, so a recording without its date and place fails the typecheck.
 
 **Owner.** `fe-content` (E4.6, and the recordings on `/playground`, `/workbench`, and `/lab`).
 

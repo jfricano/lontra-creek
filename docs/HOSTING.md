@@ -1,11 +1,11 @@
 # Hosting checklist
 
-How streamotter.app and the Lontra Creek demo get onto the internet, on free tiers, per [PLAN.md](PLAN.md#architecture-and-hosting). The engineering steps are in [DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md). Steps marked **Owner** need the owner's accounts, payment details, or approval; Claude can't do them. Steps marked **Claude** are code in this repository.
+How streamotter.dev and the Lontra Creek demo get onto the internet, on free tiers, per [PLAN.md](PLAN.md#architecture-and-hosting). The engineering steps are in [DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md). Steps marked **Owner** need the owner's accounts, payment details, or approval; Claude can't do them. Steps marked **Claude** are code in this repository.
 
 ## 1. Accounts (Owner, now)
 
 - [ ] **Cloudflare account** (free plan) at dash.cloudflare.com, with two-factor authentication on.
-- [ ] **Register `streamotter.app`** through Cloudflare Registrar ($14.20 a year, at cost). `.app` is HTTPS-only by browser rule, which Cloudflare handles.
+- [ ] **Register `streamotter.dev`** through Cloudflare Registrar. `.dev` is HTTPS-only by browser rule, which Cloudflare handles.
 - [ ] **Oracle Cloud account** at oracle.com/cloud/free, with two-factor authentication on. Oracle verifies a card at signup. The **home region can't be changed later** and decides where the demo runs: pick one near most visitors. Ampere A1 capacity is sometimes short in busy regions; if instance creation later says "out of capacity", retry later or try another availability domain.
 - [ ] **Upgrade the Oracle account to Pay As You Go** (Billing and Cost Management, Upgrade and Manage Payment). Always Free resources stay free.
 - [ ] **Budget alarm:** Billing and Cost Management, Budgets, Create Budget: the root compartment, $1 a month, and an alert rule on *actual* spend at 100% that emails you. Any charge means something outside Always Free exists. Alarms notify; they don't stop spending.
@@ -25,16 +25,16 @@ How streamotter.app and the Lontra Creek demo get onto the internet, on free tie
 
 ## 3. Domain and TLS (Owner, with Claude's values)
 
-- [ ] Cloudflare DNS: `demo.streamotter.app`, an `A` record to the instance IP, **proxied** (orange cloud), so visitors never see the server's address.
+- [ ] Cloudflare DNS: `demo.streamotter.dev`, an `A` record to the instance IP, **proxied** (orange cloud), so visitors never see the server's address.
 - [ ] Cloudflare SSL/TLS mode: **Full (strict)**.
-- [ ] Cloudflare Origin Server certificate for `streamotter.app` and `*.streamotter.app`; install it on the server as the setup script describes.
+- [ ] Cloudflare Origin Server certificate for `streamotter.dev` and `*.streamotter.dev`; install it on the server as the setup script describes.
 - [ ] A Cloudflare API token limited to deploying the static site, stored as a GitHub Actions secret, and the Cloudflare account ID, stored as a GitHub Actions variable.
 - [ ] A deploy SSH key for GitHub Actions, separate from your own (`ssh-keygen -t ed25519 -f ~/.ssh/lontra-creek-deploy -C lontra-creek-deploy`): the public key goes on the server (the setup script restricts it to deploying), and the private key is stored as a secret of a GitHub `production` environment that requires your approval.
 - [ ] Decide whether `images.yml` publishes the stack's image to GitHub's registry (`ghcr.io/jfricano/lontra-creek`) on merges to `main`: public, with a retention policy for old images. See [TEAM_PLAN.md](TEAM_PLAN.md#8-the-owner).
 
 ## 4. What Claude builds (Claude, in this repository)
 
-- [x] Production StreamOtter configuration: Kafka over TLS with SCRAM-SHA-512, allowed origin `https://streamotter.app`.
+- [x] Production StreamOtter configuration: Kafka over TLS with SCRAM-SHA-512, allowed origin `https://streamotter.dev`.
 - [x] The field station's production runner: the simulation on the wall clock, write then publish to Kafka, hourly checkpoints, the site API.
 - [x] Notebooks on a compacted topic (expired without tombstones).
 - [ ] The Failure Lab: three benches, leases, the relay-cut proxy, the slow client, the redacted trace feed.

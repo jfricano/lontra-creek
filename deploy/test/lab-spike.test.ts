@@ -3,7 +3,7 @@
  * restored while the demo host's gateway keeps serving. CI runs it against
  * deploy/compose.yaml with deploy/compose.lab-spike.yaml (.github/workflows/lab-spike.yml):
  *
- *   LAB_PROXY_TOKEN=<relay token> STACK_ORIGIN=https://demo.streamotter.app \
+ *   LAB_PROXY_TOKEN=<relay token> STACK_ORIGIN=https://demo.streamotter.dev \
  *   NODE_EXTRA_CA_CERTS=<test origin CA> node --test deploy/test/lab-spike.test.ts
  *
  * Each cycle cuts the bench's proxy, measures how long the bench's subscription
@@ -15,7 +15,7 @@
  * Environment: LAB_PROXY_TOKEN (required), LAB_PROXY_CONTROL (default
  * http://127.0.0.1:9180), LAB_BENCH_ORIGIN (default http://127.0.0.1:7500),
  * LAB_BENCH_PATH (default /lab/1/socket.io), LAB_BADGE_ORIGIN (where /api/badge
- * answers; default STACK_ORIGIN), SITE_ORIGIN (default https://streamotter.app),
+ * answers; default STACK_ORIGIN), SITE_ORIGIN (default https://streamotter.dev),
  * STACK_ORIGIN (the demo host through Caddy; without it the demo host's gateway
  * isn't watched), LAB_STOP_PROXY and LAB_START_PROXY (shell commands that stop and
  * start the proxy's container; without them that cycle skips), LAB_SPIKE_LONG_CUT_MS
@@ -36,8 +36,8 @@ const PROXY_CONTROL = process.env["LAB_PROXY_CONTROL"] ?? "http://127.0.0.1:9180
 const BENCH_ORIGIN = process.env["LAB_BENCH_ORIGIN"] ?? "http://127.0.0.1:7500";
 const BENCH_PATH = process.env["LAB_BENCH_PATH"] ?? "/lab/1/socket.io";
 const STACK = process.env["STACK_ORIGIN"];
-const BADGES = process.env["LAB_BADGE_ORIGIN"] ?? STACK ?? "https://demo.streamotter.app";
-const SITE = process.env["SITE_ORIGIN"] ?? "https://streamotter.app";
+const BADGES = process.env["LAB_BADGE_ORIGIN"] ?? STACK ?? "https://demo.streamotter.dev";
+const SITE = process.env["SITE_ORIGIN"] ?? "https://streamotter.dev";
 const STOP_PROXY = process.env["LAB_STOP_PROXY"];
 const START_PROXY = process.env["LAB_START_PROXY"];
 const LONG_CUT_MS = Number(process.env["LAB_SPIKE_LONG_CUT_MS"] ?? 45_000);

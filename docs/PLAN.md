@@ -1,6 +1,6 @@
 # Lontra Creek: the StreamOtter site and live demo
 
-September 26, 2026 · Phase 0 done; Phase 2 in progress (the production stack is proven in CI, not yet hosted) · Domain: `streamotter.app` · Visual blueprint: [StreamOtter Site Blueprint](https://claude.ai/artifact/6Zfj7bgjuXaSShKDQ5LJuv)
+September 26, 2026 · Phase 0 done; Phase 2 in progress (the production stack is proven in CI, not yet hosted) · Domain: `streamotter.dev` · Visual blueprint: [StreamOtter Site Blueprint](https://claude.ai/artifact/6Zfj7bgjuXaSShKDQ5LJuv)
 
 **September 27 implementation update:** the complete site and leased Failure Lab
 are under integration review in [PR #20](https://github.com/jfricano/lontra-creek/pull/20).
@@ -89,7 +89,7 @@ Each bench reaches Kafka only through a proxy of its own, which the flash flood 
 The whole stack runs on free tiers. The only fixed cost is the domain.
 
 ```
-visitor ─HTTPS─▶ Cloudflare (free plan): DNS for streamotter.app, the static site, and a proxy in front of the demo host
+visitor ─HTTPS─▶ Cloudflare (free plan): DNS for streamotter.dev, the static site, and a proxy in front of the demo host
                    │
                    └─HTTPS/WSS─▶ demo host: one Oracle Cloud Always Free Ampere A1 VM (2 OCPUs, 12 GB), Docker Compose
                                    Caddy (TLS, rate limits, port 443 only)
@@ -103,7 +103,7 @@ GitHub Actions: builds arm64 images and deploys over SSH; no Docker needed on a 
 - **One gateway** is StreamOtter V1's supported topology, so the demo runs what its docs recommend, behind Caddy.
 - **Kafka 4.1.2** is the broker version StreamOtter's Kafka tests use, with TLS and SCRAM as in its production check. Managed Kafka free tiers are small, and managed services are outside StreamOtter's verified matrix.
 - **Oracle Cloud's Always Free tier** is the only free option large enough for a JVM broker plus several Node processes: Ampere A1 with 2 OCPUs and 12 GB of memory, 200 GB of block storage, and 10 TB of monthly egress. Oracle halved the A1 allowance on June 15, 2026 without announcing it, so the design stays portable: plain Docker Compose and Caddy, which move to any Linux host by redeploying.
-- **Cloudflare** registers the domain at cost ($14.20 a year for `.app`), serves the static site, and proxies the demo host with WebSockets on its free plan. The static site deploys separately, so pages, the docs map, and the playground stay up when the demo host is down. Live panels then show an unavailable state, a labeled recording, and local-run instructions.
+- **Cloudflare** registers `streamotter.dev` at cost, serves the static site, and proxies the demo host with WebSockets on its free plan. The static site deploys separately, so pages, the docs map, and the playground stay up when the demo host is down. Live panels then show an unavailable state, a labeled recording, and local-run instructions.
 
 ### Budget protection
 
@@ -190,14 +190,14 @@ Channels: `station` (stationId), `otter` (otterId), `reach` (reachId, camera tra
 
 Record these on the real host before launch: concurrent visitors (start at 300), subscriptions per visitor (12), scenario actions (one per second), session lifetime (30 minutes), idle expiry (10 minutes), Kafka retention, and gateway queue limits. Two sessions must not be able to read or affect each other's notebook. Keep deployment, rollback, health checks, and the budget alarm with the infrastructure code. The operator is the repository owner.
 
-Cost: $0 a month on the free tiers above, plus $14.20 a year for `streamotter.app`.
+Cost: $0 a month on the free tiers above, plus $14.20 a year for `streamotter.dev`.
 
 ## Phases
 
 | Phase | Delivers | Needs |
 | --- | --- | --- |
 | 0. Foundation | This repository, the plan, the creek simulation with tests, the field station's StreamOtter project validated and exercised with the published package, design tokens, and the site scaffold. | Nothing further. |
-| 1. Static site | Home with a recorded hero, When it breaks, Workbench tour, Playground validator, the docs map, Releases. Deployable on its own. | `streamotter.app` registered; a Cloudflare account. |
+| 1. Static site | Home with a recorded hero, When it breaks, Workbench tour, Playground validator, the docs map, Releases. Deployable on its own. | `streamotter.dev` registered; a Cloudflare account. |
 | 2. Field station | Production gateway, app, simulation runner, notebooks; the six chapters; containers; staging on the demo host. | An Oracle Cloud account on Pay As You Go, with the budget alarm; local Kafka. |
 | 3. Failure Lab | Bench pool, relay-cut proxy, slow client, redacted trace feed. Ships with the launch. | Nothing further. |
 | 4. Launch | The criteria below, then publication. | Owner's go-ahead. |

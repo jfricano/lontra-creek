@@ -22,14 +22,14 @@ test("every public route has unique metadata and internal links resolve", async 
     expect(titles.has(title), `${route}: duplicate title`).toBe(false);
     titles.add(title);
     await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", /.{10}/);
-    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", `https://streamotter.app${route}`);
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", `https://streamotter.dev${route}`);
     await expect(page.locator('meta[property="og:image"]')).toHaveAttribute("content", /social-preview\.png$/);
     await expect(page.locator('meta[name="robots"][content*="noindex"]')).toHaveCount(0);
     for (const href of await page.locator('a[href^="/"]').evaluateAll(nodes => nodes.map(node => node.getAttribute("href")!))) links.add(href.split("#")[0]!);
   }
   for (const href of links) expect((await request.get(href || "/")).ok(), href).toBe(true);
   const sitemap = await (await request.get("/sitemap.xml")).text();
-  for (const route of routes) expect(sitemap).toContain(`https://streamotter.app${route}</loc>`);
+  for (const route of routes) expect(sitemap).toContain(`https://streamotter.dev${route}</loc>`);
 });
 
 test("playground validates real configuration and receives real SDK data", async ({ page }) => {

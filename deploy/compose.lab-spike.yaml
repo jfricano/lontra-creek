@@ -67,7 +67,7 @@ services:
       LAB_BENCH_1_SERVICE_TOKEN: ${LAB_BENCH_1_SERVICE_TOKEN:?}
       LAB_BENCH_1_RELAY_TOKEN: ${LAB_BENCH_1_RELAY_TOKEN:?}
       LAB_SNAPSHOT_ORIGIN: http://field-station:7410
-      SITE_ORIGIN: ${SITE_ORIGIN:-https://streamotter.app}
+      SITE_ORIGIN: ${SITE_ORIGIN:-https://streamotter.dev}
       LAB_STATE_DIR: /var/lib/lontra
     volumes:
       - ${LONTRA_SECRETS:?}/kafka/ca.pem:/etc/lontra/kafka/ca.pem:ro

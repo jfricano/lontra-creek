@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      PUBLIC_FIELD_STATION_ORIGIN: https://demo.streamotter.app
+      PUBLIC_FIELD_STATION_ORIGIN: https://demo.streamotter.dev
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}

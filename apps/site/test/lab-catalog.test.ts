@@ -30,8 +30,8 @@ test("a deep link selects explanation only, and an unknown scenario is ignored",
   // A scenario outside the named track opens its own track.
   assert.deepEqual(selectionFromUrl(url("?scenario=garbled-reading", "#connections")), { track: "source-failures", scenario: "garbled-reading" });
   for (const junk of ["?scenario=toString", "?scenario=__proto__", "?scenario=%3Cscript%3E", "?scenario="]) assert.deepEqual(selectionFromUrl(url(junk, "#source-failures")), { track: "source-failures", scenario: null }, junk);
-  assert.equal(urlFor(new URL("https://streamotter.app/lab/?x=1"), { track: "source-failures", scenario: "calibration-blip" }), "/lab/?x=1&scenario=calibration-blip#source-failures");
-  assert.equal(urlFor(new URL("https://streamotter.app/lab/?scenario=calibration-blip#source-failures"), { track: "connections", scenario: null }), "/lab/#connections");
+  assert.equal(urlFor(new URL("https://streamotter.dev/lab/?x=1"), { track: "source-failures", scenario: "calibration-blip" }), "/lab/?x=1&scenario=calibration-blip#source-failures");
+  assert.equal(urlFor(new URL("https://streamotter.dev/lab/?scenario=calibration-blip#source-failures"), { track: "connections", scenario: null }), "/lab/#connections");
 });
 
 test("against 0.1.0-rc.3 every new exercise is unavailable with the capability it lacks", () => {

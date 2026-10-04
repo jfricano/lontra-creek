@@ -41,7 +41,7 @@ async function life<T>(path: string, method = 'GET', status = method === 'POST' 
   if (response.headers.get('set-cookie') && !cookie) cookie = response.headers.get('set-cookie')!.split(';')[0]!;
   const body = await response.json(); assert.equal(response.status, status, `${method} ${path}: ${JSON.stringify(body)}`); return body as T;
 }
-/** One WHC-1 call, paced under the per-session budget of two operations a second. */
+/** One WHC-1 call, paced under the per-session rate of two operations a second (the burst is left for the page). */
 async function wb<T>(path: string, body?: unknown): Promise<{ status: number; body: { ok: boolean; data?: T; error?: { code: string; details?: { code?: string } } } }> {
   await sleep(600);
   const response = await fetch(`${API}/api/sandbox/wb/v1${path}`, { method: body === undefined ? 'GET' : 'POST', headers: { origin: SITE, cookie, 'x-streamotter-workbench': '1', ...(body === undefined ? {} : { 'content-type': 'application/json' }) }, ...(body === undefined ? {} : { body: typeof body === 'string' ? body : JSON.stringify(body) }) });
@@ -73,6 +73,9 @@ describe('the real workbench sandbox', { skip: !API && 'SANDBOX_API_ORIGIN not s
   });
 
   test('every allowlisted operation answers from the slot\'s own gateway, and failures stay unserved', async () => {
+    // The published workbench reads these five at once when it mounts; the budget's burst admits them.
+    const mount = await Promise.all(['/config', '/channels', '/sources', '/dev/principals', '/health'].map(path => fetch(`${API}/api/sandbox/wb/v1${path}`, { headers: { origin: SITE, cookie, 'x-streamotter-workbench': '1' } })));
+    assert.deepEqual(mount.map(r => r.status), [200, 200, 200, 200, 200]); await sleep(3000);
     assert.equal((await ok<{ protocolVersion: number }>('/capabilities')).protocolVersion, 1);
     assert.equal((await ok<{ ready: boolean }>('/health')).ready, true);
     assert.deepEqual((await ok<{ items: { sourceId: string }[] }>('/sources')).items.map(s => s.sourceId), ['creek', 'jobs']);

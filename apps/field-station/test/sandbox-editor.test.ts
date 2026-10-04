@@ -138,5 +138,7 @@ test('A43: an operation the installed release does not support is left out of di
   assert.deepEqual(h.pool.discovery(), { hostContract: 1, operations: ['workbench', 'capabilities', 'health', 'config', 'config.validate'], limits: { maxRequestBytes: 65_536 } });
   const s = h.session('s'); await h.join(s); await h.claim(s);
   await assert.rejects(h.opSlow(s, 'traces', {}), wb('FORBIDDEN', 'operation-not-allowed'));
-  await assert.rejects(h.op(s, 'health').then(() => h.op(s, 'health')).then(() => h.op(s, 'health')), code('too-many-requests'));
+  // The refused operation still spent one of the session's eight.
+  for (let i = 0; i < 7; i++) await h.op(s, 'health');
+  await assert.rejects(h.op(s, 'health'), code('too-many-requests'));
 });

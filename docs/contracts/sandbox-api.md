@@ -31,7 +31,7 @@ The Lab contract's §3 rules apply unchanged: CORS and exact Origin, the `lc_ses
 - **Request budget.** `/api/sandbox/*` shares the per-address Lab budget (20 at once, 3 a second) with `/api/lab/*`: one bucket for both. Over budget: 429 with `Retry-After` (`too-many-requests` on lifecycle routes, `OVERLOADED` on §6 routes). The page is on another origin, so `/api/sandbox/*` answers list `Retry-After` (and, on §6 routes, `X-Request-Id`) in `Access-Control-Expose-Headers`.
 - **Bodies.** JSON, at most 64 KB for `config.validate` and `config.export`, 4 KB otherwise; larger is 413. Lifecycle `POST`s take an empty body (or `{}`), so `return` can be sent with `keepalive: true` on `pagehide` without a preflight. No route takes query parameters except `traces`.
 - **WHC-1 routes (§6)** refuse a foreign `Origin` on every method (403) and require `X-StreamOtter-Workbench: 1` on every `POST` (403 without it), as `createManagementHandler` does; the workbench sends it on every request in session mode. An `Authorization` header is ignored and never forwarded (the workbench never sends one in session mode). The preflight for `/api/sandbox/wb/*` allows the `x-streamotter-workbench` header; other `/api` preflights are unchanged.
-- **Operation budget.** At most 2 operations a second per session, counting §6 operations and `repro` (429).
+- **Operation budget.** 2 operations a second per session after a burst of up to 8, counting §6 operations and `repro` (429). The burst is for the published workbench, which reads five operations at once when it mounts.
 
 ## 3. Types
 
@@ -242,7 +242,7 @@ The lease state machine is the Lab's (Lab contract §4) with the sandbox's own q
 | Service poll | every 5 s; every 1 s while a slot or study is resetting | Lab |
 | Service unreachable | 15 s, then every lease ends `slot-failed` and the pool is `service-unavailable` | Lab |
 | Reset deadline | 60 s, then the lease ends `slot-failed` (study reset) or the slot is `unavailable` (cleanup); retried every 30 s | Lab |
-| Operations | 2 a second per session; `dev.fixtures.advance` at most 10 records | ADR-04 |
+| Operations | 2 a second per session, after a burst of up to 8; `dev.fixtures.advance` at most 10 records | ADR-04 |
 
 - **Explicit allocation.** Only `POST /api/sandbox/session` creates a place or lease. Status, discovery, heartbeats, and page loads never do.
 - **Reset and return** invalidate the study at once: the field station moves the lease to a new `studyId` before calling the slot, and the slot switches its current study before cleanup. Cleanup then revokes the study's preview connections before anything else, closes its runtime, and opens a fresh one, so preview tokens, trace cursors, preview session IDs, and late answers from the old study have no effect on the new one. Operations are refused while a study resets.
@@ -296,6 +296,7 @@ A design-fixture backend exists for tests only, under `apps/field-station/test/s
 
 ## Changes
 
+- **Draft 0.3, W9a stack verification (October 4, 2026).** §§2 and 8: the operation budget allows a burst of 8 before its 2 a second, because the published workbench reads `config`, `channels`, `sources`, `dev.principals` and `health` at once when it mounts and showed "Too many requests" under a strict 2 a second.
 - **Draft 0.3, W9a site mount (October 4, 2026).** §4: the page pins `@streamotter/workbench` 0.2.0-rc.1 from its manifest, serves `app.js`, `workbench-host.css` and the license file from the site origin with SRI, sets `apiOrigin` when the API is on another origin, applies the manifest's content security policy in production builds, and reloads the document to mount a second time (WHC-1 has no unmount). §11: R11 settled.
 - **Draft 0.3, W9a deployment (October 4, 2026).** Status and §1: `deploy/compose.sandbox.yaml` and the Caddy `/sandbox/N/socket.io/` routes exist and run under `npm run dev:lab`; nothing is deployed to a host.
 - **Draft 0.3, W9a slot runtime (October 4, 2026).** The seam is the published WHC-1 in streamotter 0.2.0-rc.1: §3's `WorkbenchOperation` and `WorkbenchDiscovery` are the published types, and `contractVersion` is `"1"`. §9: the production backend mounts a `createManagementHandler` per study on a private loopback listener with a per-study key, on a development gateway per study; slot N's gateway is on port 760N (was 76N0, which put slot 2 on the API port). §6: each slot has two server-owned principals, `creek-volunteer` and the scaffold's `developer`; `traces` accepts `limit` up to 500 and serves at most 100 a page, with native paging. §7: the bundle holds the newest 500 traces, flagged as possibly truncated when that page is full. §10 adds `SITE_ORIGIN` and the gateway host and port base for the service.

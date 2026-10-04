@@ -202,6 +202,23 @@ describe('snapshot acknowledgment', () => {
     assert.notEqual(((await s.registry.snapshot(2, 'station:LC-03', null))?.data as { flowCfs: number }).flowCfs, 412);
   });
 
+  test('a later run with an earlier mutation, or a repeated prepare, never takes served state backwards', async t => {
+    const s = await established(t);
+    const before = await s.registry.snapshot(1, 'station:LC-03', s.barrier);
+    assert.deepEqual([before?.revision, before?.boundary?.acknowledged], [Expected.revision(TICK + 1), true]);
+    // Run 2's mutation is at a later tick; run 3's arrives after it with an earlier one.
+    await s.registry.beginRun(1, S1, { scenarioId: 'S03', runId: 'run-2', mutation: { ...flowLc03(TICK + 5), reading: { flowCfs: 300 } }, coverage: 'pending' });
+    await s.registry.beginRun(1, S1, { scenarioId: 'S03', runId: 'run-3', mutation: { ...flowLc03(TICK + 3), reading: { flowCfs: 200 } }, coverage: 'withheld' });
+    await s.registry.prepareCoverage(1, S1, 'run-3');
+    await s.registry.prepareCoverage(1, S1, 'run-1');
+    const after = await s.registry.snapshot(1, 'station:LC-03', s.barrier);
+    assert.equal(after?.revision, Expected.revision(TICK + 5), 'the highest revision written is served');
+    assert.equal((after?.data as { flowCfs: number }).flowCfs, 300);
+    assert.deepEqual(after?.boundary, { barrier: s.barrier, acknowledged: true }, 'an issued barrier stays acknowledged');
+    const ledger = await s.registry.ledger(1, S1);
+    assert.deepEqual(ledger.entries().map(entry => entry.status), ['established', 'established', 'established'], 'served state past an earlier mutation covers it');
+  });
+
   test('lagging, missing, or wrong acknowledgments never acknowledge', async t => {
     const s = await established(t);
     const ledger = await s.registry.ledger(1, S1);

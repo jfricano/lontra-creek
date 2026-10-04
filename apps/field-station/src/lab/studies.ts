@@ -201,13 +201,16 @@ export class LabStudies {
     // The update derived when the run began, never anything read back from a published record.
     const views = this.#current.get(bench)?.prepared.get(runId);
     if (!entry || !views) throw new RangeError('No such scenario run.');
+    // Established coverage is final: preparing it again writes nothing.
+    if (entry.status === 'established') return entry;
     await ledger.release(runId);
     return this.#write(bench, studyId, ledger, runId, views, entry.revision);
   }
   async #write(bench: BenchId, studyId: string, ledger: FileCoverageLedger, runId: string, views: View[], revision: string): Promise<LedgerEntry> {
     const study = this.#current.get(bench);
     if (!study || study.studyId !== studyId || study.state !== 'open') throw new StudyClosedError();
-    for (const view of views) study.views.set(view.key, { revision, data: view.data });
+    // Full-state writes supersede by revision: a run with an earlier mutation never takes served state backwards.
+    for (const view of views) { const own = study.views.get(view.key); if (!own || BigInt(revision) >= BigInt(own.revision)) study.views.set(view.key, { revision, data: view.data }); }
     return ledger.establish(runId, this.served(bench));
   }
   /** Publishes a run's record to the bench's own copy of a creek topic, through the gate, and records where it landed. */

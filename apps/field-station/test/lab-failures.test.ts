@@ -354,9 +354,10 @@ describe('calibration-blip (LC11-S06) and fouled-sensor (LC11-S01) under the ret
     // Still timing out: a retry before restoring holds again.
     const early = await run(b, { intent: 'incident.retry-current', incident: target(held) });
     assert.deepEqual([early.status, early.outcome], ['succeeded', 'held']);
+    assert.equal((await b.facts()).app.blipArmed, true);
     const restored = await run(b, { intent: 'scenario.restore-calibration' });
     assert.deepEqual([restored.status, restored.outcome], ['succeeded', 'restored']);
-    assert.equal(b.runtime.status().study && (await b.facts()).app.calibration, 'present');
+    assert.deepEqual([(await b.facts()).app.calibration, (await b.facts()).app.blipArmed], ['present', false]);
     await assert.rejects(b.intent({ intent: 'scenario.restore-calibration' }), { code: 'not-applicable' }, 'nothing left to restore');
     const retried = await run(b, { intent: 'incident.retry-current', incident: target(await b.facts()) });
     assert.deepEqual([retried.status, retried.outcome], ['succeeded', 'retried']);

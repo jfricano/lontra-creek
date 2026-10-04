@@ -563,8 +563,8 @@ export interface BenchIncident {
 export interface BenchIncidentFacts {
   profile: BenchFailureProfile;
   studyId: string;
-  /** Application state the bench's handlers read. `blips`: S06 starts in this study. */
-  app: { calibration: "present" | "removed"; mapping: "broken" | "corrected"; blips: number };
+  /** Application state the bench's handlers read. `blips`: S06 starts in this study; `blipArmed`: calibration lookups are still set to time out. */
+  app: { calibration: "present" | "removed"; mapping: "broken" | "corrected"; blips: number; blipArmed: boolean };
   /** The source's held incident, else the study's newest by first observation; null with no operator service (`off`) or no incident. */
   incident: BenchIncident | null;
   /** The source's automatic-continuation circuit; null without failure handling. */
@@ -758,7 +758,7 @@ LC11-ADR-03 decides least privilege per Kafka user; this section is the authorit
 - **V1.1 W1 (October 3, 2026)** applied the October 2 review's Lab findings ([CODE_REVIEW_2026-10-02.md](../reviews/CODE_REVIEW_2026-10-02.md) S1, L1–L8) and the site evaluation's Lab items 2–4. Observable changes: bench-side failures answer 500 `bench-unavailable` instead of 400 and end the lease (sections 4, 8); a bench's `no-lease` reaches the visitor as `no-lease`, not `not-applicable` (section 8); a failed action doesn't spend the one-a-second budget (section 5); `LAB_LEASE_SECONDS` above 300 is refused at startup (sections 2, 8); `/api` error answers carry CORS (section 3); the page retries transient token failures (section 7) and shows a scenario view of the feed with `processed` records labeled "mapper returned" (section 6). No route, payload type, or error code was added or removed.
 - **V1.1 W4 (October 3, 2026)** added the Source failures track (section 12): `GET /api/lab/capabilities`, the `unsupported-scenario` error code, and the then-proposed intent, incident, and operation interfaces. Existing routes, actions, and payloads are unchanged.
 - **V1.1 W9b (October 4, 2026)** serves section 12 against StreamOtter 0.2.0-rc.1: intents answer 202 `LabOperation`, `GET /api/lab/operations/<operationId>` and `GET /api/lab/incident` are served while the capability summary offers them, the private intent surface (section 8b) joins the bench API, and `deployment-restricted`, evidence `not-required`, source `processed`, and `evaluation.planToken` and `summary` are added. Nothing is offered until a scenario's real-Kafka test passes (section 12.3).
-- **V1.1 W9b amendment (October 4, 2026)**, from the bench's real-library tests: an evaluation the library refuses at the request stage is `refused`, not `succeeded`; a garbled record's evaluation is `still-fails`; `calibration-blip`'s later starts fail every lookup until calibration is restored; `BenchIncidentFacts.incident` falls back to the newest incident by first observation.
+- **V1.1 W9b amendment (October 4, 2026)**, from the bench's real-library tests: an evaluation the library refuses at the request stage is `refused`, not `succeeded`; a garbled record's evaluation is `still-fails`; `calibration-blip`'s later starts fail every lookup until calibration is restored; `BenchIncidentFacts.incident` falls back to the newest incident by first observation. `BenchIncidentFacts.app.blipArmed` reports whether calibration lookups are still set to time out, so the projection offers `scenario.restore-calibration` exactly while there is something to restore.
 
 ## 12. The Source failures track (V1.1)
 

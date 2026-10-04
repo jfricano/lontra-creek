@@ -449,7 +449,7 @@ export class BenchRuntime {
     if (!failures || failures.closed || !study) throw new LabError('no-lease', 409);
     const profile = this.#settings.profile; const operator = this.#operator;
     if (profile !== 'off' && (this.#scenario.gateway !== 'running' || !operator)) throw new LabError('not-applicable', 409);
-    const app = { calibration: this.#scenario.calibration, mapping: study.mapping, blips: study.blips };
+    const app = { calibration: this.#scenario.calibration, mapping: study.mapping, blips: study.blips, blipArmed: study.blip > 0 };
     try { return await failures.facts(operator, { profile, app }); }
     catch (error) { if (operator !== this.#operator) throw new LabError('not-applicable', 409); throw error; }
   }

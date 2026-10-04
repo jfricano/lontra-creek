@@ -537,8 +537,8 @@ export interface BenchIncident {
 export interface BenchIncidentFacts {
   profile: BenchFailureProfile;
   studyId: string;
-  /** Application state the bench's handlers read. `blips`: S06 starts in this study. */
-  app: { calibration: "present" | "removed"; mapping: "broken" | "corrected"; blips: number };
+  /** Application state the bench's handlers read. `blips`: S06 starts in this study; `blipArmed`: calibration lookups are still set to time out. */
+  app: { calibration: "present" | "removed"; mapping: "broken" | "corrected"; blips: number; blipArmed: boolean };
   /** The source's held incident, else the study's newest by first observation; null with no operator service (`off`) or no incident. */
   incident: BenchIncident | null;
   /** The source's automatic-continuation circuit; null without failure handling. */

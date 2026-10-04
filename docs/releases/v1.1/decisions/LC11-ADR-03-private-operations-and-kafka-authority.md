@@ -23,11 +23,13 @@ Enable the KRaft `StandardAuthorizer` with `allow.everyone.if.no.acl.found=false
 | --- | --- |
 | `gateway` (production) | Read and Describe `field.` and `creek.` topics (including `field.notebooks` and `field.holts`, which it consumes); Read its `streamotter-lontra-creek-` groups |
 | `field-station` | Create, Write, and Describe `field.` and `creek.` topics and each bench's `lab-N.field.` and `lab-N.creek.` copies (it is the only application writer); Read `field.notebooks` only; Read and Delete its `lontra-field-station-read-` groups |
-| `lab-N` | Read and Describe `lab-N.` topics (its sources and quarantine); Write `lab-N.quarantine` only; Read and Delete groups prefixed `streamotter-lab-N-` |
+| `lab-N` | Read and Describe `lab-N.` topics (its sources and quarantine); Write and DescribeConfigs `lab-N.quarantine` only; Read and Delete groups prefixed `streamotter-lab-N-` and `streamotter-lontra-creek-lab-N-quarantine-read-` |
 
 A bench principal has no access to `field.`, `creek.`, holts, notebooks, another bench's prefix, its own source topics for writing, or topic creation. The field station cannot write a quarantine topic. Quarantine topics are created by the broker's bootstrap with bounded retention, not by benches. `User:ANONYMOUS`, the broker's own loopback listeners, is the only super user.
 
 W7 confirmed the names against the code and corrected this table (October 3, 2026): the overview topic is `creek.overview`, the gateway excludes nothing, the field station's grants are narrower and include `Create`, and bench groups did not yet share the `streamotter-lab-N-` prefix (the code now builds them from `Bench.consumerGroupPrefix`). The authoritative grants, modes (`acl`, `migrate`, `none`), and evidence are in [lab-api.md §10.9](../../../contracts/lab-api.md).
+
+W9b added two grants per bench, each proven necessary by the authorizer's denials on `npm run dev:lab` with StreamOtter 0.2.0-rc.1 (October 4, 2026): **DescribeConfigs** on the literal topic `lab-N.quarantine`, because the quarantine writer checks the topic's `max.message.bytes` at gateway start and the gateway refuses to start without it; and **Read, Delete** on prefixed groups `streamotter-lontra-creek-lab-N-quarantine-read-`, the throwaway group StreamOtter names from the project ID (`lontra-creek-lab-N`) to read evidence back for an evaluation or redrive, and deletes afterwards. The project ID is kept rather than renamed into the existing prefix. No topic setting changes: the bench's `maxSourceRecordBytes` is 262144, within the broker's default message size. `start.sh` only adds grants, so a broker that already has ACLs gains these on its next start with no other step.
 
 ### Where it applies
 

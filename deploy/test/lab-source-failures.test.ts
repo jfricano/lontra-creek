@@ -183,20 +183,20 @@ class Exercise {
     try { return await until(async () => { last = await this.incident(); return last.status === 'open' && check(last.incident) ? last.incident : false; }, label, timeout); }
     catch (error) { throw new Error(`${(error as Error).message}; last projection: ${JSON.stringify(last)}`); }
   }
-  /** Sends one intent (spacing them past the lease's one-a-second budget) and follows its operation to a final status. */
-  async send(intent: LabIntent, extra: { scenario?: LabScenarioId; planToken?: string } = {}, attempts = 5): Promise<LabOperation> {
-    for (let attempt = 1; ; attempt++) {
-      const wait = this.#lastIntent + 1100 - Date.now(); if (wait > 0) await sleep(wait);
-      const view = intent === 'scenario.start' ? null : await this.incident();
-      const expectedRevision = view?.status === 'open' ? view.incident.scenarioRevision : undefined;
-      const answer = await request<LabOperation & { code?: string }>('actions', 'POST', { intent, requestId: randomUUID(), ...extra, ...(expectedRevision === undefined ? {} : { expectedRevision }) });
-      this.#lastIntent = Date.now();
-      // The projection moved between reading it and sending: read it again, as the page would.
-      if (answer.status === 409 && answer.body.code === 'not-applicable' && attempt < attempts) { await sleep(500); continue; }
-      assert.equal(answer.status, 202, `${intent}: ${JSON.stringify(answer.body)}`);
-      assert.equal(answer.body.status, 'accepted');
-      return until(async () => { const op = await api<LabOperation>(`operations/${answer.body.operationId}`); return op.status === 'accepted' || op.status === 'running' ? false : op; }, `${intent} finished`, 90_000);
-    }
+  /**
+   * Sends one intent with the projection's current revision (spacing intents past the lease's
+   * one-a-second budget) and follows its operation to a final status. A refusal fails the
+   * test: only refused() expects one.
+   */
+  async send(intent: LabIntent, extra: { scenario?: LabScenarioId; planToken?: string } = {}): Promise<LabOperation> {
+    const wait = this.#lastIntent + 1100 - Date.now(); if (wait > 0) await sleep(wait);
+    const view = intent === 'scenario.start' ? null : await this.incident();
+    const expectedRevision = view?.status === 'open' ? view.incident.scenarioRevision : undefined;
+    const answer = await request<LabOperation & { code?: string }>('actions', 'POST', { intent, requestId: randomUUID(), ...extra, ...(expectedRevision === undefined ? {} : { expectedRevision }) });
+    this.#lastIntent = Date.now();
+    assert.equal(answer.status, 202, `${intent}: ${JSON.stringify(answer.body)}`);
+    assert.equal(answer.body.status, 'accepted');
+    return until(async () => { const op = await api<LabOperation>(`operations/${answer.body.operationId}`); return op.status === 'accepted' || op.status === 'running' ? false : op; }, `${intent} finished`, 90_000);
   }
   async succeeds(intent: LabIntent, extra: { scenario?: LabScenarioId; planToken?: string } = {}): Promise<LabOperation> {
     const operation = await this.send(intent, extra);
@@ -332,7 +332,8 @@ describe('the source-failures exercises on real Kafka', { skip: !API && 'LAB_API
     const approved = await lab.send('incident.approve-reprocess', { planToken: token });
     assert.equal(approved.status, 'succeeded', JSON.stringify(approved));
     const done = await lab.open(i => i.reprocess !== null, 'the reprocessing result');
-    assert.ok(done.reprocess === 'superseded' || done.reprocess === 'reprocessed', String(done.reprocess));
+    // The creek's live LC-03 readings have moved past the old record's revision: a newer snapshot supersedes it (section 12.9).
+    assert.equal(done.reprocess, 'superseded');
     assert.equal(done.evaluation?.planToken ?? null, null, 'the token is spent');
     // A spent token is no longer the projection's: refused before anything runs.
     assert.deepEqual(await lab.refused('incident.approve-reprocess', { planToken: token }), { status: 409, code: 'not-applicable' });
@@ -436,7 +437,20 @@ describe('the source-failures exercises on real Kafka', { skip: !API && 'LAB_API
   }));
 
   test('repeated resets leave no study groups, read groups, or study directories behind (LC11-A32)', { skip: !EXEC && 'LAB_STACK_EXEC not set' }, async () => {
-    const status = await until(async () => { const now = await api<{ benches: { bench: number; state: string }[] }>('status'); return now.benches.every(bench => bench.state === 'ready') ? now : false; }, 'every bench ready', 180_000);
+    type Status = { benches: { bench: number; state: string }[] };
+    // This test resets every bench at least twice itself, whatever ran before it: lease, claim, and return until each has been returned twice.
+    const benches = (await api<Status>('status')).benches.map(bench => bench.bench);
+    const returned = new Map<number, number>();
+    for (let round = 0; benches.some(bench => (returned.get(bench) ?? 0) < 2); round++) {
+      assert.ok(round < 4 * benches.length, `resets so far: ${JSON.stringify([...returned])}`);
+      let lease = await api<LabLease>('lease', 'POST', {});
+      lease = await until(async () => { const now = lease.status === 'ready' ? lease : await api<LabLease>('lease'); return now.status === 'ready' || now.status === 'active' ? now : false; }, 'a ready bench', 180_000);
+      await api<LabToken>('lease/token', 'POST', {});
+      const ended = await api<LabLease>('lease/return', 'POST');
+      assert.equal(ended.status, 'ended', JSON.stringify(ended));
+      if (lease.status === 'ready' || lease.status === 'active') returned.set(lease.bench, (returned.get(lease.bench) ?? 0) + 1);
+    }
+    const status = await until(async () => { const now = await api<Status>('status'); return now.benches.every(bench => bench.state === 'ready') ? now : false; }, 'every bench ready', 180_000);
     const listed = await groups();
     for (const { bench } of status.benches) {
       assert.deepEqual(listed.filter(group => group.startsWith(`streamotter-lontra-creek-lab-${bench}-quarantine-read-`)), [], `bench ${bench} read groups`);

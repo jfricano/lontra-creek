@@ -1,4 +1,5 @@
 import { defineConfig } from "astro/config";
+import workbenchAssets from "./integrations/workbench-assets.mjs";
 
 // LONTRA_SITE_PORT and LONTRA_API_PORT (see README.md, Develop) let a whole dev
 // stack move to a different port block, so more than one can run at once (F.1).
@@ -21,6 +22,8 @@ const API_PORT = parsePort("LONTRA_API_PORT", 7402);
 export default defineConfig({
   site: "https://streamotter.dev",
   server: { host: "127.0.0.1", port: SITE_PORT },
+  // Serves the pinned published workbench at /workbench/assets/<version>/ (sandbox contract §4).
+  integrations: [workbenchAssets()],
   vite: {
     // In development the field station's small site API runs beside the gateway.
     server: { proxy: { "/api": `http://127.0.0.1:${API_PORT}` } }

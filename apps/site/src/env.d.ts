@@ -11,3 +11,9 @@ interface ImportMeta {
 }
 
 declare module "*?raw" { const content: string; export default content; }
+
+/** The installed workbench's WHC-1 manifest, or null when the site pins none (integrations/workbench-assets.mjs). */
+declare module "virtual:lontra/workbench-host" {
+  const manifest: import("streamotter/contracts").WorkbenchHostManifest | null;
+  export default manifest;
+}

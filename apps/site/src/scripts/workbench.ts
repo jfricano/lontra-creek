@@ -4,13 +4,22 @@
  * or restoring the page from the back-forward cache only asks for the status and this
  * browser's session, and shows nothing active until the field station has answered.
  * The published workbench is mounted only when workbench-model.ts's mountDecision
- * says so, which no installed release allows yet.
+ * says so, and at most once per document: WHC-1 has no teardown (G1), so a second
+ * mount reloads the page and reopens the same lease without allocating.
  */
-import type { SandboxConnection, SandboxLease, SandboxReproDownload, SandboxStatus, WorkbenchDiscovery } from "../../../field-station/src/sandbox/contract.ts";
-import { API_BASE, availabilityView, BOOT_ELEMENT_ID, MOUNT_ELEMENT_ID, mountDecision, problemText, refusal, runtimeLabels, sessionView, type Problem } from "./workbench-model.ts";
+import { WORKBENCH_REQUEST_HEADER, type WorkbenchDiscovery } from "streamotter/contracts";
+import type { SandboxConnection, SandboxLease, SandboxReproDownload, SandboxStatus } from "../../../field-station/src/sandbox/contract.ts";
+import { API_BASE, availabilityView, BOOT_ELEMENT_ID, cspConnectSources, MOUNT_ELEMENT_ID, mountDecision, problemText, refusal, runtimeLabels, sessionView, type Problem } from "./workbench-model.ts";
 import { PUBLISHED_SEAM } from "./workbench-seam.ts";
 
 const origin = (import.meta.env?.PUBLIC_FIELD_STATION_ORIGIN ?? "").replace(/\/+$/, "");
+/** The lease a reload was for (see mountWorkbench); per tab, and cleared once read. */
+const REOPEN_KEY = "lontra.workbench.reopen";
+
+function reopenMarker(): string | null {
+  try { const lease = sessionStorage.getItem(REOPEN_KEY); sessionStorage.removeItem(REOPEN_KEY); return lease; } catch { return null; }
+}
+
 const root = document.querySelector<HTMLElement>("[data-sandbox]");
 if (root) mount(root);
 
@@ -32,6 +41,12 @@ function mount(root: HTMLElement): void {
   let discovery: WorkbenchDiscovery | null = null;
   let mountNote = "";
   let mountedStudy: string | null = null;
+  /** Set once app.js has run in this document; it cannot be torn down or booted again (G1). */
+  let mountedOnce = false;
+  /** True while this page reloads to mount a new study: leaving keeps the lease. */
+  let reloading = false;
+  /** The lease a reload was for, until revalidation has seen it. */
+  let reopen = reopenMarker();
   /** The last action's outcome, and the last failed check-in; shown together, cleared separately. */
   let note = "";
   let contact = "";
@@ -75,18 +90,33 @@ function mount(root: HTMLElement): void {
     document.getElementById(BOOT_ELEMENT_ID)?.remove();
   }
 
-  /** WHC-1 §3: the boot block first, then the mount element, then the published stylesheet and app.js. */
+  /** The connect-src this page's own policy enforces, so a gateway it could not reach is refused with a reason. */
+  function connectSrc(): string[] | null {
+    return cspConnectSources(document.querySelector<HTMLMetaElement>('meta[http-equiv="Content-Security-Policy"]')?.content ?? null);
+  }
+
+  /**
+   * WHC-1 §3: the scoped host stylesheet, the boot block, the mount element, then app.js,
+   * both files with their pinned integrity. app.js reads the boot block once and has no
+   * teardown, so only the first mount in a document loads it; a later one (after a reset,
+   * or a new session in this tab) reloads the page, which revalidates and reopens the lease.
+   */
   function mountWorkbench(): void {
-    const decision = mountDecision({ lease, connection, discovery, seam: PUBLISHED_SEAM, apiOrigin: origin, pageOrigin: location.origin });
+    const decision = mountDecision({ lease, connection, discovery, seam: PUBLISHED_SEAM, apiOrigin: origin, pageOrigin: location.origin, connectSrc: connectSrc() });
     if (!decision.mount) { mountNote = lease?.status === "active" ? decision.reason : ""; return; }
     if (lease?.status !== "active" || mountedStudy === lease.studyId) return;
+    if (mountedOnce) {
+      // An old instance would keep polling, under the same cookie, against the new study (A42).
+      try { sessionStorage.setItem(REOPEN_KEY, lease.leaseId); } catch { /* the reloaded page then waits for Open the workbench */ }
+      reloading = true; mountNote = "Reloading the page to open the workbench on the new study…";
+      location.reload(); return;
+    }
     unmount(); mountNote = "";
+    const style = document.createElement("link"); style.rel = "stylesheet"; style.href = decision.hostStyle; style.integrity = decision.integrity.hostStyle;
     const boot = document.createElement("script"); boot.type = "application/json"; boot.id = BOOT_ELEMENT_ID; boot.textContent = JSON.stringify(decision.boot);
     const app = document.createElement("div"); app.id = MOUNT_ELEMENT_ID;
-    const style = document.createElement("link"); style.rel = "stylesheet"; style.href = decision.style; style.integrity = decision.integrity.style;
-    // A new study reloads the module under a new URL so it boots against that study's session.
-    const script = document.createElement("script"); script.type = "module"; script.src = `${decision.script}?study=${encodeURIComponent(lease.studyId)}`; script.integrity = decision.integrity.script;
-    host.append(boot, style, app, script); host.hidden = false; mountedStudy = lease.studyId;
+    const script = document.createElement("script"); script.type = "module"; script.src = decision.script; script.integrity = decision.integrity.script;
+    host.append(style, boot, app, script); host.hidden = false; mountedStudy = lease.studyId; mountedOnce = true;
   }
 
   /** Rendering runs every second; only a real change touches the DOM, so live regions announce changes only. */
@@ -141,7 +171,7 @@ function mount(root: HTMLElement): void {
     // Discovery matters only when this site pins a release with the seam; until then nothing is asked.
     if (PUBLISHED_SEAM && lease?.status === "active") {
       try {
-        const response = await fetch(`${origin}${API_BASE}/workbench`, { credentials: "include", cache: "no-store", signal: AbortSignal.timeout(8_000) });
+        const response = await fetch(`${origin}${API_BASE}/workbench`, { credentials: "include", cache: "no-store", headers: { [WORKBENCH_REQUEST_HEADER]: "1" }, signal: AbortSignal.timeout(8_000) });
         const body = await response.json() as { ok?: boolean; data?: WorkbenchDiscovery };
         if (g === generation && response.ok && body.ok === true && body.data) discovery = body.data;
       } catch { /* mountDecision reports the missing discovery */ }
@@ -215,13 +245,17 @@ function mount(root: HTMLElement): void {
     if (g !== generation) return;
     checking = false; render();
     poll = setTimeout(() => { void tick(); }, HEARTBEAT_MS);
+    // After a reload for a new study: claim again, which only returns the active lease's connection, and mount.
+    const reopening = reopen; reopen = null;
+    if (reopening !== null && lease?.status === "active" && lease.leaseId === reopening) await act(claim);
   }
 
   function start(): void { clock = setInterval(render, 1_000); void revalidate(); }
   function stop(): void { generation++; ticking = false; clearTimeout(poll); clearInterval(clock); }
 
   window.addEventListener("pagehide", () => {
-    const held = holding() || starting;
+    // A reload for a new study keeps the lease: the reloaded page reopens it.
+    const held = !reloading && (holding() || starting);
     stop(); unmount(); connection = null; discovery = null; autoClaim = false; checking = true;
     // Leaving the page returns the slot or place, including one a Start still in flight may get; the empty body keeps keepalive preflight-free.
     if (held) void fetch(`${origin}/api/sandbox/session/return`, { method: "POST", credentials: "include", keepalive: true }).catch(() => undefined);

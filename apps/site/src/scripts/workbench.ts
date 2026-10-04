@@ -38,6 +38,8 @@ function mount(root: HTMLElement): void {
   let offset = 0;
   let checking = true;
   let busy = false;
+  /** True while this page's Start request is in flight: the field station may already hold a place for it. */
+  let starting = false;
   /** Claim without a second click: only right after this page's own Start or Reset. */
   let autoClaim = false;
   /** Bumped on pagehide and pageshow, so answers to requests from before are dropped. */
@@ -93,6 +95,8 @@ function mount(root: HTMLElement): void {
     el("[data-sandbox-clock]").textContent = view.clock;
     el("[data-sandbox-note]").textContent = [note, contact].filter(Boolean).join(" ");
     el("[data-sandbox-pool]").textContent = checking ? "" : availabilityView(status, statusProblem).pool;
+    // Revalidating mid-action would drop the action's answer, such as the place a Start was given.
+    el<HTMLButtonElement>("[data-sandbox-retry]").disabled = busy;
     const shown: Record<keyof typeof buttons, boolean> = {
       start: ["checking", "unavailable", "idle", "ended"].includes(view.phase), claim: view.phase === "ready" || (view.phase === "active" && view.enabled.claim),
       return: ["queued", "ready", "active", "resetting"].includes(view.phase), reset: view.phase === "active", repro: view.phase === "active"
@@ -147,7 +151,8 @@ function mount(root: HTMLElement): void {
     try { await action(); } finally { busy = false; render(); }
   }
   buttons.start.addEventListener("click", () => { void act(async () => {
-    const g = generation; const answer = await call<SandboxLease>("session", "POST"); if (g !== generation) return;
+    const g = generation; starting = true;
+    const answer = await call<SandboxLease>("session", "POST").finally(() => { starting = false; }); if (g !== generation) return;
     if (!answer.ok) { note = problemText(answer.problem); if (answer.problem.kind === "refused" && answer.problem.code === "sandbox-unavailable") await refreshStatus(); return; }
     autoClaim = true; setLease(answer.data);
     if (lease?.status === "ready") await claim();
@@ -198,9 +203,9 @@ function mount(root: HTMLElement): void {
   function stop(): void { generation++; clearTimeout(poll); clearInterval(clock); }
 
   window.addEventListener("pagehide", () => {
-    const held = holding();
+    const held = holding() || starting;
     stop(); unmount(); connection = null; discovery = null; autoClaim = false; checking = true;
-    // Leaving the page returns the slot or place; the empty body keeps keepalive preflight-free.
+    // Leaving the page returns the slot or place, including one a Start still in flight may get; the empty body keeps keepalive preflight-free.
     if (held) void fetch(`${origin}/api/sandbox/session/return`, { method: "POST", credentials: "include", keepalive: true }).catch(() => undefined);
   });
   // A restore from the back-forward cache revalidates and never allocates.

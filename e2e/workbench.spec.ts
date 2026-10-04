@@ -280,3 +280,45 @@ for (const scheme of ["light", "dark"] as const) {
     await check();
   });
 }
+
+test("while Start is in flight, Check again waits, so the field station's answer is shown and kept alive", async ({ page }) => {
+  let release!: () => void; const answered = new Promise<void>(resolve => { release = resolve; });
+  const queued: SandboxLease = { status: "queued", now: iso(), position: 1, queueLength: 1, joinedAt: iso(), nextFreeAt: null, sessionExpiresAt: iso(3_600_000) };
+  const seen = await stubSandbox(page, ({ method, path }) => {
+    if (path === "status") return { json: available() };
+    if (method === "GET" && path === "session") return seen.includes("POST session") ? { json: { ...queued, now: iso() } } : { status: 401, json: { error: "No session.", code: "no-session" } };
+    if (path === "session") return { json: queued };
+    return undefined;
+  });
+  await page.route("**/api/sandbox/session", async route => { if (route.request().method() === "POST") await answered; return route.fallback(); });
+  const ui = panel(page); const retry = page.locator("[data-sandbox-retry]");
+  await page.goto("/workbench/");
+  await expect(ui.start).toBeEnabled();
+  await ui.start.click();
+  await expect(retry).toBeDisabled();
+  release();
+  await expect(ui.root).toHaveAttribute("data-phase", "queued");
+  await expect(retry).toBeEnabled();
+  const before = seen.filter(entry => entry === "GET session").length;
+  await expect.poll(() => seen.filter(entry => entry === "GET session").length, { timeout: 8_000 }).toBeGreaterThan(before);
+});
+
+test("leaving the page while Start is in flight still returns the place", async ({ page }) => {
+  const seen = await stubSandbox(page, ({ method, path }) => {
+    if (path === "status") return { json: available() };
+    if (method === "GET" && path === "session") return { status: 401, json: { error: "No session.", code: "no-session" } };
+    if (path === "session/return") return { json: ended("left") };
+    if (path === "session") return { json: { status: "queued", now: iso(), position: 1, queueLength: 1, joinedAt: iso(), nextFreeAt: null, sessionExpiresAt: iso(3_600_000) } };
+    return undefined;
+  });
+  let release!: () => void; const answered = new Promise<void>(resolve => { release = resolve; });
+  let sent = false;
+  await page.route("**/api/sandbox/session", async route => { if (route.request().method() === "POST") { sent = true; await answered; } return route.fallback(); });
+  const ui = panel(page);
+  await page.goto("/workbench/");
+  await ui.start.click();
+  await expect.poll(() => sent).toBe(true);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })));
+  await expect.poll(() => seen.includes("POST session/return")).toBe(true);
+  release();
+});

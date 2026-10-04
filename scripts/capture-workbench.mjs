@@ -18,7 +18,7 @@ try {
   for(let i=0;i<100&&!output.includes("Token");i++)await new Promise(r=>setTimeout(r,100));
   const token=output.match(/Token\s+(\S+)/)?.[1];if(!token)throw Error("Workbench did not start; check ports 7790/7791.");
   browser=await chromium.launch(process.env.CHROMIUM ? {executablePath:process.env.CHROMIUM} : {});
-  const context=await browser.newContext({viewport:{width:1280,height:900},recordVideo:{dir:join(scratch,"video"),size:{width:1280,height:900}}});
+  const context=await browser.newContext({viewport:{width:1280,height:900}});
   const page=await context.newPage();await page.goto("http://127.0.0.1:7791");
   await page.getByLabel("Management token").fill(token);await page.getByRole("button",{name:"Open workbench",exact:true}).click();
   await page.getByRole("heading",{name:"Connect",exact:true}).waitFor();
@@ -30,8 +30,8 @@ try {
   await page.getByRole("tab",{name:"Preview",exact:true}).click();await capture("updated");
   await page.getByRole("tab",{name:"Inspect",exact:true}).click();await capture("inspect");
   await page.getByRole("tab",{name:"Export",exact:true}).click();await capture("export");
-  const video=page.video();await context.close();await video.saveAs(join(out,"tour.webm"));
+  await context.close();
   const manifest={version:require("streamotter/package.json").version,capturedAt:new Date().toISOString(),source:"Published npm workbench; CLI-generated fixture project on loopback",viewport:{width:1280,height:900},node:process.version,steps:["Connect: inspect the fixture source","Define: inspect the channel and schemas","Preview: subscribe to job_1 as developer","Connect: advance one real fixture record","Preview: inspect the updated state","Inspect: read payload-free trace metadata","Export: review the export controls"]};
   writeFileSync(join(out,"capture.json"),JSON.stringify(manifest,null,2)+"\n");
-  console.log(`Captured workbench ${manifest.version}: six images, recorded session, and provenance.`);
+  console.log(`Captured workbench ${manifest.version}: six images and provenance.`);
 } finally {await browser?.close();child.kill("SIGTERM");await new Promise(r=>child.once("exit",r));rmSync(scratch,{recursive:true,force:true});}

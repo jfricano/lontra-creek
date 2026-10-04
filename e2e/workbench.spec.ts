@@ -1,6 +1,6 @@
 /**
  * /workbench/: the sandbox panel's states against stubbed /api/sandbox/* answers
- * (sandbox contract §4), the design-fixture seed, and the labeled fallback recording.
+ * (sandbox contract §4), the design-fixture seed, and the labeled fallback screenshots.
  * Every stubbed answer here is a test fixture; versions use "0.0.0-design-fixture" so
  * a label that leaked the site's own build would show.
  */
@@ -246,7 +246,7 @@ test("reset discards the study, waits, and claims the new study; the reproductio
   await expect(ui.claim).toBeHidden();
 });
 
-test("the seed is labeled a design fixture and the recording carries its own capture provenance", async ({ page }) => {
+test("the seed is labeled a design fixture and the screenshots carry their own capture provenance", async ({ page }) => {
   await stubSandbox(page, ({ path }) => path === "status" ? { json: unavailable("seam-unavailable") } : undefined);
   await page.goto("/workbench/");
   await expect(page.locator("[data-design-fixture]")).toContainText("Design fixture.");
@@ -255,7 +255,7 @@ test("the seed is labeled a design fixture and the recording carries its own cap
   await expect(page.getByRole("heading", { name: "In your app" })).toBeVisible();
   await expect(page.locator("table")).toContainText("jobId: \"job_1\"");
   const provenance = page.locator("[data-recording-provenance]");
-  await expect(provenance).toContainText("Fallback: a recording, not a sandbox session.");
+  await expect(provenance).toContainText("Fallback: screenshots, not a sandbox session.");
   await expect(provenance).toContainText(`streamotter@${capture.version}`);
   await expect(provenance).toContainText(`Node.js ${capture.node.replace(/^v/, "")}`);
   for (const caption of await page.locator("figcaption").allTextContents()) expect(caption).toContain(`streamotter@${capture.version}`);

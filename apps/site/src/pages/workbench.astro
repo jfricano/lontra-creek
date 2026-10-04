@@ -19,11 +19,11 @@ const panels=[
 {key:"export",title:"Export",description:"Export canonical configuration for review. The workbench never writes files or changes the running gateway; validate and generate locally before restarting it."}
 ];
 ---
-<ReferencePage title="Meet the workbench" description="Open the published StreamOtter workbench in an isolated sandbox when one is available, or follow a recorded tour of Connect, Define, Preview, Inspect, and Export.">
+<ReferencePage title="Meet the workbench" description="Open the published StreamOtter workbench in an isolated sandbox when one is available, or follow its Connect, Define, Preview, Inspect, and Export steps in screenshots.">
 <section class="sandbox" data-sandbox data-phase="checking" aria-labelledby="sandbox-heading">
   <h2 id="sandbox-heading">Workbench sandbox</h2>
   <div class="sandbox-state" role="status"><p class="sandbox-headline" data-sandbox-headline>Checking the sandbox…</p><p data-sandbox-detail>Asking the field station for the sandbox's status and this browser's session.</p></div>
-  <noscript><p class="notice">The sandbox needs JavaScript. The recorded tour below works without it.</p></noscript>
+  <noscript><p class="notice">The sandbox needs JavaScript. The step-by-step screenshots below work without it.</p></noscript>
   <p data-sandbox-pool></p>
   <div class="sandbox-controls">
     <button type="button" class="button button-primary" data-sandbox-start disabled>Start a sandbox session</button>
@@ -43,7 +43,7 @@ const panels=[
   <p class="sandbox-small" data-sandbox-runtime-note hidden>The sandbox service reports its mode and exact package versions only when it has a runtime to run. This page never fills them in from the site's own build.</p>
   <p class="sandbox-small" data-sandbox-mount-note></p>
   <div class="sandbox-mount" data-sandbox-mount hidden></div>
-  <p class="sandbox-small">A session is never started for you: not when this page opens, reloads, or comes back from your browser's history. Leaving the page returns your slot. <a href="#recorded-tour">Watch the recorded tour instead</a>.</p>
+  <p class="sandbox-small">A session is never started for you: not when this page opens, reloads, or comes back from your browser's history. Leaving the page returns your slot. <a href="#workbench-steps">See the steps in screenshots instead</a>.</p>
 </section>
 <section aria-labelledby="seed-heading">
   <h2 id="seed-heading">What a session opens with</h2>
@@ -66,9 +66,9 @@ const panels=[
     <tbody>{IN_YOUR_APP.map(row=><tr><td><code>{row.creek}</code></td><td><code>{row.app}</code></td><td>{row.meaning}</td></tr>)}</tbody></table></div>
   </section>
 </section>
-<section id="recorded-tour" aria-labelledby="recorded-heading"><h2 id="recorded-heading">Recorded session</h2>
-<p class="notice" data-recording-provenance><strong>Fallback: a recording, not a sandbox session.</strong> Recorded locally on {capturedOn} with <code>streamotter@{capture.version}</code> and Node.js {node}. Capture source: {capture.source}. These are real product captures of that version, not the hosted field station or a sandbox. That workbench and its management API exist only in development mode and listen on loopback.</p>
-<video controls preload="none" poster="/recordings/workbench/preview.png" aria-label="Recorded local StreamOtter workbench session" aria-describedby="tour-description" width="1280" height="900"><source src="/recordings/workbench/tour.webm" type="video/webm" /><p>Your browser cannot play this recording. The screenshots and text transcript below cover the same steps.</p></video><p id="tour-description">Silent recording: open the workbench using its per-run token; inspect Connect and Define; subscribe to job_1 in Preview; advance one fixture record; inspect the updated state, trace, and Export controls.</p><p><a href="/recordings/workbench/capture.json">Capture provenance</a> · <a href={LINKS.gettingStarted}>Run this tour yourself ↗</a></p></section>
+<section id="workbench-steps" aria-labelledby="steps-heading"><h2 id="steps-heading">Step by step</h2>
+<p class="notice" data-recording-provenance><strong>Fallback: screenshots, not a sandbox session.</strong> Captured locally on {capturedOn} with <code>streamotter@{capture.version}</code> and Node.js {node}. Capture source: {capture.source}. These are real product captures of that version, not the hosted field station or a sandbox. That workbench and its management API exist only in development mode and listen on loopback.</p>
+<p><a href="/recordings/workbench/capture.json">Capture provenance</a> · <a href={LINKS.gettingStarted}>Run these steps yourself ↗</a></p></section>
 {panels.map(panel=><section><h2>{panel.title}</h2><p>{panel.description}</p><figure><a href={`/recordings/workbench/${panel.key}.png`} aria-label={`Open full-size ${panel.title} screenshot`}><img src={`/recordings/workbench/${panel.key}.png`} alt={`Recorded ${panel.title} panel in StreamOtter ${capture.version}: ${panel.description}`} loading="lazy" width="1280" /></a><figcaption>{panel.title} · recorded with streamotter@{capture.version} · local fixture capture · {capturedOn}</figcaption></figure></section>)}
 <section><h2>Run it locally</h2><pre tabindex="0"><code>{`npm install streamotter
 npx streamotter init .
@@ -77,7 +77,7 @@ npx streamotter dev --config streamotter.json \\
 </ReferencePage>
 <script>import "../scripts/workbench.ts";</script>
 <style>
-video,img {display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);}
+img {display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);}
 figure {margin:20px 0;}
 figcaption {font-size:.85rem;color:var(--ink-3);margin-top:8px;}
 .sandbox {padding:24px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);}

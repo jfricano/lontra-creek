@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { LabFeedItem } from "../../field-station/src/lab/contract.ts";
-import { FEED_SHOW, LabFeedModel } from "../src/scripts/lab-feed.ts";
+import { FEED_SHOW, LabFeedModel, retriedOutcome } from "../src/scripts/lab-feed.ts";
 
 let n = 0;
 const at = (second: number) => `2026-10-03T00:00:${String(second).padStart(2, "0")}.000Z`;
@@ -38,7 +38,7 @@ test("after Resume the same offset is marked retried, not any later record", () 
   model.add([item(3, { kind: "action", action: "source.resume" }), record(4, "processed"), record(5, "processed", "247")]);
   const retried = model.lines(false).filter(line => line.retried);
   assert.deepEqual(retried.map(line => line.text), ["Retried LC-03 record lab-1.field.gauges · partition 0 · offset 246: mapper returned"]);
-  assert.deepEqual(model.retried, { topic: "lab-1.field.gauges", partition: 0, offset: "246" });
+  assert.deepEqual(model.retried, { topic: "lab-1.field.gauges", partition: 0, offset: "246", after: "source.resume" });
   assert.ok(!model.lines(false).some(line => line.text.includes("offset 247")), "an ordinary later record stays in the full feed only");
 });
 
@@ -76,4 +76,20 @@ test("a busy feed drops routine lines first, so the scenario view keeps its step
     "Source field: paused"
   ]);
   assert.equal(model.lines(true).length, FEED_SHOW);
+});
+
+test("the retried record's outcome names the action that preceded it, and none when there was none", () => {
+  const story = (action: string | null) => {
+    const model = new LabFeedModel();
+    model.add([item(1, { kind: "action", action: "sensor.foul" }), record(2, "failed"), item(3, { kind: "source", sourceId: "field", status: "paused", reason: "HANDLER_FAILED" }), item(4, { kind: "action", action: "sensor.restore" })]);
+    if (action) model.add([item(5, { kind: "action", action })]);
+    if (action === "gateway.restart") model.add([item(6, { kind: "bench", event: "gateway-stopped" }), item(7, { kind: "bench", event: "gateway-started" })]);
+    model.add([record(8, "processed")]);
+    return retriedOutcome(model.retried!);
+  };
+  assert.match(story("source.resume"), /^After Resume the gateway retried the same record, offset 246 on lab-1\.field\.gauges partition 0, and the mapper returned\./);
+  // A restart while the source is paused re-reads the uncommitted offset: no Resume was pressed.
+  assert.match(story("gateway.restart"), /^After the gateway restart, the restarted gateway read the same record again, offset 246 on lab-1\.field\.gauges partition 0, and the mapper returned\./);
+  assert.match(story(null), /^The gateway retried the same record, offset 246/);
+  for (const action of ["source.resume", "gateway.restart", null]) assert.match(story(action), /That isn't proof the offset was committed/);
 });

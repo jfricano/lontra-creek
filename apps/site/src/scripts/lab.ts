@@ -1,7 +1,7 @@
 import type { Client } from "streamotter/client";
 import type { LabStatus, LabLease, LabToken, LabAction, LabActionResult, LabFeedPage, LabBenchState, LabErrorCode, LabIncidentView } from "../../../field-station/src/lab/contract.ts";
 import { channelVersions, type AppChannels } from "../generated/streamotter.generated.ts";
-import { LabFeedModel } from "./lab-feed.ts";
+import { LabFeedModel, retriedOutcome } from "./lab-feed.ts";
 import { capabilityAnswer, type CapabilityAnswer } from "./lab-catalog-model.ts";
 import type { BrowserStep } from "./lab-incident.ts";
 import { IncidentPanel } from "./lab-incident-panel.ts";
@@ -195,7 +195,7 @@ async function mount(root: HTMLElement): Promise<void> {
       const moved = satelliteFrom && revision && satelliteFrom !== revision ? ` and moved from revision ${satelliteFrom} to ${revision} since you started it` : "";
       outcome.textContent = `${satellite.overloaded ? `The slow client missed its ${timeout}receipt deadline and the gateway disconnected it (OVERLOADED).` : "The slow client disconnected."} Your LC-03 view is ${viewState}${moved}.`;
     } else if (kind === "retried" && retried) {
-      outcome.textContent = `After Resume the gateway retried the same record, offset ${retried.offset} on ${retried.topic} partition ${retried.partition}, and the mapper returned. That isn't proof the offset was committed; the source state and your view show what happened next.`;
+      outcome.textContent = retriedOutcome(retried);
     }
   }
   async function feed(): Promise<void> {

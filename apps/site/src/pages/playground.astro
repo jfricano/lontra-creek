@@ -1,12 +1,14 @@
 ---
 import ReferencePage from "../layouts/ReferencePage.astro";
-import config from "../data/playground-config.json";
+import {PLAYGROUND_PRESETS, presetText} from "../data/playground-presets.ts";
 import {RELEASE} from "../site.ts";
+const [first]=PLAYGROUND_PRESETS;
+const groups=[["accepted","Examples"],["refused","Refused on purpose"]] as const;
 ---
 <ReferencePage title="Try the configuration" description="Edit a portable streamotter.json. The published validator checks structure, schemas, and references in your browser.">
-<p class="notice">Validation stays on this page. It does not run handlers, resolve secrets, connect to Kafka, or change the field station. Do not paste credentials. Browser type generation is unavailable in this release; use <code>npx streamotter generate</code> locally.</p>
-<section><label for="config-editor">streamotter.json</label><textarea id="config-editor" rows="24" spellcheck="false" autocomplete="off">{JSON.stringify(config,null,2)}</textarea><p><button class="button button-quiet" id="reset-config" type="button">Reset example</button></p><p id="validation-status" role="status">Loading the streamotter@{RELEASE} validator…</p><ul id="validation-issues"></ul></section>
+<p class="notice">Validation stays on this page. It does not run handlers, resolve secrets, connect to Kafka, or change the field station. Do not paste credentials. It checks configuration only: not whether a recovery guard tells the truth, whether the gateway may write to a topic, whether a journal is durable, or whether Kafka is reachable. Browser type generation is unavailable in this release; use <code>npx streamotter generate</code> locally.</p>
+<section><p class="preset-picker"><label for="config-preset">Start from</label> <select id="config-preset" data-playground-preset>{groups.map(([group,label])=><optgroup label={label}>{PLAYGROUND_PRESETS.filter(preset=>preset.group===group).map(preset=><option value={preset.id} selected={preset===first}>{preset.label}</option>)}</optgroup>)}</select></p><p id="preset-note" data-preset-note>{first?.note}</p><label for="config-editor">streamotter.json</label><textarea id="config-editor" rows="24" spellcheck="false" autocomplete="off">{first && presetText(first)}</textarea><p><button class="button button-quiet" id="reset-config" type="button">Reset example</button></p><p id="validation-status" role="status">Loading the streamotter@{RELEASE} validator…</p><ul id="validation-issues"></ul></section>
 <section><h2>Field station console</h2><p>This console subscribes to the real field station’s fixed LC-02 channel. It is separate from the configuration editor: your edits never change the hosted project. The creek and its observations are fictional.</p><button id="console-connect" class="button button-primary" type="button">Connect to field station</button> <button id="console-close" class="button button-quiet" type="button" disabled>Disconnect</button><p id="console-status" role="status">Not connected.</p><pre id="console-log" aria-label="Field station SDK events" tabindex="0">No events yet.</pre></section>
 </ReferencePage>
 <script>import "../scripts/playground.ts";</script>
-<style>#console-log { max-height:16rem; overflow:auto; }</style>
+<style>#console-log { max-height:16rem; overflow:auto; } .preset-picker select { max-width:100%; }</style>

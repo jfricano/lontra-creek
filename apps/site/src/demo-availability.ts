@@ -71,7 +71,7 @@ export const SURFACES: readonly Surface[] = [
   },
   {
     name: "Playground", href: "/playground/", state: "runs",
-    runs: `The real validator from streamotter@${RELEASE}, in your browser, plus a read-only connection to the field station.`,
+    runs: `The real validator from streamotter@${RELEASE}, in your browser, with failure-policy presets and examples it refuses, plus a read-only connection to the field station.`,
     needs: "Nothing more for validation, which checks configuration only. Type generation in the browser needs a release that exports a browser-safe generator; use npx streamotter generate locally."
   }
 ];

@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, test, type Request } from "@playwright/test";
+import { validateProjectConfig } from "streamotter/contracts";
+import { PLAYGROUND_PRESETS, presetText } from "../apps/site/src/data/playground-presets.ts";
 
 /** The StreamOtter version the site pins, read from its package.json as the site itself does. */
 const release = (JSON.parse(readFileSync(new URL("../node_modules/streamotter/package.json", import.meta.url), "utf8")) as { version: string }).version;
@@ -48,6 +50,32 @@ test("playground validates real configuration and receives real SDK data", async
   await page.getByRole("button", { name: "Disconnect", exact: true }).click();
   await expect(page.locator("#console-status")).toHaveText("Disconnected.");
   await expect(page.getByRole("button", { name: "Connect to field station" })).toBeEnabled();
+});
+
+test("playground presets show the installed validator's own answer for each failure policy (LC11-A34)", async ({ page }) => {
+  const requests: string[] = [];
+  page.on("request", request => { if (request.method() !== "GET") requests.push(new URL(request.url()).pathname); });
+  await page.goto("/playground/");
+  const status = page.locator("#validation-status");
+  await expect(status).toContainText("Valid configuration");
+  const picker = page.getByLabel("Start from");
+  await expect(picker.locator("optgroup")).toHaveCount(2);
+  for (const preset of PLAYGROUND_PRESETS) {
+    await picker.selectOption(preset.id);
+    await expect(page.locator("#config-editor")).toHaveValue(presetText(preset));
+    await expect(page.locator("[data-preset-note]")).toHaveText(preset.note);
+    // The page's answer is exactly what the same package says in Node.
+    const result = validateProjectConfig(preset.config);
+    expect(result.valid, preset.id).toBe(preset.group === "accepted");
+    if (result.valid) await expect(status).toContainText("Valid configuration");
+    else await expect(page.locator("#validation-issues li")).toHaveText(result.issues.map(issue => `${issue.path}: ${issue.message} (${issue.code})`));
+  }
+  // Reset returns to the selected preset's text, not to the first example.
+  await page.locator("#config-editor").fill("{}");
+  await page.getByRole("button", { name: "Reset example" }).click();
+  await expect(page.locator("#config-editor")).toHaveValue(presetText(PLAYGROUND_PRESETS.at(-1)!));
+  // Nothing is sent anywhere: no handler runs and no configuration reaches a server.
+  expect(requests).toEqual([]);
 });
 
 test("playground reports service unavailability without replacing it with sample data", async ({ page }) => {

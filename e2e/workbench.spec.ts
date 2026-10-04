@@ -134,9 +134,11 @@ test("a back-forward cache restore revalidates before showing anything active, a
 
 test("a full pool queues with position, and leaving the line returns the place", async ({ page }) => {
   const seen = await stubSandbox(page, ({ method, path }) => {
-    if (path === "status") return { json: available({ slots: [1, 2, 3].map(slot => ({ slot: slot as 1 | 2 | 3, state: "leased" as const })), queueLength: 2, nextFreeAt: iso(240_000) }) };
+    // One clock reading per answer: two Date.now() calls a millisecond apart would round "4 min" up to 5.
+    const at = Date.now(), stamp = (offsetMs = 0): string => new Date(at + offsetMs).toISOString();
+    if (path === "status") return { json: available({ now: stamp(), slots: [1, 2, 3].map(slot => ({ slot: slot as 1 | 2 | 3, state: "leased" as const })), queueLength: 2, nextFreeAt: stamp(240_000) }) };
     if (method === "GET" && path === "session") return { status: 401, json: { error: "No session.", code: "no-session" } };
-    if (path === "session") return { json: { status: "queued", now: iso(), position: 3, queueLength: 3, joinedAt: iso(), nextFreeAt: iso(240_000), sessionExpiresAt: iso(3_600_000) } };
+    if (path === "session") return { json: { status: "queued", now: stamp(), position: 3, queueLength: 3, joinedAt: stamp(), nextFreeAt: stamp(240_000), sessionExpiresAt: stamp(3_600_000) } };
     if (path === "session/return") return { json: ended("left") };
     return undefined;
   });

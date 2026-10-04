@@ -22,6 +22,8 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { advanceTo, createWorld, currentEmissions } from '@lontra-creek/sim';
 import type { BenchId, BenchIncident, BenchIncidentFacts, BenchIntentRequest, BenchOperation, BenchStatus, LabIncidentView, LabOperation, LabScenarioId, RecordCoordinates } from '../src/lab/contract.ts';
 import { LabError } from '../src/lab/errors.ts';
+import { runsUnder } from '../src/lab/bench.ts';
+import { INSTALLED_INTEGRITY, type Verification } from '../src/lab/capabilities.ts';
 import { compose } from '../src/lab/intents.ts';
 import { attachIntents, LeasePool, type BenchClient } from '../src/lab/leases.ts';
 import { LabStudies } from '../src/lab/studies.ts';
@@ -33,7 +35,8 @@ import type { Notebooks } from '../src/server/notebooks.ts';
 const TICK = 500;
 const STUDY = 'b1studyAAAAAAAAA';
 const NEW: LabScenarioId[] = ['garbled-reading', 'bad-projection', 'inspect-old-reading', 'conflicting-readings', 'calibration-blip', 'too-many-bad-readings', 'restart-recovery', 'unavailable-evidence'];
-const VERIFIED = new Map([['0.2.0-rc.1', new Set<LabScenarioId>([...NEW, 'fouled-sensor'])]]);
+// Evidence for every new scenario under every profile it can run under, for the packages installed here.
+const VERIFIED: ReadonlyMap<string, Verification> = new Map([['0.2.0-rc.1', { packages: INSTALLED_INTEGRITY!, evidence: 'injected', scenarios: Object.fromEntries(NEW.map(id => [id, runsUnder(id).filter(profile => profile !== 'off')])) }]]);
 
 /**
  * The expected ledger, by hand: an LC-03 flow reading affects LC-03's station view and

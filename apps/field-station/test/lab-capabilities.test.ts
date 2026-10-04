@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
-import { INSTALLED_STREAMOTTER, INTENTS, LAB_CONTRACT, SCENARIOS, VERIFIED_WITH, labCapabilities, parseIntent } from '../src/lab/capabilities.ts';
+import { INSTALLED_INTEGRITY, INSTALLED_STREAMOTTER, INTENTS, LAB_CONTRACT, SCENARIOS, VERIFIED_WITH, labCapabilities, parseIntent, streamOtterIntegrity, type Verification } from '../src/lab/capabilities.ts';
 import type { LabCapabilities, LabScenarioId } from '../src/lab/contract.ts';
 import { LabError } from '../src/lab/errors.ts';
 import { LeasePool } from '../src/lab/leases.ts';
@@ -89,10 +89,12 @@ test('proposed intents parse only in their closed shape', () => {
 });
 
 test('0.2.0-rc.1 is verified for every new scenario, and the deployment still decides which are offered', () => {
-  // Each one passed deploy/test/lab-source-failures.test.ts on dev:lab (section 12.9).
-  assert.deepEqual([...VERIFIED_WITH.get('0.2.0-rc.1') ?? ['missing']].sort(), [...NEW].sort());
+  // Each one passed deploy/test/lab-source-failures.test.ts on dev:lab (section 12.9): all under quarantine, calibration-blip also under retry.
+  const recorded = VERIFIED_WITH.get('0.2.0-rc.1')!;
+  assert.deepEqual(Object.keys(recorded.scenarios).sort(), [...NEW].sort());
+  for (const id of NEW) assert.deepEqual([...recorded.scenarios[id as keyof Verification['scenarios']]!].sort(), id === 'calibration-blip' ? ['quarantine', 'retry'] : ['quarantine'], id);
   assert.match(LAB_CONTRACT, /W9b/);
-  const at = (profile: 'off' | 'retry' | 'quarantine', localExercises = false) => labCapabilities({ labEnabled: true, now: 0, version: '0.2.0-rc.1', profile, localExercises });
+  const at = (profile: 'off' | 'retry' | 'quarantine', localExercises = false) => labCapabilities({ labEnabled: true, now: 0, version: '0.2.0-rc.1', profile, localExercises, integrity: recorded.packages });
   // The hosted default: retry, no local exercises. Only calibration-blip is offered.
   for (const id of NEW) assert.equal(scenario(at('retry'), id).available, id === 'calibration-blip', id);
   for (const id of NEW) assert.equal(scenario(at('quarantine', true), id).available, true, id);
@@ -101,10 +103,45 @@ test('0.2.0-rc.1 is verified for every new scenario, and the deployment still de
   for (const id of NEW) assert.equal(scenario(labCapabilities({ labEnabled: true, now: 0, version: '0.2.0-rc.2', profile: 'quarantine', localExercises: true }), id).reason?.code, 'not-integrated', id);
 });
 
+test('the recorded evidence ran exactly the StreamOtter packages the lockfile installs', () => {
+  // An independent read of package-lock.json. When it changes (the registry release replacing the
+  // pre-publish pack, or any other rebuild of a recorded version), this fails until
+  // deploy/test/lab-source-failures.test.ts (and deploy/test/sandbox.test.ts) are run again on dev:lab
+  // against that install and VERIFIED_WITH records the new integrity (lab-api.md section 12.3).
+  const lock = JSON.parse(readFileSync(new URL('../../../package-lock.json', import.meta.url), 'utf8')) as Parameters<typeof streamOtterIntegrity>[0];
+  const locked = streamOtterIntegrity(lock);
+  assert.equal(Object.keys(locked).length, 6, JSON.stringify(locked));
+  assert.deepEqual(INSTALLED_INTEGRITY, locked, 'the field station reads the same lockfile');
+  const recorded = VERIFIED_WITH.get(INSTALLED_STREAMOTTER);
+  if (recorded) assert.deepEqual(locked, recorded.packages, `StreamOtter ${INSTALLED_STREAMOTTER}'s packages differ from the ones its real-Kafka evidence ran: run deploy/test/lab-source-failures.test.ts and deploy/test/sandbox.test.ts on this install, then re-record VERIFIED_WITH`);
+  for (const [version, verification] of VERIFIED_WITH) {
+    assert.equal(Object.keys(verification.packages).length, 6, version);
+    for (const value of Object.values(verification.packages)) assert.match(value, /^sha512-[A-Za-z0-9+/]{86}==$/, version);
+  }
+});
+
+test('another build of a verified release offers nothing new, and says so', () => {
+  const recorded = VERIFIED_WITH.get('0.2.0-rc.1')!;
+  const other = { ...recorded.packages, 'node_modules/streamotter': `sha512-${'A'.repeat(86)}==` };
+  for (const integrity of [other, null, { ...recorded.packages, 'node_modules/@streamotter/extra': recorded.packages['node_modules/streamotter']! }]) {
+    const summary = labCapabilities({ labEnabled: true, now: 0, version: '0.2.0-rc.1', profile: 'quarantine', localExercises: true, integrity });
+    for (const id of NEW) {
+      assert.equal(scenario(summary, id).reason?.code, 'not-integrated', id);
+      assert.match(scenario(summary, id).reason!.text, /another build of StreamOtter 0\.2\.0-rc\.1/);
+    }
+    for (const feature of Object.values(summary.features)) assert.equal(feature.reason?.code, 'not-integrated');
+  }
+});
+
 describe('the capability matrix with an injected verified set (section 12.3)', () => {
-  const verified = new Map([['0.2.0-rc.1', new Set<LabScenarioId>(NEW)]]);
-  const summary = (options: { profile: 'off' | 'retry' | 'quarantine'; localExercises?: boolean; labEnabled?: boolean; only?: LabScenarioId[] }) =>
-    labCapabilities({ labEnabled: options.labEnabled ?? true, now: 0, version: '0.2.0-rc.1', profile: options.profile, localExercises: options.localExercises ?? false, verified: options.only ? new Map([['0.2.0-rc.1', new Set(options.only)]]) : verified });
+  const packages = { 'node_modules/streamotter': `sha512-${'B'.repeat(86)}==` };
+  // Evidence for every profile a scenario can run under, unless a test says otherwise.
+  const evidence = (only: LabScenarioId[], profiles?: ('retry' | 'quarantine')[]): ReadonlyMap<string, Verification> => new Map([['0.2.0-rc.1', {
+    packages, evidence: 'injected', scenarios: Object.fromEntries(only.map(id => [id, profiles ?? (id === 'calibration-blip' ? ['retry', 'quarantine'] : ['quarantine'])]))
+  }]]);
+  const verified = evidence(NEW);
+  const summary = (options: { profile: 'off' | 'retry' | 'quarantine'; localExercises?: boolean; labEnabled?: boolean; only?: LabScenarioId[]; profiles?: ('retry' | 'quarantine')[] }) =>
+    labCapabilities({ labEnabled: options.labEnabled ?? true, now: 0, version: '0.2.0-rc.1', profile: options.profile, localExercises: options.localExercises ?? false, integrity: packages, verified: options.only || options.profiles ? evidence(options.only ?? NEW, options.profiles) : verified });
   // Restated by hand from section 12.2, not read from the implementation.
   const RETRY_ONLY = ['calibration-blip'];
   const LOCAL = ['too-many-bad-readings', 'restart-recovery', 'unavailable-evidence'];
@@ -137,10 +174,21 @@ describe('the capability matrix with an injected verified set (section 12.3)', (
   });
 
   test('the reasons come in order: library, verification, the Lab itself, then the deployment', () => {
-    assert.equal(scenario(labCapabilities({ labEnabled: false, now: 0, version: '0.1.0-rc.3', profile: 'off', verified }), 'garbled-reading').reason!.code, 'library-lacks-capability');
+    assert.equal(scenario(labCapabilities({ labEnabled: false, now: 0, version: '0.1.0-rc.3', profile: 'off', verified, integrity: packages }), 'garbled-reading').reason!.code, 'library-lacks-capability');
     assert.equal(scenario(summary({ profile: 'off', labEnabled: false, only: [] }), 'garbled-reading').reason!.code, 'not-integrated');
     assert.equal(scenario(summary({ profile: 'off', labEnabled: false }), 'garbled-reading').reason!.code, 'lab-disabled');
     assert.equal(scenario(summary({ profile: 'off' }), 'garbled-reading').reason!.code, 'deployment-restricted');
+  });
+
+  test('a scenario is offered only under a profile it was proven under', () => {
+    // Proven under quarantine only: under retry it is not integrated, not merely restricted.
+    const retry = summary({ profile: 'retry', profiles: ['quarantine'] });
+    assert.equal(scenario(retry, 'calibration-blip').reason?.code, 'not-integrated');
+    assert.match(scenario(retry, 'calibration-blip').reason!.text, /failure handling \(retry\)/);
+    assert.equal(retry.features.intents.available, false);
+    assert.equal(scenario(summary({ profile: 'quarantine', profiles: ['quarantine'] }), 'calibration-blip').available, true);
+    // A profile the scenario can't run under at all is still the deployment's restriction.
+    assert.equal(scenario(summary({ profile: 'retry', profiles: ['quarantine'] }), 'bad-projection').reason?.code, 'deployment-restricted');
   });
 
   test('the features are available exactly when some new scenario is', () => {

@@ -231,11 +231,11 @@ curl --cacert .local/lab/secrets/origin/ca.pem https://localhost:8443/api/lab/ca
 ```
 
 A story the summary doesn't list as available stays listed with its reason:
-`not-integrated` while the installed release isn't one this Lab was verified
-against for that story (for 0.2.0-rc.1 a story joins that set only after its
-real-Kafka test passes here), or `deployment-restricted` when the benches'
-failure-handling profile (`LAB_FAILURE_HANDLING`) or `LAB_LOCAL_EXERCISES`
-doesn't cover it. Which stories the local stack offers is recorded in
+`not-integrated` while no recorded real-Kafka evidence matches what runs here
+(the release, the exact StreamOtter packages the lockfile installed, and the
+benches' profile; a story is recorded only after its suite passes here), or
+`deployment-restricted` when the benches' failure-handling profile
+(`LAB_FAILURE_HANDLING`) or `LAB_LOCAL_EXERCISES` doesn't cover it. Which stories the local stack offers is recorded in
 [STATUS.md](releases/v1.1/STATUS.md).
 
 On this stack all eight new stories are offered: `npm run dev:lab` runs the benches with the
@@ -246,7 +246,12 @@ The source-failures exercises (Lab contract 12.9) run as a visitor through
 Caddy and check the broker itself through `docker compose exec`: the
 quarantine topic's copies, committed offsets, and leftover groups. S08 also
 restarts a bench container, and S09 deletes a quarantine copy. A scenario is
-admitted to `VERIFIED_WITH` only after this suite passes for it:
+recorded in `VERIFIED_WITH`, with the install's StreamOtter integrity and the
+profile it ran under, only after this suite passes for it. The suite runs only
+what the capability summary offers, so a new release, build, or scenario is
+admitted locally first: put the candidate entry in the working tree, run the
+stack and the suite, and commit the entry only for what passed (Lab contract
+12.3):
 
 ```sh
 C="docker compose -p lontra-local-lab -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.sandbox.yaml -f deploy/compose.local-lab.yaml --env-file .local/lab/.env"

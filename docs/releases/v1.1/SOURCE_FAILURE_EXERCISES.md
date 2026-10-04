@@ -24,7 +24,7 @@ A visitor borrows a bench, opens the Source failures track, and presses **Start 
 
 A scenario is offered only when the capability summary (`GET /api/lab/capabilities`, contract §12.3) lists it as available. That needs all of:
 
-1. The installed StreamOtter release is one this backend's Lab was verified against **for that scenario** (`VERIFIED_WITH` in `apps/field-station/src/lab/capabilities.ts`). A scenario joins that set only after its real-Kafka test passes on `npm run dev:lab`. For 0.2.0-rc.1 the set starts empty.
+1. Recorded real-Kafka evidence matches what is running (`VERIFIED_WITH` in `apps/field-station/src/lab/capabilities.ts`, contract §12.3): the installed StreamOtter release, the exact packages it was proven against (the six `streamotter` and `@streamotter/*` lockfile `integrity` values), and, for that scenario, the failure-handling profile this deployment runs. A scenario is recorded only after its real-Kafka test passes on `npm run dev:lab` under that profile. Another build of the same version (the registry release replacing the pre-publish pack) matches nothing until the suite is run on it again.
 2. The deployment has Lab benches.
 3. The deployment's failure-handling profile (`LAB_FAILURE_HANDLING`: `off`, `retry`, or `quarantine`, set alike on the field station and every bench) provides what the scenario needs, and, for S07–S09, `LAB_LOCAL_EXERCISES=1` is set.
 
@@ -84,7 +84,7 @@ Even then the hosted exercises would differ from local ones, because the hosted 
 
 Results at the real-Kafka level are recorded here and in STATUS.md. A scenario not listed is not verified on real Kafka, whatever the lower levels show.
 
-Real Kafka, `npm run dev:lab`, October 4, 2026: StreamOtter 0.2.0-rc.1 (pre-publish pack), profile `quarantine`, `KAFKA_AUTHORIZATION=acl`, `deploy/test/lab-source-failures.test.ts` 11 of 11, with no authorizer denials in the final run. Every new story is in `VERIFIED_WITH` for 0.2.0-rc.1.
+Real Kafka, `npm run dev:lab`, October 4, 2026: StreamOtter 0.2.0-rc.1 (the pre-publish pack in `vendor/`, whose six lockfile integrity values `VERIFIED_WITH` records), profile `quarantine`, `KAFKA_AUTHORIZATION=acl`, `deploy/test/lab-source-failures.test.ts` 11 of 11, with no authorizer denials in the final run. Every new story is recorded in `VERIFIED_WITH` for 0.2.0-rc.1 under `quarantine`.
 
 | Scenario | What the real run checked |
 | --- | --- |
@@ -100,7 +100,7 @@ Real Kafka, `npm run dev:lab`, October 4, 2026: StreamOtter 0.2.0-rc.1 (pre-publ
 | S09 | The quarantine copy is deleted; evaluation reports the evidence unavailable |
 | A32 | Nothing is left behind after resets; the journal directory is owner-only |
 
-The hosted default was rechecked on the same stack with `LAB_FAILURE_HANDLING=retry`, `LAB_LOCAL_EXERCISES=0` and `KAFKA_AUTHORIZATION=none`: only S06 is offered, the other seven report `deployment-restricted`, and S01, S06 and A32 pass.
+The hosted default was rechecked on the same stack with `LAB_FAILURE_HANDLING=retry`, `LAB_LOCAL_EXERCISES=0` and `KAFKA_AUTHORIZATION=none`: only S06 is offered, the other seven report `deployment-restricted`, and S01, S06 and A32 pass. S06 is therefore also recorded under `retry`; no other story is, so under `retry` nothing else would be offered even if the profile could run it. That recheck ran on a developer machine, not under the shared host's container limits.
 
 One limit found on the real stack: a bench container that is recreated (a new hostname) while its gateway still holds the journal lock, for example after a kill, comes back `failed`, because StreamOtter can't check a lock that names another host. The field station's reset then discards that study and the bench is ready with a new one in about a minute. A graceful stop releases the lock, and a restart in place (same hostname) resumes the same study.
 
@@ -119,6 +119,7 @@ After 0.2.0-rc.1 is published and verified on npm (rollout plan, step 1), one co
 1. Removes `vendor/`, the `file:` specs in `apps/field-station/package.json` and `apps/site/package.json`, the root `overrides`, and the two `COPY vendor vendor` lines in `deploy/Dockerfile`.
 2. Pins `streamotter` to `0.2.0-rc.1` exactly in both apps and regenerates `package-lock.json` from the registry.
 3. Re-pins `PUBLISHED_SEAM` in `apps/site/src/scripts/workbench-seam.ts` (version and the sha384 integrity of `app.js` and `workbench-host.css`) from the **published** tarball's `workbench-host.json`. `apps/site/test/workbench-seam.test.ts` and the site build fail until it matches the installed files.
+4. Re-records the real-Kafka evidence for the registry install: `deploy/test/lab-source-failures.test.ts` and `deploy/test/sandbox.test.ts` run again on `npm run dev:lab` built from the new lockfile (under `quarantine` with ACLs, and S06 again under `retry` with `KAFKA_AUTHORIZATION=none`), and `VERIFIED_WITH` gets the registry packages' six integrity values and only the scenarios and profiles that passed (contract §12.3). `apps/field-station/test/lab-capabilities.test.ts` fails until it does, so the commit can't pass `npm test` on the old evidence.
 
 Then `node scripts/check-release-pins.mjs` passes, and the usual checks run on Node 24: `npm run typecheck`, `npm test`, the site build, `npm run check:site`, and `npm run test:browser`. Recapturing the recordings from the registry install ([content verification](../../research/content-verification.md)) changes their labels to npm. The pin PR also re-runs the Lab threat model's §10.2 and checks S1–S6 against the published package (Lab contract R4), and needs its own review and devops reconciliation before Jason merges it.
 

@@ -1,10 +1,12 @@
 /** scripts/dev-lab.mjs: argument parsing, prerequisite checks, and the discard guard, with no Docker. */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, test } from "node:test";
 import {
   DEFAULT_DIR, DEFAULT_PROJECT, ROOT, UsageError,
-  checkPrerequisites, compareVersions, confirmDiscard, extraCaDockerfile, localDirectory, parseArgs, readEnv, urls, waitForReadyBench
+  checkOwnDirectory, checkPrerequisites, compareVersions, confirmDiscard, extraCaDockerfile, localDirectory, parseArgs, readEnv, urls, waitForReadyBench
 } from "../dev-lab.mjs";
 
 describe("parseArgs", () => {
@@ -126,7 +128,7 @@ describe("localDirectory", () => {
   });
 
   test("refuses tracked, outside, top-level, and .local itself", () => {
-    assert.throws(() => localDirectory("apps/site", { run: git(1) }), /not git-ignored/);
+    assert.throws(() => localDirectory(".local/lab", { run: git(1) }), /not git-ignored/);
     assert.throws(() => localDirectory("/tmp/lab", { run: git(0) }), /inside the repository/);
     assert.throws(() => localDirectory("..", { run: git(0) }), /inside the repository/);
     assert.throws(() => localDirectory(".", { run: git(0) }), /inside the repository/);
@@ -135,11 +137,47 @@ describe("localDirectory", () => {
 
   test("without git, accepts only a directory under .local/", () => {
     assert.equal(localDirectory(".local/lab", { run: git(128) }), `${ROOT}/.local/lab`);
-    assert.throws(() => localDirectory("build/lab", { run: git(128) }), /Could not confirm/);
+    assert.throws(() => localDirectory("build/lab", { run: git(128) }), /must be under \.local\//);
+  });
+
+  test("refuses git-ignored directories outside .local/ that something serves or another tool owns", () => {
+    for (const dir of ["apps/site/dist/lab", "apps/site/dist", "node_modules", "dist", "apps/field-station/.data", "build/lab"]) {
+      assert.throws(() => localDirectory(dir, { run: git(0) }), /must be under \.local\//, dir);
+    }
+  });
+
+  test("refuses dev:kafka's data directory, inside it, or around it", () => {
+    for (const dir of [".local/kafka-dev", ".local/kafka-dev/lab", "./.local/kafka-dev/"]) {
+      assert.throws(() => localDirectory(dir, { run: git(0), kafkaDataDir: undefined }), /overlaps dev:kafka's data directory \(\.local\/kafka-dev\)/, dir);
+    }
+    assert.throws(() => localDirectory(".local/broker", { run: git(0), kafkaDataDir: ".local/broker" }), /overlaps/);
+    assert.throws(() => localDirectory(".local/lab", { run: git(0), kafkaDataDir: `${ROOT}/.local/lab/kafka` }), /overlaps/);
+    assert.equal(localDirectory(".local/lab", { run: git(0), kafkaDataDir: ".local/broker" }), `${ROOT}/.local/lab`);
+    assert.equal(localDirectory(".local/kafka-dev-lab", { run: git(0), kafkaDataDir: undefined }), `${ROOT}/.local/kafka-dev-lab`);
   });
 
   test("the default directory is ignored by this repository's .gitignore", () => {
     assert.equal(localDirectory(DEFAULT_DIR), `${ROOT}/.local/lab`);
+  });
+});
+
+describe("checkOwnDirectory", () => {
+  test("accepts a new, empty, or launcher-made directory and refuses anything else", () => {
+    const dir = mkdtempSync(join(tmpdir(), "lontra-dev-lab-"));
+    try {
+      checkOwnDirectory(join(dir, "new"));
+      mkdirSync(join(dir, "empty"));
+      checkOwnDirectory(join(dir, "empty"));
+      mkdirSync(join(dir, "made"));
+      writeFileSync(join(dir, "made/dev-lab.json"), JSON.stringify({ project: DEFAULT_PROJECT }));
+      writeFileSync(join(dir, "made/.env"), "A=1\n");
+      checkOwnDirectory(join(dir, "made"));
+      mkdirSync(join(dir, "foreign"));
+      writeFileSync(join(dir, "foreign/meta.properties"), "node.id=1\n");
+      assert.throws(() => checkOwnDirectory(join(dir, "foreign")), /already has files and was not made by this launcher \(no dev-lab\.json\)/);
+      writeFileSync(join(dir, "file"), "");
+      assert.throws(() => checkOwnDirectory(join(dir, "file")), /is not a directory/);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
 

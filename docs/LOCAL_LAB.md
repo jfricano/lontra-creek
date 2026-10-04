@@ -89,11 +89,15 @@ Pass options after `--`, for example `npm run dev:lab -- logs -f caddy`.
 | `discard [--yes]` | **Deletes** the local study: the project's containers and volumes, and `.local/lab/`. Asks first. |
 
 Every command also takes `--dir <path>` (default `.local/lab`) and
-`--project <name>` (default `lontra-local-lab`). The directory must be inside
-this repository and ignored by git, so secrets and study data can never be
-committed; `.local/` itself is refused because `dev:kafka` keeps its data
-there too. The project name is recorded in `<dir>/dev-lab.json` on the first
-`up`, and later commands use it. A second local Lab therefore needs both its
+`--project <name>` (default `lontra-local-lab`). The directory must be under
+this repository's `.local/` and ignored by git, so secrets and study data can
+never be committed or land where something serves them (such as
+`apps/site/dist`). `.local/` itself is refused, as is `dev:kafka`'s
+`.local/kafka-dev` (or its `LONTRA_KAFKA_DATA_DIR`) and any directory inside
+or containing it. `up` also refuses an existing directory that has files but
+no `dev-lab.json`, so `discard` never deletes another tool's data. The project
+name is recorded in `<dir>/dev-lab.json` on the first `up`, and later commands
+use it. A second local Lab therefore needs both its
 own `--dir` and its own `--project`, and cannot run at the same time as the
 first, because port 8443 is fixed by `deploy/compose.local-lab.yaml` and
 `deploy/Caddyfile.local-lab`.

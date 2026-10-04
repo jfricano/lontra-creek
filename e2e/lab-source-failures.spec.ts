@@ -8,7 +8,7 @@
  * 404, as `npm run dev` does.
  */
 import { AxeBuilder } from "@axe-core/playwright";
-import { expect, test, type Page, type Request } from "@playwright/test";
+import { expect, test, type Page, type Request, type Route } from "@playwright/test";
 import type { LabIncidentSummary, LabIntentRequest, LabOperation } from "../apps/field-station/src/lab/contract.ts";
 
 const now = () => new Date().toISOString();
@@ -408,6 +408,30 @@ test("when the lease ends while the next step has focus, focus moves to the pane
   await expect(page.locator("[data-lab-message]")).toContainText("Your lease ended", { timeout: 5_000 });
   await expect(panel(page).locator("[data-lab-incident-empty]")).toBeVisible();
   await expect(panel(page).locator("[data-lab-incident-title]")).toBeFocused();
+});
+
+test("an incident answer that arrives after a newer one is dropped, so the panel never steps back (fixture)", async ({ page }) => {
+  const established = projection({ scenarioRevision: 2, recovery: "coverage-established", nextIntent: "incident.reassess" });
+  await exercise(page, [{ statuses: ["accepted", "succeeded"], incident: established }], { incident: projection() });
+  await borrow(page);
+  await expect(act(page)).toHaveText("Make snapshot coverage ready (application action)");
+  // Hold the next poll's answer (asked while revision 1 was current) until the step's own fetch has shown revision 2.
+  const held: Route[] = [];
+  let holding = true;
+  await page.route("**/api/lab/incident", route => { if (holding) { held.push(route); return; } return route.fallback(); });
+  await expect.poll(() => held.length, { timeout: 5_000 }).toBeGreaterThan(0);
+  holding = false;
+  // Every label the next-step button shows from here on, so a step back can't hide between polls.
+  await act(page).evaluate(button => {
+    const labels: string[] = (window as unknown as { labels: string[] }).labels = [];
+    new MutationObserver(() => labels.push(button.textContent ?? "")).observe(button, { childList: true, characterData: true, subtree: true });
+  });
+  await act(page).click();
+  await expect(act(page)).toHaveText("Reassess continuation");
+  for (const route of held) await route.fulfill({ json: { status: "open", now: now(), incident: projection() } });
+  await page.waitForTimeout(1_000);
+  expect(await page.evaluate(() => (window as unknown as { labels: string[] }).labels)).toEqual(["Reassess continuation"]);
+  await expect(panel(page).locator("[data-lab-incident-recovery]")).not.toContainText("snapshot coverage not ready");
 });
 
 test("LC11-S02: a garbled reading stays held; evaluation fails and nothing is offered after it (fixture)", async ({ page }) => {

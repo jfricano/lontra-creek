@@ -235,13 +235,22 @@ async function mount(root: HTMLElement): Promise<void> {
     tracks?.showCapabilities(capabilities);
     incident.explain(capabilities, lease?.status === "ready" || lease?.status === "active");
   }
-  /** The current-incident projection: fetched only when the backend says it serves one. */
+  /** Numbers each projection fetch; `incidentShown` is the latest one rendered. */
+  let incidentAsked = 0;
+  let incidentShown = 0;
+  /**
+   * The current-incident projection: fetched only when the backend says it serves one. The
+   * poll and a finished step's own fetch can overlap: an answer to an older fetch than the
+   * one already shown is dropped, so the panel never steps back.
+   */
   async function incidentPoll(): Promise<void> {
     if (!leaseId || capabilities.kind !== "summary" || !capabilities.summary.features.incidentProjection.available) return;
     const activeSequence = sequence;
+    const asked = ++incidentAsked;
     try {
       const view = await request<LabIncidentView>("incident");
-      if (activeSequence !== sequence) return;
+      if (activeSequence !== sequence || asked < incidentShown) return;
+      incidentShown = asked;
       const state = incident.render(view, browserSteps);
       approval.update(incident.incident, Date.now() + offset);
       if (state !== null) applicationView();

@@ -271,7 +271,7 @@ runs only with `LAB_EXPIRY_TEST=1`.
 | `npm ci` in the image build fails with `SELF_SIGNED_CERT_IN_CHAIN` | Your network re-signs HTTPS; use `--extra-ca` (below). |
 | Compose says `SANDBOX_SERVICE_TOKEN` is required | A hand-made env file without it. Append one as `deploy/OPERATIONS.md` (Workbench sandbox overlay) shows, then recreate `field-station` and `sandbox` together. `npm run dev:lab` does this for you. |
 | `/workbench/` says the sandbox is not enabled | The field station has no `SANDBOX_API_URL`: the stack was started without `deploy/compose.sandbox.yaml`. Start it with `npm run dev:lab`, or add that file to a manual `docker compose` command. |
-| `/api/sandbox/status` reports `seam-unavailable` | The installed StreamOtter has no WHC-1 manifest. Run `npm ci`, then `up` (with builds). |
+| `/api/sandbox/status` reports `seam-unavailable`, or `up` stops on an unhealthy `sandbox` | The installed StreamOtter has no WHC-1 manifest (the sandbox's health check fails until the seam is available and a slot can serve). Run `npm ci`, then `up` (with builds). |
 | The site build fails with `Workbench assets: … Re-pin apps/site/src/scripts/workbench-seam.ts` | The installed `@streamotter/workbench` differs from the version and integrity the site pins. Re-pin from the installed `workbench-host.json`, as the file's comment says. |
 | Every source-failure story is listed as unavailable | See the capability summary's reason (above). With Lab benches running, that is the backend's answer, not a fault. |
 | `npm test` reports eight cancelled tests in `lab-coverage.test.ts` | It ran on Node 22. Use Node 24.15 or later. |

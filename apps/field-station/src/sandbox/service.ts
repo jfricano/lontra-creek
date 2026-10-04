@@ -122,6 +122,12 @@ export class SandboxService {
       : { bootId: this.bootId, availability: 'unavailable', reason: described.reason, runtime: null, operations: [], slots };
   }
 
+  /** Healthy while the seam is available and at least one slot can serve (ready, leased, or resetting); `slots` counts those. */
+  health(): { healthy: boolean; availability: SandboxServiceStatus['availability']; slots: number } {
+    const status = this.status(); const slots = status.slots.filter(slot => slot.state === 'ready' || slot.state === 'leased' || slot.state === 'resetting').length;
+    return { healthy: status.availability === 'available' && slots > 0, availability: status.availability, slots };
+  }
+
   async lease(id: SlotId, input: { leaseId: string; studyId: string; expiresAt: string }): Promise<SandboxServiceStatus> {
     const slot = this.#slot(id); const expires = Date.parse(input.expiresAt);
     if (!/^[\w-]{1,80}$/.test(input.leaseId) || !/^[\w-]{1,80}$/.test(input.studyId) || !(expires > this.#now())) throw invalid('Invalid lease.');
@@ -287,7 +293,10 @@ export class SandboxService {
     return createServer(async (request, response) => {
       const send = (status: number, value: unknown) => { response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); response.end(JSON.stringify(value)); };
       const url = new URL(request.url ?? '/', 'http://sandbox.invalid');
-      if (url.pathname === '/healthz') return send(200, { availability: this.status().availability });
+      if (url.pathname === '/healthz') {
+        if (request.method !== 'GET') { response.setHeader('allow', 'GET'); return send(405, { error: 'Method not allowed.' }); }
+        const health = this.health(); return send(health.healthy ? 200 : 503, { availability: health.availability, slots: health.slots });
+      }
       const provided = Buffer.from(request.headers.authorization ?? '');
       if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return send(401, { error: 'Unauthorized.' });
       try {

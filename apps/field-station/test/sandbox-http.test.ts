@@ -114,7 +114,9 @@ test('A44/A46: on a pre-WHC-1 install the production backend reports seam-unavai
 test('A43: the sandbox service API needs its bearer token, and production cannot select a test runtime', async () => {
   const service = new SandboxService({ backend: publishedBackend({ siteOrigins: [SITE], manifest: PRE_WHC1 }), slots: [1], serviceToken: SERVICE_TOKEN }); await service.start();
   await serving(service.api(), async origin => {
-    assert.equal((await fetch(`${origin}/healthz`)).status, 200);
+    const unhealthy = await fetch(`${origin}/healthz`); assert.equal(unhealthy.status, 503, 'a service that cannot serve is not healthy');
+    assert.deepEqual(await unhealthy.json(), { availability: 'unavailable', slots: 0 });
+    assert.equal((await fetch(`${origin}/healthz`, { method: 'POST' })).status, 405);
     assert.equal((await fetch(`${origin}/sandbox/v1/status`)).status, 401);
     assert.equal((await fetch(`${origin}/sandbox/v1/status`, { headers: { authorization: `Bearer ${'x'.repeat(40)}` } })).status, 401);
     const status = await (await fetch(`${origin}/sandbox/v1/status`, { headers: { authorization: `Bearer ${SERVICE_TOKEN}` } })).json() as { reason: string };
@@ -176,4 +178,19 @@ test('A44: the field station waits 3 s for a lifecycle call or status poll, and 
     assert.ok(waited >= SANDBOX_CALL_TIMEOUT_MS - 100 && waited < SANDBOX_CALL_TIMEOUT_MS + 2000, `returned after ${waited} ms`);
     assert.deepEqual(pool.status().slots, [{ slot: 1, state: 'unavailable' }]);
   } finally { silent.closeAllConnections(); silent.close(); }
+});
+
+test('A44: /healthz is 200 only while the seam is available and a slot can serve', async () => {
+  const h = await harness({ slots: 1 });
+  await serving(h.service.api(), async origin => {
+    const health = async () => { const r = await fetch(`${origin}/healthz`); return [r.status, await r.json()]; };
+    assert.deepEqual(await health(), [200, { availability: 'available', slots: 1 }]);
+    for (const method of ['POST', 'PUT', 'DELETE']) { const r = await fetch(`${origin}/healthz`, { method }); assert.equal(r.status, 405, method); assert.equal(r.headers.get('allow'), 'GET'); }
+    const s = h.session('s'); await h.join(s); await h.claim(s);
+    assert.deepEqual(await health(), [200, { availability: 'available', slots: 1 }], 'a leased slot is serving');
+    h.fixture.failClose = 2; await h.leave(s); await h.settle();
+    assert.deepEqual(await health(), [503, { availability: 'available', slots: 0 }], 'every slot failed its cleanup');
+    await h.advance(30_000); await h.advance(30_000);
+    assert.deepEqual(await health(), [200, { availability: 'available', slots: 1 }], 'healthy again once a cleanup succeeds');
+  });
 });

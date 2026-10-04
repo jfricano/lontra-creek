@@ -289,7 +289,10 @@ export interface LabIncidentSummary {
   discarded: boolean;
   /** The intent the backend would accept next, or null. */
   nextIntent: LabIntent | null;
-  /** Shown behind disclosure: the bench's own synthetic coordinates and identities. */
+  /**
+   * Shown behind disclosure: the bench's own synthetic coordinates and identities.
+   * `sourceGeneration` is always null: the generation is `lab-N-<studyId>`, and the study is private (section 8).
+   */
   detail: { topic: string; partition: number; offset: string; evidenceFingerprint: string | null; handlerIdentity: string | null; sourceGeneration: string | null };
   /** Chronological and bounded; the browser adds its own observations beside them. */
   steps: { at: string; origin: "application" | "library"; text: string }[];

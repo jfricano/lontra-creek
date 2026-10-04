@@ -3,8 +3,9 @@
  * to 12.7): operations, the incident projection, and its revision.
  *
  * An intent is checked and recorded inside the lease pool's queue: the session's
- * active lease, an idempotent `requestId`, the projection's current `scenarioRevision`
- * and the incident it names, the intent's precondition, then the action budget. It is
+ * active lease, an idempotent `requestId`, no other intent of the lease still running,
+ * the projection's current `scenarioRevision` and the incident it names, the intent's
+ * precondition, then the action budget. It is
  * answered 202 at once and carried out outside the queue, so a library call that waits
  * 15 seconds never holds up heartbeats. The bench carries out everything but
  * `scenario.prepare-coverage` (the field station's own ledger) and the scenario's
@@ -15,14 +16,15 @@
  * from the intent the visitor sent. Its `scenarioRevision` increments whenever any other
  * field changes, and each revision remembers which library incident and incident
  * revision it showed: the browser never names an incident. Native IDs (failure,
- * boundary, operation, plan) stay between the bench and the field station.
+ * boundary, operation, plan) and the study's ID (in its source generation) stay between
+ * the bench and the field station.
  */
 import { randomBytes } from 'node:crypto';
 import { StaleMutationError, type LedgerEntry } from './coverage.ts';
 import type { BenchId, BenchIncident, BenchIncidentFacts, BenchIntentRequest, BenchOperation, LabIncidentSummary, LabIncidentView, LabIntentRequest, LabOperation, LabScenarioId } from './contract.ts';
-import { LabError } from './errors.ts';
+import { BenchNotFound, LabError } from './errors.ts';
 import { scenarioRuns, type ScenarioRun } from './scenarios.ts';
-import type { LabStudies, ScenarioSink } from './studies.ts';
+import { StudyClosedError, type LabStudies, type ScenarioSink } from './studies.ts';
 
 /** How long an ended lease's operations and last projection stay readable (sections 12.6 and 12.7). */
 export const ENDED_KEPT_MS = 60_000;
@@ -60,6 +62,8 @@ interface LeaseState {
   /** The scenario the visitor last started in this lease. */
   scenario: LabScenarioId | null;
   revision: number; digest: string | null; summary: LabIncidentSummary | null;
+  /** Bench reads of the incident, numbered as they are asked for, and the newest one projected: an older answer that arrives later never rolls the projection back. */
+  reads: number; projected: number;
   /** Which library incident and incident revision each projection revision showed. */
   targets: Map<number, { failureId: string; revision: number }>;
   byRequest: Map<string, Operation>; byId: Map<string, Operation>;
@@ -167,7 +171,7 @@ export function compose(input: { facts: BenchIncidentFacts; scenario: LabScenari
         : `The saved record still fails with today's handlers${evaluation.errorClass ? ` (${evaluation.errorClass})` : ''}.`
     },
     reprocess, discarded: false, nextIntent,
-    detail: { topic: position?.topic ?? '', partition: position?.partition ?? 0, offset: position?.offset ?? '', evidenceFingerprint: incident.evidence.hash || null, handlerIdentity: incident.handlerBuildId, sourceGeneration: incident.generation },
+    detail: { topic: position?.topic ?? '', partition: position?.partition ?? 0, offset: position?.offset ?? '', evidenceFingerprint: incident.evidence.hash || null, handlerIdentity: incident.handlerBuildId, sourceGeneration: null },
     steps: kept,
     stepsGap: steps.length > kept.length || incident.history[0]?.event !== 'detected'
   };
@@ -190,6 +194,8 @@ const DETAIL: Record<string, string> = {
   'integrity-fault-open': 'An integrity fault is still open on this source.',
   'study-closed': 'The lease ended before this finished.',
   'publish-failed': 'The scenario\'s records couldn\'t be published.',
+  'prepare-failed': 'Snapshot coverage couldn\'t be released: look at the incident again.',
+  'bench-restarted': 'The bench restarted before this finished, so its outcome couldn\'t be observed. It is not repeated: look at the incident again.',
   'advance-timeout': 'StreamOtter didn\'t advance past the bad-projection record in time.',
   'not-applicable': 'That doesn\'t apply to the bench\'s current state.'
 };
@@ -214,9 +220,10 @@ export class LabIntents {
   #state(subject: string, lease: IntentLease): LeaseState {
     let state = this.#leases.get(lease.id);
     if (!state) {
-      state = { subject, leaseId: lease.id, bench: lease.bench, studyId: lease.studyId, scenario: null, revision: 1, digest: null, summary: null, targets: new Map(), byRequest: new Map(), byId: new Map(), steps: [], ended: null };
+      state = { subject, leaseId: lease.id, bench: lease.bench, studyId: lease.studyId, scenario: null, revision: 1, digest: null, summary: null, reads: 0, projected: 0, targets: new Map(), byRequest: new Map(), byId: new Map(), steps: [], ended: null };
       this.#leases.set(lease.id, state);
     }
+    state.studyId ??= lease.studyId;
     return state;
   }
   #sweep(): void { for (const [subject, state] of this.#ended) if (this.#now() - state.ended! >= ENDED_KEPT_MS) this.#ended.delete(subject); }
@@ -235,9 +242,16 @@ export class LabIntents {
   #step(state: LeaseState, text: string): void { if (state.ended !== null) return; state.steps.push({ at: iso(this.#now()), text }); if (state.steps.length > MAX_STEPS) state.steps.shift(); }
   static #view(operation: Operation): LabOperation { const { fingerprint: _f, ...visible } = operation; return visible; }
 
-  /** Composes the projection from fresh facts and moves `scenarioRevision` on when anything in it changed. */
-  async #project(state: LeaseState, facts: BenchIncidentFacts): Promise<LabIncidentView> {
+  /**
+   * Composes the projection from fresh facts and moves `scenarioRevision` on when anything in it changed.
+   * Reads run concurrently (the visitor's poll inside the queue, an operation's follow-up outside it):
+   * facts from a read older than the one already projected are stale and change nothing.
+   */
+  async #project(state: LeaseState, read: { facts: BenchIncidentFacts; seq: number }): Promise<LabIncidentView> {
+    const { facts } = read;
     const entries = this.#studies && state.studyId ? await this.#studies.runs(state.bench, state.studyId) : [];
+    if (read.seq < state.projected) return state.summary ? { status: 'open', now: iso(this.#now()), incident: state.summary } : { status: 'none', now: iso(this.#now()) };
+    if (state.ended === null) state.projected = read.seq;
     const summary = compose({ facts, scenario: state.scenario, entries, steps: state.steps, now: this.#now() });
     const digest = JSON.stringify(summary);
     if (state.ended === null && digest !== state.digest) {
@@ -252,6 +266,11 @@ export class LabIntents {
   async #facts(read: () => Promise<BenchIncidentFacts>): Promise<BenchIncidentFacts | null> {
     try { return await read(); } catch (error) { if (error instanceof LabError && error.code === 'not-applicable') return null; throw error; }
   }
+  /** A numbered read of the lease's facts (see #project); `facts` null as for #facts. */
+  async #read(state: LeaseState, read: () => Promise<BenchIncidentFacts>): Promise<{ facts: BenchIncidentFacts | null; seq: number }> {
+    const seq = ++state.reads;
+    return { facts: await this.#facts(read), seq };
+  }
 
   /** `GET /api/lab/incident`, inside the pool's queue. */
   async incident(subject: string): Promise<LabIncidentView> {
@@ -265,9 +284,9 @@ export class LabIntents {
       throw error;
     }
     const state = this.#state(subject, lease);
-    const facts = await this.#facts(() => this.#pool.read<BenchIncidentFacts>(subject, `/bench/v1/incident?leaseId=${encodeURIComponent(lease.id)}`));
+    const { facts, seq } = await this.#read(state, () => this.#pool.read<BenchIncidentFacts>(subject, `/bench/v1/incident?leaseId=${encodeURIComponent(lease.id)}`));
     if (!facts) return state.summary ? { status: 'open', now: iso(this.#now()), incident: state.summary } : { status: 'none', now: iso(this.#now()) };
-    return this.#project(state, facts);
+    return this.#project(state, { facts, seq });
   }
 
   /** `GET /api/lab/operations/<operationId>`: the session's current lease's, or one that ended within the last minute; null otherwise. */
@@ -286,9 +305,11 @@ export class LabIntents {
     const existing = state.byRequest.get(request.requestId);
     if (existing) { if (existing.fingerprint !== fingerprint) throw new LabError('not-applicable', 409); return LabIntents.#view(existing); }
     if (!state.studyId) throw new LabError('not-applicable', 409);
+    // One intent at a time: another still accepted or running would act on a projection this one can't see yet.
+    if ([...state.byId.values()].some(operation => !FINAL.has(operation.status))) throw new LabError('not-applicable', 409);
     // The projection as it is now: a stale revision, and the incident it names, are judged against the truth, not the last poll.
-    const facts = await this.#facts(() => this.#pool.read<BenchIncidentFacts>(subject, `/bench/v1/incident?leaseId=${encodeURIComponent(lease.id)}`));
-    if (facts) await this.#project(state, facts);
+    const { facts, seq } = await this.#read(state, () => this.#pool.read<BenchIncidentFacts>(subject, `/bench/v1/incident?leaseId=${encodeURIComponent(lease.id)}`));
+    if (facts) await this.#project(state, { facts, seq });
     if (request.expectedRevision !== undefined && request.expectedRevision !== state.revision) throw new LabError('not-applicable', 409);
     const target = state.targets.get(state.revision);
     const current = facts?.incident && target?.failureId === facts.incident.failureId ? target : null;
@@ -327,8 +348,8 @@ export class LabIntents {
     } catch { outcome = { status: 'unknown', outcome: 'unexpected-error' }; }
     if (state.ended !== null) return;
     // The revision the outcome produced: the projection after it, read without touching the pool.
-    const after = await this.#facts(() => this.#pool.bench<BenchIncidentFacts>(state.bench, `/bench/v1/incident?leaseId=${encodeURIComponent(state.leaseId)}`)).catch(() => null);
-    if (after && state.ended === null) await this.#project(state, after).catch(() => undefined);
+    const after = await this.#read(state, () => this.#pool.bench<BenchIncidentFacts>(state.bench, `/bench/v1/incident?leaseId=${encodeURIComponent(state.leaseId)}`)).catch(() => null);
+    if (after?.facts && state.ended === null) await this.#project(state, { facts: after.facts, seq: after.seq }).catch(() => undefined);
     if (state.ended !== null) return;
     operation.scenarioRevision = state.revision;
     this.#settle(operation, outcome);
@@ -337,7 +358,12 @@ export class LabIntents {
     const run = (await this.#studies!.runs(state.bench, state.studyId!)).find(entry => entry.status === 'withheld');
     if (!run) return { status: 'refused', outcome: 'not-applicable' };
     try { await this.#studies!.prepareCoverage(state.bench, state.studyId!, run.runId); }
-    catch { return { status: state.ended !== null ? 'cancelled' : 'failed', outcome: 'study-closed' }; }
+    catch (error) {
+      if (state.ended !== null || error instanceof StudyClosedError) return { status: 'cancelled', outcome: 'study-closed' };
+      // The visitor sees only that coverage couldn't be released; the operator needs the cause.
+      console.error(`${iso(this.#now())} Lab bench ${state.bench}: preparing coverage failed: ${(error as Error).message}`);
+      return { status: 'failed', outcome: 'prepare-failed' };
+    }
     this.#step(state, 'Snapshot coverage released: the study\'s authoritative update for the reading is served');
     return { status: 'succeeded', outcome: 'prepared' };
   }
@@ -356,7 +382,10 @@ export class LabIntents {
       if (state.ended !== null) return { status: 'cancelled', outcome: 'study-closed' };
       if (this.#now() >= deadline) return { status: 'unknown', outcome: 'timeout' };
       await new Promise(resolve => setTimeout(resolve, this.#pollMs));
-      seen = await this.#pool.bench<BenchOperation>(state.bench, `/bench/v1/operations/${operation.operationId}?leaseId=${encodeURIComponent(state.leaseId)}`).catch(() => seen);
+      const next = await this.#pool.bench<BenchOperation>(state.bench, `/bench/v1/operations/${operation.operationId}?leaseId=${encodeURIComponent(state.leaseId)}`).catch((error: unknown) => error instanceof BenchNotFound ? null : seen);
+      // The bench no longer knows the operation: its process restarted, and what the operation did can't be observed.
+      if (!next) return { status: 'unknown', outcome: 'bench-restarted' };
+      seen = next;
     }
     return { status: seen.status, outcome: seen.outcome ?? '' };
   }

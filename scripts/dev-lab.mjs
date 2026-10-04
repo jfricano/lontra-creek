@@ -39,7 +39,8 @@ export const KAFKA_DEV_DIR = ".local/kafka-dev";
 /** Fixed by deploy/compose.local-lab.yaml and deploy/Caddyfile.local-lab. */
 export const PORT = 8443;
 export const ORIGIN = `https://localhost:${PORT}`;
-export const MIN_NODE = "24.0.0";
+/** The root package.json's engines floor: earlier Node 24 releases treat `node:sqlite` as experimental, and the failure journal refuses to open on them. */
+export const MIN_NODE = "24.15.0";
 /** `!override` in deploy/compose.local-lab.yaml needs Compose 2.24.4. */
 export const MIN_COMPOSE = "2.24.4";
 /** In order: the local overlay comes last so its overrides win. */
@@ -160,7 +161,7 @@ export function isPortFree(port, host = "127.0.0.1") {
  */
 export async function checkPrerequisites({ run = capture, portFree = isPortFree, nodeVersion = process.versions.node, checkPort = true, extraCa } = {}) {
   const problems = [];
-  if (compareVersions(nodeVersion, MIN_NODE) < 0) problems.push(`Node ${MIN_NODE.split(".")[0]} or later is required; this is Node ${nodeVersion}.`);
+  if (compareVersions(nodeVersion, MIN_NODE) < 0) problems.push(`Node ${MIN_NODE} or later is required; this is Node ${nodeVersion}.`);
   const docker = await run("docker", ["--version"]);
   if (docker.status !== 0) {
     problems.push("Docker is not installed or not on PATH. Install Docker Engine or Docker Desktop.");

@@ -173,11 +173,21 @@ export function benchHandlers(number: number, options: BenchHandlerOptions): Han
     ...(options.recovery ? { sources: { field: recoveryGuard(number, { serviceToken: options.serviceToken, snapshotOrigin: options.snapshotOrigin, study: options.recovery.study, ...(options.fetch ? { fetch: options.fetch } : {}) }) } } : {})
   };
 }
+/** Variable names that hold a credential: a bench may hold only its own (benchEnvironment). */
+const CREDENTIAL = /TOKEN|SECRET|PASSWORD|PASSPHRASE|CREDENTIAL|PRIVATE|(?:^|_)KEY(?:$|_)/;
+/**
+ * The bench's settings. Its environment is checked against an allowlist of credentials,
+ * not a list of known ones: any variable named like a credential (CREDENTIAL) other than
+ * bench N's own service and relay tokens and its Kafka password refuses the start, so a
+ * secret added to the deployment later (another service's token) can't reach a bench by
+ * default. Nothing named FIELD_STATION_* is allowed either.
+ */
 export function benchEnvironment(env: NodeJS.ProcessEnv): { number: 1 | 2 | 3; serviceToken: string; relayToken: string; snapshotOrigin: string; profile: BenchFailureProfile } {
   const number = Number(env['LAB_BENCH']);
   if (![1, 2, 3].includes(number)) throw new Error('LAB_BENCH must be 1, 2, or 3.');
+  const own = new Set([`LAB_BENCH_${number}_SERVICE_TOKEN`, `LAB_BENCH_${number}_RELAY_TOKEN`, 'KAFKA_LAB_PASSWORD']);
   for (const key of Object.keys(env)) {
-    if (key.startsWith('FIELD_STATION_') || ['KAFKA_GATEWAY_PASSWORD', 'KAFKA_FIELD_STATION_PASSWORD'].includes(key) || /^LAB_BENCH_[123]_(SERVICE|RELAY)_TOKEN$/.test(key) && !key.startsWith(`LAB_BENCH_${number}_`)) throw new Error(`Production or other-bench secret forbidden: ${key}`);
+    if (key.startsWith('FIELD_STATION_') || CREDENTIAL.test(key.toUpperCase()) && !own.has(key)) throw new Error(`Production or other-bench secret forbidden: ${key}`);
   }
   const secret = (kind: string): string => { const value = env[`LAB_BENCH_${number}_${kind}_TOKEN`]; if (!value || value.length < 32) throw new Error(`Bench ${kind} token requires 32 characters.`); return value; };
   const profile = (env['LAB_FAILURE_HANDLING'] ?? 'off') as BenchFailureProfile;

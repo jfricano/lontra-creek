@@ -1,0 +1,43 @@
+name: Release pins
+
+# A pull request into main must install StreamOtter from the npm registry at an
+# exact version (scripts/check-release-pins.mjs), so a branch that carries
+# locally packed tarballs (vendor/, `file:` specs, root overrides) can be tested
+# but never merged to main, where the image and site workflows would refuse it.
+# Pull requests into any other branch (stacked branches) don't run it. `edited`
+# is included because retargeting a pull request onto main is an edit.
+#
+# The check runs the base branch's copy of the script when it has one, so a
+# pull request can't loosen the guard it is checked by.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  release-pins:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Refuse unpublished StreamOtter packages
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          if git cat-file -e "$BASE_SHA:scripts/check-release-pins.mjs" 2>/dev/null; then
+            git show "$BASE_SHA:scripts/check-release-pins.mjs" > "$RUNNER_TEMP/check-release-pins.mjs"
+          else
+            cp scripts/check-release-pins.mjs "$RUNNER_TEMP/check-release-pins.mjs"
+          fi
+          node "$RUNNER_TEMP/check-release-pins.mjs" "$GITHUB_WORKSPACE"

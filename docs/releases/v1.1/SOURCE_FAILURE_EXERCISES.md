@@ -24,7 +24,7 @@ A visitor borrows a bench, opens the Source failures track, and presses **Start 
 
 A scenario is offered only when the capability summary (`GET /api/lab/capabilities`, contract §12.3) lists it as available. That needs all of:
 
-1. The installed StreamOtter release is one this backend's Lab was verified against **for that scenario** (`VERIFIED_WITH` in `apps/field-station/src/lab/capabilities.ts`). A scenario joins that set only after its real-Kafka test passes on `npm run dev:lab`. For 0.2.0-rc.1 the set starts empty.
+1. Recorded real-Kafka evidence matches what is running (`VERIFIED_WITH` in `apps/field-station/src/lab/capabilities.ts`, contract §12.3): the installed StreamOtter release, the exact packages it was proven against (the six `streamotter` and `@streamotter/*` lockfile `integrity` values), and, for that scenario, the failure-handling profile this deployment runs. A scenario is recorded only after its real-Kafka test passes on `npm run dev:lab` under that profile. Another build of the same version (the registry release replacing the pre-publish pack) matches nothing until the suite is run on it again.
 2. The deployment has Lab benches.
 3. The deployment's failure-handling profile (`LAB_FAILURE_HANDLING`: `off`, `retry`, or `quarantine`, set alike on the field station and every bench) provides what the scenario needs, and, for S07–S09, `LAB_LOCAL_EXERCISES=1` is set.
 
@@ -84,7 +84,7 @@ Even then the hosted exercises would differ from local ones, because the hosted 
 
 Results at the real-Kafka level are recorded here and in STATUS.md. A scenario not listed is not verified on real Kafka, whatever the lower levels show.
 
-Real Kafka, `npm run dev:lab`, October 4, 2026: StreamOtter 0.2.0-rc.1 (pre-publish pack), profile `quarantine`, `KAFKA_AUTHORIZATION=acl`, `deploy/test/lab-source-failures.test.ts` 11 of 11, with no authorizer denials in the final run. Every new story is in `VERIFIED_WITH` for 0.2.0-rc.1.
+Real Kafka, `npm run dev:lab`, October 4, 2026: StreamOtter 0.2.0-rc.1 (the pre-publish pack in `vendor/`, whose six lockfile integrity values `VERIFIED_WITH` records), profile `quarantine`, `KAFKA_AUTHORIZATION=acl`, `deploy/test/lab-source-failures.test.ts` 11 of 11, with no authorizer denials in the final run. Every new story is recorded in `VERIFIED_WITH` for 0.2.0-rc.1 under `quarantine`.
 
 | Scenario | What the real run checked |
 | --- | --- |
@@ -100,7 +100,9 @@ Real Kafka, `npm run dev:lab`, October 4, 2026: StreamOtter 0.2.0-rc.1 (pre-publ
 | S09 | The quarantine copy is deleted; evaluation reports the evidence unavailable |
 | A32 | Nothing is left behind after resets; the journal directory is owner-only |
 
-The hosted default was rechecked on the same stack with `LAB_FAILURE_HANDLING=retry`, `LAB_LOCAL_EXERCISES=0` and `KAFKA_AUTHORIZATION=none`: only S06 is offered, the other seven report `deployment-restricted`, and S01, S06 and A32 pass.
+The hosted default was rechecked on the same stack with `LAB_FAILURE_HANDLING=retry`, `LAB_LOCAL_EXERCISES=0` and `KAFKA_AUTHORIZATION=none`: only S06 is offered, the other seven report `deployment-restricted`, and S01, S06 and A32 pass. S06 is therefore also recorded under `retry`; no other story is, so under `retry` nothing else would be offered even if the profile could run it. That recheck ran on a developer machine, not under the shared host's container limits.
+
+After the phase 2 review's fixes (one intent at a time, ordered projection reads, plan tokens bound to the incident revision, no study ID in the projection, and a suite that fails on any refusal it doesn't expect, asserts S04's `superseded`, and resets every bench twice in A32), both runs were repeated on October 4 with the same packages: `quarantine` with ACLs 11 of 11 with no authorizer denials, and `retry` with `KAFKA_AUTHORIZATION=none` S01, S06 and A32 passing with the other seven skipped as not offered.
 
 One limit found on the real stack: a bench container that is recreated (a new hostname) while its gateway still holds the journal lock, for example after a kill, comes back `failed`, because StreamOtter can't check a lock that names another host. The field station's reset then discards that study and the bench is ready with a new one in about a minute. A graceful stop releases the lock, and a restart in place (same hostname) resumes the same study.
 
@@ -111,16 +113,34 @@ StreamOtter 0.2.0-rc.1 is not on npm yet. To build and test the exercises before
 Until 0.2.0-rc.1 is published:
 
 - The GitHub tag `v0.2.0-rc.1` and the npm pages the site links to answer 404, and `npm install streamotter@0.2.0-rc.1` fails. An unpinned `npm install streamotter` installs 0.1.0-rc.3.
-- `scripts/check-release-pins.mjs` runs first in the Images (`images.yml`) and Deploy static site (`site.yml`) workflows and refuses this branch: StreamOtter must come from the npm registry at an exact version. No image or site build is made from the vendored packages.
-- The site's recorded workbench screenshots and creek recording say they were captured from a pre-publish tarball. The label comes from the lockfile, so it can't say npm until the packages come from the registry.
+- `scripts/check-release-pins.mjs` runs first in the Images (`images.yml`) and Deploy static site (`site.yml`) workflows and refuses this branch: StreamOtter must come from the npm registry at an exact version. No release image or deployable site is built from the vendored packages (CI still builds the site to test it).
+- The Release pins workflow (`release-pins.yml`) runs the same check on every pull request into `main`, so this branch can't be merged there while it carries the pack ([vendor/README.md](../../../vendor/README.md)).
+- The site's recorded workbench screenshots and creek recording say they were captured from a pre-publish tarball. The label comes from the lockfile, so it can't say npm until the packages come from the registry; `scripts/test/capture-provenance.test.mjs` fails whenever a recording's label and the lockfile disagree.
+- The Lab's real-Kafka evidence (`VERIFIED_WITH`) names the pack's exact packages, so on any other build of 0.2.0-rc.1 the new stories read as not verified until the suite is run on it.
 
-After 0.2.0-rc.1 is published and verified on npm (rollout plan, step 1), one commit:
+After 0.2.0-rc.1 is published and verified on npm (rollout plan, step 1), one commit does all of the following, and passes the checks below before it is pushed:
 
-1. Removes `vendor/`, the `file:` specs in `apps/field-station/package.json` and `apps/site/package.json`, the root `overrides`, and the two `COPY vendor vendor` lines in `deploy/Dockerfile`.
-2. Pins `streamotter` to `0.2.0-rc.1` exactly in both apps and regenerates `package-lock.json` from the registry.
-3. Re-pins `PUBLISHED_SEAM` in `apps/site/src/scripts/workbench-seam.ts` (version and the sha384 integrity of `app.js` and `workbench-host.css`) from the **published** tarball's `workbench-host.json`. `apps/site/test/workbench-seam.test.ts` and the site build fail until it matches the installed files.
+1. Removes `vendor/`, the `file:` specs in `apps/field-station/package.json` and `apps/site/package.json`, the root `overrides`, and the two `COPY vendor vendor` lines in `deploy/Dockerfile` (with their comment).
+2. Pins `streamotter` to `0.2.0-rc.1` exactly in both apps and regenerates `package-lock.json` from the registry. `node scripts/check-release-pins.mjs` then passes.
+3. Re-pins `PUBLISHED_SEAM` in `apps/site/src/scripts/workbench-seam.ts` (version and the sha384 integrity of `app.js` and `workbench-host.css`) from the **published** tarball's `workbench-host.json`, and drops that file's pre-publish comment. `apps/site/test/workbench-seam.test.ts` and the site build fail until it matches the installed files.
+4. Re-records the real-Kafka evidence for the registry install: `deploy/test/lab-source-failures.test.ts` and `deploy/test/sandbox.test.ts` run again on `npm run dev:lab` built from the new lockfile (under `quarantine` with ACLs, and S06 again under `retry` with `KAFKA_AUTHORIZATION=none`), and `VERIFIED_WITH` gets the registry packages' six integrity values and only the scenarios and profiles that passed (contract §12.3). `apps/field-station/test/lab-capabilities.test.ts` fails until it does, so the commit can't pass `npm test` on the old evidence. The run's date and results replace the October 4 ones here, in STATUS.md, in LOCAL_LAB.md's status, and in the Lab contract (§10.9's evidence, §11, §12.3).
+5. Recaptures both recordings from the registry install ([content verification](../../research/content-verification.md)): `node scripts/capture-demo.ts` (`apps/site/public/recordings/creek.json`) and `node scripts/capture-workbench.mjs` (`apps/site/public/recordings/workbench/`). Their labels then say npm; `scripts/test/capture-provenance.test.mjs` fails until both are retaken. Update the October 4 capture note in `docs/research/content-verification.md`.
+6. Rewrites what describes the pre-publish pack as current, so no link points at the removed `vendor/` and no page says the release isn't on npm:
+   - `README.md`: the "This branch builds against an unpublished release" banner and the `vendor` row of the layout table.
+   - `docs/LOCAL_LAB.md`: the requirements' sentence about `npm ci` installing from `vendor/`, with its link.
+   - This page: the "Pre-publish packages, and their removal" section (its `vendor/README.md` links and the list above become a short record of the switch), the opening line's "against a pre-publish pack", and the evidence paragraphs' "pre-publish pack" wording.
+   - `docs/DEPLOYMENT_PLAN.md`: the npm-only rule's parenthesis about the phase 2 branch and `vendor/`.
+   - `docs/releases/v1.1/STATUS.md`: the phase 2 bullet ("built and tested against a pre-publish pack … in `vendor/`") and the gates that say "not on npm yet" or "uses the pre-publish pack".
+   - `docs/releases/v1.1/IMPLEMENTATION_PLAN.md`: the October 4 update's "not on npm yet … pre-publish pack of it in `vendor/`".
+   - `docs/releases/v1.1/UPSTREAM_REQUIREMENTS.md`: the October 4 update paragraph and the "not on npm yet" states of R7–R12.
+   - `docs/releases/v1.1/README.md`: the state line, the phase 2 heading's "against a pre-publish pack", and the "Only after npm publication" paragraph.
+   - `docs/releases/v1.1/RELEASE_HANDOFF.md` and `docs/releases/0.2.0-rc.1/ROLLOUT_PLAN.md` (step 1's "the branch's temporary pre-publish tarballs (`vendor/`) must be removed"): with their owners, since those plans are kept by the rollout thread.
+   - `docs/PLAN.md` ("not on npm yet") and `docs/research/release-facts.md` ("vendored pre-publish tarballs").
+   - Comments that name the pack: `apps/site/test/site-content.test.ts` and `apps/field-station/src/lab/capabilities.ts` (`VERIFIED_WITH`).
 
-Then `node scripts/check-release-pins.mjs` passes, and the usual checks run on Node 24: `npm run typecheck`, `npm test`, the site build, `npm run check:site`, and `npm run test:browser`. Recapturing the recordings from the registry install ([content verification](../../research/content-verification.md)) changes their labels to npm. The pin PR also re-runs the Lab threat model's §10.2 and checks S1–S6 against the published package (Lab contract R4), and needs its own review and devops reconciliation before Jason merges it.
+   `grep -rn "pre-publish\|vendor/\|not on npm" --include=*.md --include=*.ts --include=*.mjs .` (outside `node_modules`) then finds only history: dated notes that say what was true on October 4.
+
+Then the usual checks run on Node 24: `npm run typecheck`, `npm test`, the site build, `npm run check:site`, and `npm run test:browser`. The pin PR also re-runs the Lab threat model's §10.2 and checks S1–S6 against the published package (Lab contract R4), and needs its own review and devops reconciliation before Jason merges it.
 
 ## Decisions and contracts
 

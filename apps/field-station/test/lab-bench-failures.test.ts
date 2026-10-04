@@ -158,16 +158,19 @@ describe('the snapshot\'s boundary acknowledgment', () => {
 describe('plan tokens', () => {
   const binding = (over: Partial<Parameters<PlanTokens['mint']>[0]> = {}) => ({ leaseId: 'lease-1', studyId: STUDY, failureId: 'f1:a', incidentRevision: 3, planId: 'pl1:x', fingerprint: 'fp', expiresAt: 10_000, ...over });
 
-  test('single use, bound to lease, study, and incident, and expiring', () => {
+  test('single use, bound to lease, study, incident, and its revision, and expiring', () => {
     let now = 0; const tokens = new PlanTokens(() => now);
     const token = tokens.mint(binding());
     assert.match(token, /^[A-Za-z0-9_-]{43}$/);
     assert.deepEqual(tokens.current('f1:a', 3), { token, expiresAt: 10_000 });
     assert.equal(tokens.current('f1:a', 4), null, 'another revision has no token');
-    for (const scope of [{ leaseId: 'lease-2', studyId: STUDY, failureId: 'f1:a' }, { leaseId: 'lease-1', studyId: 'studyBBBBBBBBBBB', failureId: 'f1:a' }, { leaseId: 'lease-1', studyId: STUDY, failureId: 'f1:b' }]) assert.equal(tokens.take(token, scope), 'plan-unknown');
-    const scope = { leaseId: 'lease-1', studyId: STUDY, failureId: 'f1:a' };
+    for (const scope of [{ leaseId: 'lease-2', studyId: STUDY, failureId: 'f1:a', incidentRevision: 3 }, { leaseId: 'lease-1', studyId: 'studyBBBBBBBBBBB', failureId: 'f1:a', incidentRevision: 3 }, { leaseId: 'lease-1', studyId: STUDY, failureId: 'f1:b', incidentRevision: 3 }]) assert.equal(tokens.take(token, scope), 'plan-unknown');
+    const scope = { leaseId: 'lease-1', studyId: STUDY, failureId: 'f1:a', incidentRevision: 3 };
     assert.equal((tokens.take(token, scope) as { planId: string }).planId, 'pl1:x');
     assert.equal(tokens.take(token, scope), 'plan-unknown', 'spent');
+    const moved = tokens.mint(binding());
+    assert.equal(tokens.take(moved, { ...scope, incidentRevision: 4 }), 'stale-revision', 'the incident moved on since the evaluation');
+    assert.equal(tokens.take(moved, scope), 'plan-unknown', 'and the stale token is spent');
     const late = tokens.mint(binding()); now = 10_000;
     assert.equal(tokens.current('f1:a', 3), null);
     assert.equal(tokens.take(late, scope), 'plan-expired');
@@ -176,8 +179,26 @@ describe('plan tokens', () => {
   test('at most MAX_TOKENS are kept, oldest forgotten first', () => {
     const tokens = new PlanTokens(() => 0);
     const minted = Array.from({ length: MAX_TOKENS + 1 }, (_, i) => tokens.mint(binding({ failureId: `f1:${i}` })));
-    assert.equal(tokens.take(minted[0]!, { leaseId: 'lease-1', studyId: STUDY, failureId: 'f1:0' }), 'plan-unknown');
-    assert.notEqual(typeof tokens.take(minted.at(-1)!, { leaseId: 'lease-1', studyId: STUDY, failureId: `f1:${MAX_TOKENS}` }), 'string');
+    assert.equal(tokens.take(minted[0]!, { leaseId: 'lease-1', studyId: STUDY, failureId: 'f1:0', incidentRevision: 3 }), 'plan-unknown');
+    assert.notEqual(typeof tokens.take(minted.at(-1)!, { leaseId: 'lease-1', studyId: STUDY, failureId: `f1:${MAX_TOKENS}`, incidentRevision: 3 }), 'string');
+  });
+
+  test('an approval redrives at the revision its plan was evaluated at, and refuses one sent for another', async () => {
+    const failures = new BenchFailures({ number: 1, studyId: STUDY });
+    const redrives: unknown[] = [];
+    const api = {
+      evaluate: async () => ({ validation: 'valid', eligible: true, ineligibleReason: null, errors: [], outputs: [{}], plan: { planId: 'pl1:x', fingerprint: 'fp', expiresAt: new Date(Date.now() + 60_000).toISOString() } }),
+      redrive: async (input: unknown) => { redrives.push(input); return { operationId: 'op1:r', result: 'completed', outcome: 'superseded', incidentRevision: 3 }; }
+    } as unknown as OperatorApi;
+    const at = (revision: number, planToken?: string) => ({ leaseId: 'lease-1', operationId: `lop_${'r'.repeat(21)}${revision}`, intent: planToken ? 'incident.approve-reprocess' as const : 'incident.evaluate' as const, incident: { failureId: 'f1:a', revision }, ...(planToken ? { planToken } : {}) });
+    assert.equal((await failures.incident(api, at(3), Infinity)).status, 'succeeded');
+    const token = failures.tokens.current('f1:a', 3)!.token;
+    assert.deepEqual(await failures.incident(api, at(4, token), Infinity), { status: 'refused', outcome: 'stale-revision', incidentRevision: null });
+    assert.deepEqual(redrives, [], 'nothing was redriven');
+    assert.equal((await failures.incident(api, at(3), Infinity)).status, 'succeeded');
+    const fresh = failures.tokens.current('f1:a', 3)!.token;
+    assert.equal((await failures.incident(api, at(3, fresh), Infinity)).outcome, 'superseded');
+    assert.deepEqual(redrives.map(input => (input as { expectedRevision: number }).expectedRevision), [3]);
   });
 });
 

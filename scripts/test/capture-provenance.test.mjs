@@ -27,3 +27,14 @@ test("the installed streamotter is described by its own version and lockfile ent
   assert.equal(described.install, installSource(lock.packages["node_modules/streamotter"].resolved));
   assert.equal(described.platform, platformName());
 });
+
+test("the committed recordings' labels match the install the lockfile describes", () => {
+  // When the lockfile moves to the registry release, this fails until both captures are taken
+  // again from that install (SOURCE_FAILURE_EXERCISES.md, the post-publish commit's recapture step).
+  const described = installedStreamotter(root);
+  const workbench = JSON.parse(readFileSync(new URL("apps/site/public/recordings/workbench/capture.json", root), "utf8"));
+  assert.deepEqual([workbench.version, workbench.install], [described.version, described.install], "recordings/workbench/capture.json: rerun scripts/capture-workbench.mjs");
+  const creek = JSON.parse(readFileSync(new URL("apps/site/public/recordings/creek.json", root), "utf8"));
+  const from = described.install === "published npm" ? "npm" : "a pre-publish tarball";
+  assert.ok(creek.where.includes(`streamotter@${described.version} from ${from},`), `recordings/creek.json says "${creek.where}": rerun scripts/capture-demo.ts`);
+});

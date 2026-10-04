@@ -25,11 +25,11 @@ Updated October 4, 2026 · The live tracker for [IMPLEMENTATION_PLAN.md](IMPLEME
 
 | Gate | State |
 | --- | --- |
-| Published workbench seam (R1–R6) | Defined by StreamOtter as WHC-1 rev 0.1 (StreamOtter PR #12), not yet implemented; R11 and R12 sent back |
-| Published native failure APIs (R7–R9) | Planned in StreamOtter V1.1 |
+| Published workbench seam (R1–R6) | WHC-1 rev 0.3 (with R11 and R12) is in StreamOtter's combined V1.1 PR (#55) and ships in 0.2.0-rc.1; not on npm yet |
+| Published native failure APIs (R7–R9) | In StreamOtter's combined V1.1 PR (#55), shipping in 0.2.0-rc.1; not on npm yet |
 | Hosted Kafka authorization | Built and tested locally and in CI (#33, default `none` on the host); turning it on waits for Jason's approval (LC11-ADR-03, `deploy/OPERATIONS.md`) |
 | Sandbox host capacity | Waits for local measurement, then Jason (LC11-ADR-04) |
-| Site deployment | Waits for Jason |
+| Site deployment | Waits for Jason; see [RELEASE_HANDOFF.md](RELEASE_HANDOFF.md) |
 
 ## Acceptance coverage
 

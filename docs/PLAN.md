@@ -52,7 +52,7 @@ Den sites are restricted to researchers, as real studies restrict them to preven
 | `/` | Why would I use this? | The live creek hero on a real subscription (a labeled recording when the demo is down), three-step integration with type-checked code, the live-or-stale promise, a workbench preview, Get started and Try the demo. |
 | `/field-station` | What does it look like running? | The guided walkthrough (below), the creek map, and an under-the-hood panel: states, epochs, revisions, and the code behind each step. |
 | `/lab` | What happens when it breaks? | The Failure Lab (below). |
-| `/playground` | What's it like to set up? | Edit a `streamotter.json` with the real validator running in the browser; generated types once the library can generate in a browser; a labeled console that subscribes to the field station; recorded CLI sessions. |
+| `/playground` | What's it like to set up? | Edit a `streamotter.json` with the real validator running in the browser; generated types once the library can generate in a browser; and a labeled console that subscribes to the field station. |
 | `/workbench` | What tools do I get? | A tour of Connect, Define, Preview, Inspect, and Export from screenshots Playwright captures from the workbench installed from npm, plus a recorded session. |
 | `/when-it-breaks` | How does it fail, exactly? | Each failure mode: the state it produces, the `StreamError` the application receives, whether it retries, handling code, and an interactive state diagram. |
 | `/docs` | How do I build with it? | A map of the documentation linking to the guides on GitHub and the package pages on npm. The site doesn't copy them. |

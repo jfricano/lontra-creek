@@ -12,6 +12,7 @@ import { LabError } from '../src/lab/errors.ts';
 import { AddressCap } from '../src/places.ts';
 import type { SessionClaims } from '../src/sessions.ts';
 import { SANDBOX_SWEEP_MS } from '../src/sandbox/leases.ts';
+import { SandboxFault } from '../src/sandbox/operations.ts';
 import { SlotError } from '../src/sandbox/seam.ts';
 import { SandboxService } from '../src/sandbox/service.ts';
 import { StreamOtterError } from 'streamotter/contracts';
@@ -205,7 +206,7 @@ test('A42: reset rotates the study and invalidates previews, trace cursors, and 
   const failed = h.opSlow(s, 'traces', {});
   while (!newest.hold) await new Promise(r => setImmediate(r));
   await h.reset(s);
-  await assert.rejects(failed, code('stale-study'));
+  await assert.rejects(failed, (e: unknown) => e instanceof SandboxFault && e.code === 'stale-study' && e.wbStatus === 410 && e.wbCode === 'TRACE_CURSOR_EXPIRED', 'a traces request from the old study is 410, so the workbench pages again');
   assert.ok(newest.closed); await h.settle();
   const kept = h.view(s); assert.ok(kept.status === 'active', 'the reset kept the lease'); assert.equal(kept.leaseId, first.leaseId); assert.equal(kept.slot, first.slot);
 });

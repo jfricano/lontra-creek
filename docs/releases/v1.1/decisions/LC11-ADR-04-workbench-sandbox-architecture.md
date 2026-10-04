@@ -1,6 +1,6 @@
 # LC11-ADR-04 — Workbench sandbox architecture
 
-Status: **Accepted for implementation of the session layer** (October 3, 2026). The runtime binding is finalized against the published seam: see the [W9a amendment](#amendment-w9a-binding-to-streamotter-020-rc1-october-4-2026), which supersedes the slot ports, the "never listened on" management service, and the single development principal below. · Slices: W2, W3, W9a · Companion plan §3 "Workbench sandbox on the existing route" · Acceptance: LC11-A41–A46
+Status: **Accepted for implementation of the session layer** (October 3, 2026). The runtime binding is finalized against the published seam: see the [W9a amendment](#amendment-w9a-binding-to-streamotter-020-rc1-october-4-2026), which supersedes the slot ports, the "never listened on" management service, and the single development principal of the original decision. The diagram below shows the amended ports and listener. · Slices: W2, W3, W9a · Companion plan §3 "Workbench sandbox on the existing route" · Acceptance: LC11-A41–A46
 
 ## Context
 
@@ -14,13 +14,13 @@ Status: **Accepted for implementation of the session layer** (October 3, 2026). 
 browser, https://streamotter.dev/workbench/
   ├─ published workbench UI (WHC-1 boot block written after allocation, then app.js)
   │    └─ fetch, credentials ──▶ /api/sandbox/* and /api/sandbox/wb/v1/*      Caddy ─▶ field-station:7402   sessions, queue, op allowlist
-  └─ preview SDK WebSocket ─────────────────────────────▶ /sandbox/N/socket.io/ Caddy (Origin check) ─▶ sandbox:76N0
+  └─ preview SDK WebSocket ─────────────────────────────▶ /sandbox/N/socket.io/ Caddy (Origin check) ─▶ sandbox:760N
 
 field-station ──service token──▶ sandbox:7620   sandbox API, Compose network only
 
 sandbox (one container, K slots, default K = 3)
-  slot N gateway        :76N0          createGateway({ mode: "development" }) on synthetic fixture sources
-  slot N management     in-process     the seam's management service; never listened on, never routed
+  slot N gateway        :760N          createGateway({ mode: "development" }) on synthetic fixture sources
+  slot N management     127.0.0.1:any  createManagementHandler per study, per-study key; never published or routed
   sandbox API           :7620          slot lease, credential minting, operation execution, reset
 ```
 

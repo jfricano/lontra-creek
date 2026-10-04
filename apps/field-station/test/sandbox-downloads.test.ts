@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { SandboxReproBundle } from '../src/sandbox/contract.ts';
 import { fixtureBase } from './support/sandbox-fixture.ts';
+import { SandboxFault } from '../src/sandbox/operations.ts';
 import { code, harness, SERVICE_TOKEN, wb } from './support/sandbox-harness.ts';
 
 const leaks = (text: string, extra: string[]) => [SERVICE_TOKEN, 'lc_session', '/etc/', '/home/', 'Bearer', 'requestId', 'subscriptionId', 'req-', 'sub-', ...extra].filter(s => text.includes(s));
@@ -55,4 +56,12 @@ test('A45: status reports the running service\'s mode and package identity, or a
   const h = await harness();
   const status = h.pool.status(); assert.equal(status.availability, 'available'); assert.deepEqual(status.runtime, { packages: { streamotter: '0.1.0-rc.3', workbench: '0.1.0-rc.3' }, mode: 'synthetic-fixture', contractVersion: null });
   const s = h.session('s'); const lease = await h.join(s); assert.ok(lease.status === 'ready' && lease.runtime.mode === 'synthetic-fixture');
+});
+
+test('A45: a reproduction bundle that would carry a host path is withheld: 400 invalid-request, and the lease is kept', async () => {
+  const h = await harness({ slots: 1 }); const s = h.session('s'); await h.join(s); await h.claim(s);
+  h.fixture.current(1).traces.push({ id: 'odd', requestId: 'r', at: new Date(h.clock()).toISOString(), stage: 'source', outcome: 'failed', sourceId: '/etc/lontra/kafka/ca.pem' });
+  await h.advance(1000);
+  await assert.rejects(h.pool.repro(s), (e: unknown) => e instanceof SandboxFault && e.code === 'invalid-request' && e.status === 400 && /withheld/.test(e.message));
+  assert.equal(h.view(s).status, 'active');
 });

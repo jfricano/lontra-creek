@@ -97,6 +97,29 @@ test("the feed opens on the scenario view, marks the retried record, and says ho
   await expect(feed).toContainText("send ok · station · your view");
 });
 
+test("a new action clears the previous scenario's outcome", async ({ page }) => {
+  const pages = [
+    [feedItem({ kind:"action", action:"sensor.foul" }), feedItem({ kind:"record", stationId:"LC-03", topic:"lab-1.field.gauges", partition:0, offset:"246", outcome:"failed" }),
+      feedItem({ kind:"source", sourceId:"field", status:"paused", reason:"HANDLER_FAILED" })],
+    [feedItem({ kind:"action", action:"source.resume" }), feedItem({ kind:"record", stationId:"LC-03", topic:"lab-1.field.gauges", partition:0, offset:"246", outcome:"processed" }), feedItem({ kind:"source", sourceId:"field", status:"healthy" })]
+  ];
+  let restarted = false;
+  await page.route("**/api/lab/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/status")) return route.fulfill({ json:{ enabled:true, now:now(), benches:[{ bench:1, state:"leased" }], queueLength:0, nextFreeAt:null } });
+    if (path.endsWith("/lease/token")) return route.fulfill({ json:token });
+    if (path.endsWith("/trace")) { const items = pages.shift() ?? []; return route.fulfill({ json:{ items, next:items.at(-1)?.id ?? "fixture-lease:0", gap:false } }); }
+    if (path.endsWith("/actions")) { restarted = route.request().postDataJSON().action === "gateway.restart"; return route.fulfill({ json:{ nextActionAt:now(), benchState:state } }); }
+    return route.fulfill({ json:ready() });
+  });
+  await page.goto("/lab/"); await page.locator("[data-lab-join]").click();
+  const outcome = page.locator("[data-lab-outcome]");
+  await expect(outcome).toContainText("retried the same record, offset 246");
+  await page.locator('[data-lab-action="gateway.restart"]').click();
+  await expect.poll(() => restarted).toBe(true);
+  await expect(outcome).toHaveText("");
+});
+
 test("the slow-client scenario ends with a visible outcome", async ({ page }) => {
   const pages = [[feedItem({ kind:"action", action:"satellite.start" }), feedItem({ kind:"bench", event:"satellite-connected" })],
     [feedItem({ kind:"bench", event:"satellite-disconnected" })],

@@ -246,7 +246,12 @@ async function mount(root: HTMLElement): Promise<void> {
   root.querySelectorAll<HTMLButtonElement>("[data-lab-action]").forEach(button => button.addEventListener("click", () => {
     if (actionBusy) return; actionBusy = true; actions.disabled = true;
     const action = button.dataset["labAction"] as LabAction; const from = revision;
-    void request<LabActionResult>("actions", { action }).then(result => { nextActionAt = Date.parse(result.nextActionAt); benchState(result.benchState); if (action === "satellite.start") { satelliteFrom = from; outcome.textContent = ""; } })
+    void request<LabActionResult>("actions", { action }).then(result => {
+      nextActionAt = Date.parse(result.nextActionAt); benchState(result.benchState);
+      // A new action starts a new story: the last one's outcome no longer describes the bench.
+      if (action === "satellite.start") satelliteFrom = from;
+      outcome.textContent = "";
+    })
       .catch(failed).finally(() => { actionBusy = false; });
   }));
   let pollTick = 0;

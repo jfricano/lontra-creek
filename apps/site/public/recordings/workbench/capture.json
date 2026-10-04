@@ -1,12 +1,40 @@
 {
-  "version": "0.1.0-rc.3",
-  "capturedAt": "2026-09-27T22:41:01.428Z",
-  "source": "Published npm workbench; CLI-generated fixture project on loopback",
+  "version": "0.2.0-rc.1",
+  "capturedAt": "2026-10-04T14:20:20.809Z",
+  "install": "pre-publish tarball",
+  "platform": "Linux",
+  "source": "Workbench from a pre-publish tarball, not from npm; CLI-generated fixture project on loopback, Linux",
   "viewport": {
     "width": 1280,
     "height": 900
   },
-  "node": "v26.9.0",
+  "node": "v24.21.0",
+  "images": {
+    "connect": {
+      "width": 1280,
+      "height": 900
+    },
+    "define": {
+      "width": 1280,
+      "height": 935
+    },
+    "preview": {
+      "width": 1280,
+      "height": 957
+    },
+    "updated": {
+      "width": 1280,
+      "height": 985
+    },
+    "inspect": {
+      "width": 1280,
+      "height": 1344
+    },
+    "export": {
+      "width": 1280,
+      "height": 900
+    }
+  },
   "steps": [
     "Connect: inspect the fixture source",
     "Define: inspect the channel and schemas",

@@ -9,6 +9,7 @@
  */
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
+import capture from "../apps/site/public/recordings/workbench/capture.json" with { type: "json" };
 
 /** Each card's state chip, scoped to the live panel so it never matches the
  *  static state-name chips in the "no silent failures" section further down
@@ -100,4 +101,13 @@ test.describe("home page V1.1 panel (LC11-A01, A02, A40)", () => {
     await expect(card).toContainText("The Source failures track also lists the quarantine exercises that wait for StreamOtter V1.1.");
     await expect(page.locator("main")).not.toContainText(/four controlled failures/i);
   });
+});
+
+test("the workbench screenshot is captioned from its own capture, not the site's pin", async ({ page }) => {
+  await page.goto("/");
+  const capturedOn = new Date(capture.capturedAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
+  await expect(page.locator("[data-workbench-caption]")).toHaveText(`Recording · ${capturedOn} · streamotter@${capture.version} · local fixture project, not the hosted demo.`);
+  const shot = page.locator("#workbench-preview img.workbench-shot");
+  await expect(shot).toHaveAttribute("width", String(capture.images.preview.width));
+  await expect(shot).toHaveAttribute("height", String(capture.images.preview.height));
 });

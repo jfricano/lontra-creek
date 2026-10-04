@@ -1,10 +1,10 @@
 {
-  "recordedAt": "2026-09-27T22:38:28.383Z",
-  "where": "Local fixture run on macOS; published streamotter@0.1.0-rc.3, no Kafka; one simulation tick per two seconds",
-  "durationMs": 16305,
+  "recordedAt": "2026-10-04T14:19:51.631Z",
+  "where": "Local fixture run on Linux; streamotter@0.2.0-rc.1 from a pre-publish tarball, no Kafka; one simulation tick per two seconds",
+  "durationMs": 16351,
   "events": [
     {
-      "atMs": 10,
+      "atMs": 23,
       "card": 0,
       "type": "state",
       "change": {
@@ -12,7 +12,7 @@
       }
     },
     {
-      "atMs": 11,
+      "atMs": 24,
       "card": 1,
       "type": "state",
       "change": {
@@ -20,7 +20,7 @@
       }
     },
     {
-      "atMs": 11,
+      "atMs": 24,
       "card": 2,
       "type": "state",
       "change": {
@@ -28,7 +28,7 @@
       }
     },
     {
-      "atMs": 13,
+      "atMs": 32,
       "card": 0,
       "type": "state",
       "change": {
@@ -36,7 +36,7 @@
       }
     },
     {
-      "atMs": 13,
+      "atMs": 32,
       "card": 1,
       "type": "state",
       "change": {
@@ -44,7 +44,7 @@
       }
     },
     {
-      "atMs": 13,
+      "atMs": 32,
       "card": 2,
       "type": "state",
       "change": {
@@ -52,11 +52,11 @@
       }
     },
     {
-      "atMs": 13,
+      "atMs": 32,
       "card": 0,
       "type": "data",
       "event": {
-        "id": "dce8de23-8575-4089-ba91-0a718497e0f9",
+        "id": "1b868b16-6d99-445c-a527-a1042aef1090",
         "channel": "station",
         "channelVersion": 1,
         "kind": "snapshot",
@@ -77,15 +77,15 @@
           "weather": "clear"
         },
         "revision": "1000000000000",
-        "receivedAt": "2026-09-27T22:38:28.396Z"
+        "receivedAt": "2026-10-04T14:19:51.661Z"
       }
     },
     {
-      "atMs": 14,
+      "atMs": 32,
       "card": 1,
       "type": "data",
       "event": {
-        "id": "3c02cc70-cd13-47ec-b504-42a1fe33458a",
+        "id": "a2f9c457-4b86-4348-b1d1-2ed8b617f41c",
         "channel": "otter",
         "channelVersion": 1,
         "kind": "snapshot",
@@ -109,15 +109,15 @@
           "note": "Resting in bank cover."
         },
         "revision": "1000000000000",
-        "receivedAt": "2026-09-27T22:38:28.396Z"
+        "receivedAt": "2026-10-04T14:19:51.661Z"
       }
     },
     {
-      "atMs": 14,
+      "atMs": 32,
       "card": 2,
       "type": "data",
       "event": {
-        "id": "e0a4c2c8-d847-472f-ab7b-437e3a680bfd",
+        "id": "d3de9f66-ee3e-45c1-bf1c-ba8c0ec732fd",
         "channel": "station",
         "channelVersion": 1,
         "kind": "snapshot",
@@ -138,11 +138,11 @@
           "weather": "clear"
         },
         "revision": "1000000000000",
-        "receivedAt": "2026-09-27T22:38:28.396Z"
+        "receivedAt": "2026-10-04T14:19:51.661Z"
       }
     },
     {
-      "atMs": 14,
+      "atMs": 34,
       "card": 0,
       "type": "state",
       "change": {
@@ -150,7 +150,7 @@
       }
     },
     {
-      "atMs": 14,
+      "atMs": 34,
       "card": 1,
       "type": "state",
       "change": {
@@ -158,7 +158,7 @@
       }
     },
     {
-      "atMs": 14,
+      "atMs": 34,
       "card": 2,
       "type": "state",
       "change": {
@@ -166,7 +166,7 @@
       }
     },
     {
-      "atMs": 2022,
+      "atMs": 2055,
       "card": 0,
       "type": "data",
       "event": {
@@ -191,11 +191,11 @@
           "weather": "clear"
         },
         "revision": "1000000000001",
-        "receivedAt": "2026-09-27T22:38:30.404Z"
+        "receivedAt": "2026-10-04T14:19:53.682Z"
       }
     },
     {
-      "atMs": 2022,
+      "atMs": 2055,
       "card": 2,
       "type": "data",
       "event": {
@@ -220,11 +220,11 @@
           "weather": "clear"
         },
         "revision": "1000000000001",
-        "receivedAt": "2026-09-27T22:38:30.405Z"
+        "receivedAt": "2026-10-04T14:19:53.683Z"
       }
     },
     {
-      "atMs": 2022,
+      "atMs": 2055,
       "card": 1,
       "type": "data",
       "event": {
@@ -252,11 +252,11 @@
           "note": "At a den site. Den locations are shared only with researchers."
         },
         "revision": "1000000000001",
-        "receivedAt": "2026-09-27T22:38:30.405Z"
+        "receivedAt": "2026-10-04T14:19:53.683Z"
       }
     },
     {
-      "atMs": 4027,
+      "atMs": 4065,
       "card": 0,
       "type": "data",
       "event": {
@@ -281,11 +281,11 @@
           "weather": "clear"
         },
         "revision": "1000000000002",
-        "receivedAt": "2026-09-27T22:38:32.410Z"
+        "receivedAt": "2026-10-04T14:19:55.694Z"
       }
     },
     {
-      "atMs": 4027,
+      "atMs": 4065,
       "card": 2,
       "type": "data",
       "event": {
@@ -310,11 +310,11 @@
           "weather": "clear"
         },
         "revision": "1000000000002",
-        "receivedAt": "2026-09-27T22:38:32.410Z"
+        "receivedAt": "2026-10-04T14:19:55.694Z"
       }
     },
     {
-      "atMs": 6031,
+      "atMs": 6071,
       "card": 0,
       "type": "data",
       "event": {
@@ -339,11 +339,11 @@
           "weather": "clear"
         },
         "revision": "1000000000003",
-        "receivedAt": "2026-09-27T22:38:34.413Z"
+        "receivedAt": "2026-10-04T14:19:57.700Z"
       }
     },
     {
-      "atMs": 6031,
+      "atMs": 6071,
       "card": 2,
       "type": "data",
       "event": {
@@ -368,11 +368,11 @@
           "weather": "clear"
         },
         "revision": "1000000000003",
-        "receivedAt": "2026-09-27T22:38:34.414Z"
+        "receivedAt": "2026-10-04T14:19:57.701Z"
       }
     },
     {
-      "atMs": 8033,
+      "atMs": 8076,
       "card": 0,
       "type": "data",
       "event": {
@@ -397,11 +397,11 @@
           "weather": "clear"
         },
         "revision": "1000000000004",
-        "receivedAt": "2026-09-27T22:38:36.416Z"
+        "receivedAt": "2026-10-04T14:19:59.704Z"
       }
     },
     {
-      "atMs": 8033,
+      "atMs": 8076,
       "card": 2,
       "type": "data",
       "event": {
@@ -426,11 +426,11 @@
           "weather": "clear"
         },
         "revision": "1000000000004",
-        "receivedAt": "2026-09-27T22:38:36.416Z"
+        "receivedAt": "2026-10-04T14:19:59.705Z"
       }
     },
     {
-      "atMs": 10036,
+      "atMs": 10083,
       "card": 0,
       "type": "data",
       "event": {
@@ -455,11 +455,11 @@
           "weather": "clear"
         },
         "revision": "1000000000005",
-        "receivedAt": "2026-09-27T22:38:38.419Z"
+        "receivedAt": "2026-10-04T14:20:01.711Z"
       }
     },
     {
-      "atMs": 10036,
+      "atMs": 10083,
       "card": 2,
       "type": "data",
       "event": {
@@ -484,11 +484,11 @@
           "weather": "clear"
         },
         "revision": "1000000000005",
-        "receivedAt": "2026-09-27T22:38:38.419Z"
+        "receivedAt": "2026-10-04T14:20:01.712Z"
       }
     },
     {
-      "atMs": 12042,
+      "atMs": 12087,
       "card": 0,
       "type": "data",
       "event": {
@@ -513,11 +513,11 @@
           "weather": "clear"
         },
         "revision": "1000000000006",
-        "receivedAt": "2026-09-27T22:38:40.423Z"
+        "receivedAt": "2026-10-04T14:20:03.716Z"
       }
     },
     {
-      "atMs": 12042,
+      "atMs": 12087,
       "card": 2,
       "type": "data",
       "event": {
@@ -542,11 +542,11 @@
           "weather": "clear"
         },
         "revision": "1000000000006",
-        "receivedAt": "2026-09-27T22:38:40.423Z"
+        "receivedAt": "2026-10-04T14:20:03.717Z"
       }
     },
     {
-      "atMs": 14047,
+      "atMs": 14093,
       "card": 0,
       "type": "data",
       "event": {
@@ -571,11 +571,11 @@
           "weather": "clear"
         },
         "revision": "1000000000007",
-        "receivedAt": "2026-09-27T22:38:42.429Z"
+        "receivedAt": "2026-10-04T14:20:05.722Z"
       }
     },
     {
-      "atMs": 14048,
+      "atMs": 14093,
       "card": 2,
       "type": "data",
       "event": {
@@ -600,11 +600,11 @@
           "weather": "clear"
         },
         "revision": "1000000000007",
-        "receivedAt": "2026-09-27T22:38:42.430Z"
+        "receivedAt": "2026-10-04T14:20:05.722Z"
       }
     },
     {
-      "atMs": 16052,
+      "atMs": 16097,
       "card": 0,
       "type": "data",
       "event": {
@@ -629,11 +629,11 @@
           "weather": "clear"
         },
         "revision": "1000000000008",
-        "receivedAt": "2026-09-27T22:38:44.434Z"
+        "receivedAt": "2026-10-04T14:20:07.727Z"
       }
     },
     {
-      "atMs": 16052,
+      "atMs": 16097,
       "card": 2,
       "type": "data",
       "event": {
@@ -658,7 +658,7 @@
           "weather": "clear"
         },
         "revision": "1000000000008",
-        "receivedAt": "2026-09-27T22:38:44.435Z"
+        "receivedAt": "2026-10-04T14:20:07.727Z"
       }
     }
   ]

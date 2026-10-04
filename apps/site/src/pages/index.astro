@@ -3,6 +3,8 @@ import { Picture } from "astro:assets";
 import { Code } from "astro:components";
 import otterMark from "../assets/brand/otter-swim.png";
 import fieldConfig from "../../../field-station/streamotter.json";
+// The screenshot's own provenance, not the site's build: a later pin must not relabel an older capture.
+import capture from "../../public/recordings/workbench/capture.json" with { type: "json" };
 import LiveCreek from "../components/LiveCreek.astro";
 import Base from "../layouts/Base.astro";
 import { LINKS, LISTED_PAGES, RELEASE } from "../site.ts";
@@ -26,6 +28,9 @@ const v11Points = [
   { title: "Continue only under control", text: "Moving past the record needs your application's recovery guard to vouch for its snapshots. Otherwise the source stays held. There is no skip or ignore option." },
   { title: "See each outcome", text: "Whether evidence was saved, whether the source advanced, and whether views resynchronized are reported separately. None stands in for another." }
 ];
+
+const previewShot = capture.images.preview;
+const capturedOn = new Date(capture.capturedAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
 
 const explorePages = LISTED_PAGES.filter(page => page.href !== "/docs/" && page.href !== "/releases/");
 
@@ -209,8 +214,8 @@ const states = [
   <section class="section" id="workbench-preview">
     <div class="wrap">
       <div class="section-head"><p class="eyebrow">Included with the CLI</p><h2>See the contract and the state</h2><p class="lede">Preview a channel with the real SDK, inspect its delivery state, and trace records through your local gateway.</p><a href="/workbench/">Tour the workbench →</a></div>
-      <a href="/workbench/"><img class="workbench-shot" src="/recordings/workbench/preview.png" alt="Recorded local workbench Preview: jobProgress receives snapshot revision 1 and enters live." loading="lazy" width="1280" height="963" /></a>
-      <p class="code-caption">Recording · September 27, 2026 · streamotter@{RELEASE} · local fixture project, not the hosted demo.</p>
+      <a href="/workbench/"><img class="workbench-shot" src="/recordings/workbench/preview.png" alt="Recorded local workbench Preview: jobProgress receives snapshot revision 1 and enters live." loading="lazy" width={previewShot.width} height={previewShot.height} /></a>
+      <p class="code-caption" data-workbench-caption>Recording · {capturedOn} · streamotter@{capture.version} · local fixture project, not the hosted demo.</p>
     </div>
   </section>
 

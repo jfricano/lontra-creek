@@ -81,7 +81,7 @@ test("the record-disposition lifecycle follows ADR-15A's order and says what eac
 });
 
 test("demo availability reads its facts from their sources", () => {
-  assert.deepEqual(RECORDING, { version: capture.version, capturedOn: capture.capturedAt.slice(0, 10) });
+  assert.deepEqual(RECORDING, { version: capture.version, install: capture.install, capturedOn: capture.capturedAt.slice(0, 10) });
   // The count the page states matches what an rc.3 backend reports as unavailable.
   const unavailable = labCapabilities({ labEnabled: true, now: 0, version: RELEASE }).scenarios.filter(scenario => !scenario.available).map(scenario => scenario.id);
   assert.deepEqual([...WAITING_EXERCISES].sort(), [...unavailable].sort());

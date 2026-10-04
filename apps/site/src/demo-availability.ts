@@ -15,7 +15,7 @@ import { INSTALLED_VALIDATOR_ON_FAILURE_HANDLING } from "./planned-failure-handl
 import { RELEASE, SITE } from "./site.ts";
 
 /** The recorded workbench tour's own provenance, so a later version pin can't relabel it. */
-export const RECORDING = { version: capture.version, capturedOn: capture.capturedAt.slice(0, 10) } as const;
+export const RECORDING = { version: capture.version, install: capture.install, capturedOn: capture.capturedAt.slice(0, 10) } as const;
 
 /** Source-failure stories the Lab lists but the current bench can't run (every one except Fouled sensor). */
 export const WAITING_EXERCISES = TRACKS["source-failures"].filter(id => SCENARIOS[id].controls === null);
@@ -67,7 +67,7 @@ export const SURFACES: readonly Surface[] = [
   },
   {
     name: "Workbench", href: "/workbench/", state: "recorded",
-    runs: `A recorded tour of the published workbench: streamotter@${RECORDING.version}, captured ${RECORDING.capturedOn} on a local fixture project.`,
+    runs: `A recorded tour of the workbench: streamotter@${RECORDING.version} (${RECORDING.install}), captured ${RECORDING.capturedOn} on a local fixture project.`,
     needs: `An interactive sandbox needs a published workbench integration seam. streamotter@${RELEASE} doesn't have one.`
   },
   {

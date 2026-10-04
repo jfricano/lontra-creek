@@ -276,7 +276,11 @@ export class SandboxService {
       if (method !== 'POST') return { status: 404, body: { error: 'Not found.' } };
       if (action === 'claim') return { status: 200, body: this.claim(slot, { leaseId: body['leaseId'], studyId: body['studyId'] }) };
       if (action === 'reset') return { status: 202, body: this.reset(slot, { leaseId: body['leaseId'], studyId: body['studyId'] }) };
-      if (action === 'return') return { status: 202, body: this.return(slot, { leaseId: body['leaseId'] ?? null }) };
+      if (action === 'return') {
+        // Reclaiming whatever is on the slot takes an explicit null; a body without a lease ID is refused.
+        if (!Object.hasOwn(body, 'leaseId') || body['leaseId'] !== null && typeof body['leaseId'] !== 'string') throw invalid('Invalid lease.');
+        return { status: 202, body: this.return(slot, { leaseId: body['leaseId'] }) };
+      }
       if (action === 'repro') return { status: 200, body: await this.repro(slot, { leaseId: body['leaseId'], studyId: body['studyId'] }) };
       return { status: 200, body: { ok: true, data: await this.operate(slot, { leaseId: body['leaseId'], studyId: body['studyId'], op: body['op'], input: body['input'] ?? null }) } };
     } catch (error) {

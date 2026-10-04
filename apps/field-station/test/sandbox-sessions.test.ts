@@ -334,3 +334,15 @@ test('A44: a grant answered after its place left returns the slot', async () => 
   assert.deepEqual(h.pool.status().slots, [{ slot: 1, state: 'ready' }], 'the late grant was returned and the slot cleaned');
   const b = h.session('b'); assert.equal((await h.join(b)).status, 'ready');
 });
+
+test('A42: the service reclaims a slot only for an explicit null lease ID, never for a body without one', async () => {
+  const h = await harness({ slots: 1 }); const s = h.session('s'); await h.join(s); await h.claim(s);
+  const v = h.view(s); assert.ok(v.status === 'active');
+  const service: SandboxService = h.service; const back = (body: Record<string, unknown>) => service.dispatch('POST', '/sandbox/v1/slots/1/return', body);
+  for (const body of [{}, { leaseId: 7 }, { leaseId: undefined }, { other: null }]) assert.equal((await back(body)).status, 400, JSON.stringify(body));
+  assert.equal((await back({ leaseId: 'someone-else' })).status, 409, 'another lease ID is refused');
+  assert.equal(service.status().slots[0]!.lease?.leaseId, v.leaseId, 'the lease is still there');
+  assert.equal((await back({ leaseId: v.leaseId })).status, 202);
+  await h.settle(); assert.equal(h.reason(s), 'slot-failed', 'the field station saw its lease go');
+  assert.equal((await back({ leaseId: null })).status, 202, 'null reclaims whatever is there');
+});

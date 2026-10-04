@@ -98,7 +98,8 @@ test("opening, reloading, and going back never allocate", async ({ page }) => {
   await page.reload();
   await expect(ui.root).toHaveAttribute("data-phase", "idle");
   await page.goto("/docs/");
-  await page.goBack();
+  // A back-forward cache restore fires no load event (WebKit), so wait only for the navigation to commit.
+  await page.goBack({ waitUntil: "commit" });
   await expect(ui.root).toHaveAttribute("data-phase", "idle");
   expect(allocations(seen)).toBe(0);
   expect(seen.filter(entry => entry.startsWith("POST"))).toEqual([]);

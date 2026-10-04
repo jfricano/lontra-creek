@@ -206,18 +206,23 @@ test("a served incident projection renders with precise labels, hidden coordinat
   expect(posts(requests).filter(path => path !== "/api/lab/lease" && path !== "/api/lab/lease/token")).toEqual([]);
 });
 
-test("a modified click on a track or scenario link opens it as a link would, leaving this page as it was", async ({ page, context }) => {
+test("a modified click on a track or scenario link opens it as a link would, leaving this page as it was", async ({ page }) => {
   await workingLab(page);
   await page.goto("/lab/");
+  // Whether the browser then opens a tab is its own business (headless Chromium reports the new tab
+  // as about:blank first, and under load sometimes not at all), so the test checks what the page
+  // controls: it leaves the click's default action alone. The last listener records that, then
+  // cancels the default so no tab opens.
+  await page.evaluate(() => {
+    const seen: boolean[] = (window as unknown as { leftToBrowser: boolean[] }).leftToBrowser = [];
+    window.addEventListener("click", event => { seen.push(!event.defaultPrevented); event.preventDefault(); });
+  });
   for (const link of [page.locator('[data-lab-track-link="source-failures"]'), page.locator('[data-lab-track="connections"] [data-lab-scenario="relay-cut"] [data-lab-scenario-link]')]) {
-    const opened = context.waitForEvent("page");
+    expect(new URL(await link.evaluate((a: HTMLAnchorElement) => a.href)).pathname).toBe("/lab/");
     await link.click({ modifiers: ["ControlOrMeta"] });
-    const tab = await opened;
-    await tab.waitForLoadState();
-    expect(new URL(tab.url()).pathname).toBe("/lab/");
-    await tab.close();
     expect(new URL(page.url()).search + new URL(page.url()).hash).toBe("");
     await expect(page.locator('[data-lab-track-link="connections"]')).toHaveAttribute("aria-current", "true");
     await expect(page.locator("[data-lab-scenario][aria-current]")).toHaveCount(0);
   }
+  expect(await page.evaluate(() => (window as unknown as { leftToBrowser: boolean[] }).leftToBrowser)).toEqual([true, true]);
 });

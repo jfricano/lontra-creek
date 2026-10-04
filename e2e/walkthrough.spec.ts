@@ -74,7 +74,8 @@ test("back navigation gets fresh field subscriptions", async ({ page }) => {
   await page.goto("/field-station/");
   await expect(page.locator("[data-walk-state]")).toHaveText("live", {timeout:30000});
   await page.goto("/docs/");
-  await page.goBack();
+  // A back-forward cache restore fires no load event (WebKit), so wait only for the navigation to commit.
+  await page.goBack({ waitUntil: "commit" });
   await expect(page.locator("[data-walk-state]")).toHaveText("live", {timeout:30000});
   // Explicit persisted event covers engines that disable bfcache under automation.
   await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));

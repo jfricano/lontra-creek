@@ -199,14 +199,15 @@ test("version and availability facts agree across pages (LC11-A40)", async ({ pa
 
 // Summaries the field station's own code produces for each deployment (the backend is the source of truth):
 // the hosted demo without benches, in both rollout phases, and Lab benches under each failure-handling profile.
-// A bench's verified set is injected so the counts don't depend on which releases have been verified.
-const verified = new Map([[release, new Set(NEW_SCENARIOS)]]);
+// Evidence for every new scenario under both profiles, for an injected install, so the counts don't depend on which builds have been verified.
+const integrity = { "node_modules/streamotter": "sha512-evidence" };
+const verified = new Map([[release, { packages: integrity, scenarios: Object.fromEntries(NEW_SCENARIOS.map(id => [id, ["quarantine", "retry"] as const])), evidence: "test" }]]);
 for (const [name, summary, runs] of [
   ["the hosted demo on 0.1.0-rc.3 (phase 1)", labCapabilities({ labEnabled: false, now: Date.now(), version: "0.1.0-rc.3" }), 0],
   [`the hosted demo on ${release} (phase 2)`, labCapabilities({ labEnabled: false, now: Date.now(), version: release }), 0],
-  ["a Lab with failure handling off", labCapabilities({ labEnabled: true, now: Date.now(), version: release, verified }), 0],
-  ["a Lab on the retry profile", labCapabilities({ labEnabled: true, now: Date.now(), version: release, verified, profile: "retry" }), 1],
-  ["a local Lab on the quarantine profile", labCapabilities({ labEnabled: true, now: Date.now(), version: release, verified, profile: "quarantine", localExercises: true }), 8]
+  ["a Lab with failure handling off", labCapabilities({ labEnabled: true, now: Date.now(), version: release, verified, integrity }), 0],
+  ["a Lab on the retry profile", labCapabilities({ labEnabled: true, now: Date.now(), version: release, verified, integrity, profile: "retry" }), 1],
+  ["a local Lab on the quarantine profile", labCapabilities({ labEnabled: true, now: Date.now(), version: release, verified, integrity, profile: "quarantine", localExercises: true }), 8]
 ] as const) {
   test(`the Lab and the releases page count the same runnable source-failure exercises for ${name}`, async ({ page }) => {
     await page.route("**/api/lab/capabilities", route => route.fulfill({ json: summary }));

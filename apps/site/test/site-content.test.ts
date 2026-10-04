@@ -52,13 +52,16 @@ test("demo availability reads its facts from their sources", () => {
   assert.match(SITE_RELEASE.launch, /^Pre-launch\./);
 });
 
+/** Evidence for every new scenario under both failure-handling profiles, for an injected install, so the counts below depend only on the deployment. */
+const EVIDENCE_PACKAGES = { "node_modules/streamotter": "sha512-evidence" };
+const EVERY_PROFILE = new Map([[RELEASE, { packages: EVIDENCE_PACKAGES, scenarios: Object.fromEntries(NEW_SCENARIOS.map(id => [id, ["quarantine", "retry"] as const])), evidence: "test" }]]);
+
 test("the releases page states neither that the new source-failure stories run nor that they don't: the backend decides", () => {
   const row = SURFACES.find(surface => surface.href === "/lab/#source-failures")!;
   assert.doesNotMatch(`${row.runs} ${row.needs}`, /can't run\.|cannot run|are listed with the reason|waiting/i);
   // How many run depends on the deployment. A bench's verified set is injected so the counts don't depend on which releases are verified.
-  const verified = new Map([[RELEASE, new Set(NEW_SCENARIOS)]]);
   const runnable = (options: Partial<Parameters<typeof labCapabilities>[0]>): number =>
-    labCapabilities({ labEnabled: true, now: 0, version: RELEASE, verified, ...options }).scenarios.filter(scenario => NEW_SOURCE_EXERCISES.includes(scenario.id) && scenario.available).length;
+    labCapabilities({ labEnabled: true, now: 0, version: RELEASE, verified: EVERY_PROFILE, integrity: EVIDENCE_PACKAGES, ...options }).scenarios.filter(scenario => NEW_SOURCE_EXERCISES.includes(scenario.id) && scenario.available).length;
   // The hosted demo has no Lab benches in either rollout phase: none runs there.
   assert.equal(runnable({ labEnabled: false, version: "0.1.0-rc.3" }), 0);
   assert.equal(runnable({ labEnabled: false }), 0);
@@ -98,7 +101,7 @@ test("the releases page reports what the field station answers, and only that", 
   assert.equal(skew[0], "Field station: answering, on real Kafka with synthetic data.");
   assert.match(skew[1]!, /^StreamOtter it runs: 0\.2\.0\. This page was built for 0\.1\.0-rc\.3/);
   assert.equal(skew[2], "Lab benches: enabled.");
-  const retry = { kind: "summary", summary: labCapabilities({ labEnabled: true, now: 0, version: RELEASE, profile: "retry", verified: new Map([[RELEASE, new Set(NEW_SCENARIOS)]]) }) } as const;
+  const retry = { kind: "summary", summary: labCapabilities({ labEnabled: true, now: 0, version: RELEASE, profile: "retry", verified: EVERY_PROFILE, integrity: EVIDENCE_PACKAGES }) } as const;
   assert.equal(serviceLines({ config: null, capabilities: retry }, RELEASE)[3], `New source-failure exercises it can run: 1 of ${NEW_SOURCE_EXERCISES.length}.`);
   assert.deepEqual(serviceLines({ config: null, capabilities: { kind: "unreachable" } }, "0.1.0-rc.3"), ["The field station didn't answer, so this page can't say what the demo runs right now. The facts above still describe this build."]);
   assert.match(serviceLines({ config: { gatewayOrigin: "", gatewayPath: "/", mode: "kafka", tickMs: 2000 }, capabilities: { kind: "absent" } }, "0.1.0-rc.3")[1]!, /doesn't report Lab capabilities/);

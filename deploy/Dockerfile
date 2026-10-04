@@ -14,6 +14,8 @@ COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/creek-sim/package.json packages/creek-sim/
 COPY apps/field-station/package.json apps/field-station/
 COPY apps/site/package.json apps/site/
+# Pre-publish StreamOtter tarballs (removed by the npm pin; scripts/check-release-pins.mjs refuses release builds with them).
+COPY vendor vendor
 RUN npm ci --workspace @lontra-creek/field-station --include-workspace-root --ignore-scripts --no-audit --no-fund
 COPY packages/creek-sim/src packages/creek-sim/src
 COPY apps/field-station apps/field-station
@@ -28,6 +30,7 @@ COPY packages/creek-sim/package.json packages/creek-sim/
 COPY apps/field-station/package.json apps/field-station/
 # The site's manifest keeps the lockfile's workspaces whole; none of its packages are installed.
 COPY apps/site/package.json apps/site/
+COPY vendor vendor
 RUN npm ci --omit=dev --workspace @lontra-creek/field-station --ignore-scripts --no-audit --no-fund \
   && npm cache clean --force
 COPY packages/creek-sim/src packages/creek-sim/src

@@ -26,5 +26,12 @@
     "@playwright/test": "1.63.0",
     "@types/node": "24.13.6",
     "typescript": "5.9.3"
+  },
+  "overrides": {
+    "@streamotter/contracts": "file:vendor/streamotter-0.2.0-rc.1/streamotter-contracts-0.2.0-rc.1.tgz",
+    "@streamotter/client": "file:vendor/streamotter-0.2.0-rc.1/streamotter-client-0.2.0-rc.1.tgz",
+    "@streamotter/gateway": "file:vendor/streamotter-0.2.0-rc.1/streamotter-gateway-0.2.0-rc.1.tgz",
+    "@streamotter/cli": "file:vendor/streamotter-0.2.0-rc.1/streamotter-cli-0.2.0-rc.1.tgz",
+    "@streamotter/workbench": "file:vendor/streamotter-0.2.0-rc.1/streamotter-workbench-0.2.0-rc.1.tgz"
   }
 }

@@ -264,6 +264,8 @@ describe('the publisher gate and study discard', () => {
     s.registry.open(1, S2);
     await assert.rejects(s.registry.publish(1, S1, 'run-1', record('run-1'), s.sink), StudyClosedError);
     assert.equal((await s.registry.ledger(1, S2)).entries().length, 0, 'the new study starts with an empty ledger');
+    // Opening S2 discards S1 in the background; this joins that discard, so it doesn't write into a directory being removed.
+    await s.registry.discard(1, S1);
   });
 
   test('scenario records go only to the bench\'s own copy of a creek topic', async t => {

@@ -12,7 +12,7 @@ import type { Server } from "node:http";
 import { TENANT_ID } from "@lontra-creek/sim";
 import { configuredLab } from "../lab/leases.ts";
 import { AddressCap } from "../places.ts";
-import { configuredSandbox } from "../sandbox/leases.ts";
+import { configuredSandbox, SANDBOX_SWEEP_MS } from "../sandbox/leases.ts";
 import { benches } from "../lab/benches.ts";
 import { LabStudies } from "../lab/studies.ts";
 import { NOTEBOOK_TOPIC } from "../records.ts";
@@ -60,7 +60,8 @@ await station.start();
 await lab.pool.initialize();
 const labTimer = setInterval(() => { void lab.pool.run(() => lab.pool.sweep()).catch(() => log("Lab maintenance failed; retrying.")); }, 5000);
 await sandbox?.initialize();
-const sandboxTimer = sandbox && setInterval(() => { void sandbox.run(() => sandbox.sweep()).catch(() => log("Sandbox maintenance failed; retrying.")); }, 5000);
+// Every second, so the 1 s poll while a slot or study resets runs without visitor traffic.
+const sandboxTimer = sandbox && setInterval(() => { void sandbox.run(() => sandbox.sweep()).catch(() => log("Sandbox maintenance failed; retrying.")); }, SANDBOX_SWEEP_MS);
 log(`Field station running: generation ${config.generation}, epoch ${station.epoch}, a tick every ${config.tickMs} ms.`);
 
 let stopping = false;

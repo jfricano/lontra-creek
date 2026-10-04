@@ -4,12 +4,14 @@
  * cleanup, queue, and cohost budget; LC11-A42 isolation and stale study references.
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { LeasePool, type BenchClient } from '../src/lab/leases.ts';
 import type { BenchId, BenchStatus } from '../src/lab/contract.ts';
 import { LabError } from '../src/lab/errors.ts';
 import { AddressCap } from '../src/places.ts';
 import type { SessionClaims } from '../src/sessions.ts';
+import { SANDBOX_SWEEP_MS } from '../src/sandbox/leases.ts';
 import { SandboxService } from '../src/sandbox/service.ts';
 import { StreamOtterError } from 'streamotter/contracts';
 import { code, harness, wb } from './support/sandbox-harness.ts';
@@ -96,6 +98,16 @@ test('A44: return frees the slot at once; the next lease gets a fresh runtime', 
   assert.equal(h.view(b).status, 'ready'); assert.notEqual(h.fixture.current(1), before);
   await assert.rejects(h.claim(a), code('no-lease'));
   assert.equal((await h.leave(b)).status, 'ended'); assert.equal((await h.leave(b)).status, 'ended', 'return is idempotent');
+});
+
+test('A44: without visitor traffic, maintenance polls every 1 s while a slot resets, so a returned slot reaches the next in line within a second', async () => {
+  const h = await harness({ slots: 1 }); const a = h.session('a'); const b = h.session('b');
+  await h.join(a); await h.claim(a); await h.join(b);
+  await h.leave(a); assert.equal(h.view(b).status, 'queued', 'the slot is still being cleaned');
+  await h.sweepAfter(SANDBOX_SWEEP_MS); assert.equal(h.view(b).status, 'ready', 'one maintenance sweep later');
+  const main = readFileSync(new URL('../src/server/main.ts', import.meta.url), 'utf8');
+  assert.match(main, /sandbox\.sweep\(\)\)[^\n]*\}, SANDBOX_SWEEP_MS\);/, 'main.ts sweeps the sandbox pool every SANDBOX_SWEEP_MS');
+  assert.equal(SANDBOX_SWEEP_MS, 1000);
 });
 
 test('A44: a slot whose cleanup fails stays unavailable and is never handed out until a cleanup succeeds', async () => {

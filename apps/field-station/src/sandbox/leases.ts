@@ -21,6 +21,8 @@ export interface SandboxTimings {
 }
 /** LC11-ADR-04 defaults; the queue idle limit and the poll, failure, and reset timings are the Lab's. */
 export const SANDBOX_DEFAULTS: SandboxTimings = { leaseMs: 600_000, claimMs: 30_000, idleMs: 60_000, queueIdleMs: 90_000, endedMs: 60_000, queueMax: 30, opsPerSecond: 2, pollMs: 5000, failMs: 15_000, resetDeadlineMs: 60_000, retryMs: 30_000 };
+/** How often the field station sweeps the pool: the service poll interval while a slot or study resets. A sweep polls only when the poll is due. */
+export const SANDBOX_SWEEP_MS = 1000;
 interface Lease { id: string; studyId: string; slot: SlotId; granted: number; expires: number; claimed: boolean; resetting: boolean; resetAt: number; ops: number[]; runtime: SandboxRuntime; }
 interface Place { session: SessionClaims; address: string; joined: number; heartbeat: number; lease?: Lease; }
 interface Slot { state: SandboxStatus['slots'][number]['state']; resetAt: number; retryAt: number; }
@@ -78,7 +80,7 @@ export class SandboxPool {
     for (const [slot, s] of this.#slots) if (s.state === 'unavailable' && this.#service?.availability === 'available' && now >= s.retryAt && !this.#holder(slot)) await this.#return(slot, null);
     const busy = [...this.#places.values()].some(p => p.lease?.resetting) || [...this.#slots.values()].some(s => s.state === 'resetting');
     if (now >= this.#nextPoll) {
-      this.#nextPoll = now + (busy ? 1000 : t.pollMs);
+      this.#nextPoll = now + (busy ? SANDBOX_SWEEP_MS : t.pollMs);
       let status: SandboxServiceStatus | null = null;
       try { const r = await this.#client.request('/sandbox/v1/status'); if (r.status === 200 && isPlainObject(r.body)) status = r.body as unknown as SandboxServiceStatus; } catch { /* below */ }
       if (status) await this.#reconcile(status, now);

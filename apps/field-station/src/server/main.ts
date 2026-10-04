@@ -49,7 +49,7 @@ const places = new AddressCap();
 // Each bench study's publisher gate, coverage ledger, and served state (lab/studies.ts).
 // Scenario runs publish through it with kafka.scenario once W9b's scenarios exist.
 const studies = new LabStudies({ dataDir: config.dataDir, world: station, log });
-const lab = configuredLab(process.env, config.gatewayOrigin, places, studies);
+const lab = configuredLab(process.env, config.gatewayOrigin, places, studies, kafka.scenario);
 const sandbox = configuredSandbox(process.env, config.gatewayOrigin, places);
 const api = publicApi({ config, station, notebooks, log, lab: lab.pool, ...(sandbox ? { sandbox } : {}) });
 const internal = internalApi({ serviceToken: config.serviceToken, station, notebooks, labTokens: lab.tokens, studies });

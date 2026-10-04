@@ -15,9 +15,10 @@
  * study, so a second incident never drops the first one's requirement. A snapshot
  * acknowledges a barrier only when the state it serves is at or past it.
  *
- * Everything here is written against these interfaces, not native types:
- * StreamOtter 0.1.0-rc.3 has no recovery guard or barrier. W9b adds the thin
- * adapter to the native types once a published release exports them.
+ * Everything here is written against these interfaces, not native types. The bench
+ * binds them to StreamOtter's native recovery guard and snapshot acknowledgment
+ * (bench.ts, `recoveryGuard` and `snapshotAcknowledges`) over the private routes in
+ * Lab contract section 8a.
  */
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';

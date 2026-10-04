@@ -27,7 +27,7 @@ import type { BenchId, LabAction, RecoveryAssessRequest } from '../lab/contract.
 import { StudyClosedError, type LabStudies } from '../lab/studies.ts';
 import type { SandboxPool } from '../sandbox/leases.ts';
 import { sandboxRoute } from '../sandbox/routes.ts';
-import { labCapabilities, refuseIntent } from '../lab/capabilities.ts';
+import { labCapabilities, parseIntent } from '../lab/capabilities.ts';
 
 type Headers = Record<string, string>;
 
@@ -139,8 +139,13 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
         try {
           if (request.method === 'POST' && origin !== undefined && !config.siteOrigins.includes(origin)) throw new LabError('origin-not-allowed', 403);
           const lab = options.lab;
-          const route = `${request.method} ${url.pathname}`;
-          if (!['GET /api/lab/status', 'POST /api/lab/lease', 'GET /api/lab/lease', 'POST /api/lab/lease/return', 'POST /api/lab/lease/token', 'POST /api/lab/actions', 'GET /api/lab/trace', 'GET /api/lab/capabilities'].includes(route)) return send(response, 404, { error: 'Not found.' }, cors);
+          // An operation is addressed by its ID; every other route is fixed.
+          const operation = request.method === 'GET' ? /^\/api\/lab\/operations\/(lop_[A-Za-z0-9_-]{22})$/.exec(url.pathname) : null;
+          const route = operation ? 'GET /api/lab/operations' : `${request.method} ${url.pathname}`;
+          if (!['GET /api/lab/status', 'POST /api/lab/lease', 'GET /api/lab/lease', 'POST /api/lab/lease/return', 'POST /api/lab/lease/token', 'POST /api/lab/actions', 'GET /api/lab/trace', 'GET /api/lab/capabilities', 'GET /api/lab/incident', 'GET /api/lab/operations'].includes(route)) return send(response, 404, { error: 'Not found.' }, cors);
+          const capabilities = labCapabilities({ labEnabled: lab?.enabled ?? false, now: Date.now(), ...(lab ? lab.capabilityOptions : {}) });
+          // Served only while the summary offers them (sections 12.6 and 12.7): otherwise they don't exist here.
+          if (route === 'GET /api/lab/incident' && !capabilities.features.incidentProjection.available || route === 'GET /api/lab/operations' && !capabilities.features.intents.available) return send(response, 404, { error: 'Not found.' }, cors);
           let session = readSession(request.headers.cookie, config.secret);
           if (!session && route === 'POST /api/lab/lease') {
             const badge = badgeFor({ cookieHeader: undefined, role: 'volunteer', secret: config.secret, secure: config.production });
@@ -149,12 +154,13 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
           if (route !== 'GET /api/lab/status' && route !== 'GET /api/lab/capabilities' && !session) throw new LabError('no-session', 401);
           const body = request.method === 'POST' ? await readJson(request) : {};
           const keys = Object.keys(body);
-          // A proposed intent (contract section 12) has its own shape; it is validated, then refused.
+          // An intent (contract section 12.5) has its own shape, validated before anything else.
           const intent = route === 'POST /api/lab/actions' && 'intent' in body;
           if (!intent && keys.some(key => route !== 'POST /api/lab/actions' || key !== 'action') || [...url.searchParams.keys()].some(key => route !== 'GET /api/lab/trace' || key !== 'after')) throw new LabError('invalid-request', 400);
-          // Neither touches the pool: the summary is static per process, and no installed release supports an intent.
-          if (route === 'GET /api/lab/capabilities') return send(response, 200, labCapabilities({ labEnabled: lab?.enabled ?? false, now: Date.now() }), cors);
-          if (intent) refuseIntent(body);
+          // The summary doesn't touch the pool; an intent this backend doesn't offer is refused before the pool, the lease, the budget, or any bench.
+          if (route === 'GET /api/lab/capabilities') return send(response, 200, capabilities, cors);
+          const intentRequest = intent ? parseIntent(body) : null;
+          if (intentRequest && (!capabilities.features.intents.available || intentRequest.scenario !== undefined && !capabilities.scenarios.find(s => s.id === intentRequest.scenario)?.available)) throw new LabError('unsupported-scenario', 409);
           if (!lab) {
             if (route === 'GET /api/lab/status') return send(response, 200, { enabled: false, now: new Date().toISOString(), benches: [], queueLength: 0, nextFreeAt: null }, cors);
             throw new LabError('lab-unavailable', 503);
@@ -170,10 +176,15 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
             if (route === 'POST /api/lab/lease/return') return lab.leave(session!);
             if (route === 'POST /api/lab/lease/token') return lab.token(session!);
             if (route === 'GET /api/lab/trace') return lab.feed(session!, url.searchParams.get('after') ?? undefined);
+            if (route === 'GET /api/lab/incident') return lab.intents!.incident(session!.subject);
+            if (route === 'GET /api/lab/operations') return lab.intents!.operation(session!.subject, operation![1]!) ?? null;
+            if (intentRequest) return lab.intents!.submit(session!.subject, intentRequest);
             if (!ACTIONS.includes(body['action'] as LabAction)) throw new LabError('invalid-request', 400);
             return lab.action(session!, body['action'] as LabAction);
           });
-          return send(response, 200, result, cors);
+          // An unknown operation, or one of another session's lease, doesn't exist for this session.
+          if (route === 'GET /api/lab/operations' && result === null) return send(response, 404, { error: 'Not found.' }, cors);
+          return send(response, intentRequest ? 202 : 200, result, cors);
         } catch (error) {
           const problem = error instanceof LabError ? error : new LabError('invalid-request', 400);
           return send(response, problem.status, { error: problem.message, code: problem.code }, { ...cors, ...(problem.status === 429 ? { 'retry-after': '1' } : {}) });

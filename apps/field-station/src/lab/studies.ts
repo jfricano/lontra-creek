@@ -27,6 +27,7 @@ import type { Emission, View, WorldState } from '@lontra-creek/sim';
 import { CREEK_TOPICS, bench as benchFor } from './benches.ts';
 import type { BenchId, BenchSnapshot, LedgerSummary, RecordCoordinates, RecoveryAssessment, RecoveryAssessRequest, StudyClosed } from './contract.ts';
 import { deriveMutation, FileCoverageLedger, type DomainMutation, type LedgerEntry, type ServedState } from './coverage.ts';
+import type { ScenarioRun } from './scenarios.ts';
 
 const STUDY_ID = /^[A-Za-z0-9_-]{16}$/;
 /** How long closing a study waits for its in-flight publications. */
@@ -176,7 +177,7 @@ export class LabStudies {
     return (await this.ledger(bench, request.studyId)).assess(request);
   }
 
-  // --- Scenario runs: the interface W9b's scenarios drive. ---
+  // --- Scenario runs: what the source-failures intents drive (intents.ts, scenarios.ts). ---
 
   /**
    * Records a scenario run before anything is published. With coverage `pending`
@@ -212,6 +213,17 @@ export class LabStudies {
     // Full-state writes supersede by revision: a run with an earlier mutation never takes served state backwards.
     for (const view of views) { const own = study.views.get(view.key); if (!own || BigInt(revision) >= BigInt(own.revision)) study.views.set(view.key, { revision, data: view.data }); }
     return ledger.establish(runId, this.served(bench));
+  }
+  /** The world scenario runs derive their mutations from: the field station's current state. */
+  world(): WorldState | null { return this.#world.world(); }
+  /** The open study's recorded runs; none for any other study. */
+  async runs(bench: BenchId, studyId: string): Promise<readonly LedgerEntry[]> {
+    try { return (await this.ledger(bench, studyId)).entries(); } catch (error) { if (error instanceof StudyClosedError) return []; throw error; }
+  }
+  /** One scenario run end to end: recorded in the ledger first (beginRun), then its record built from what the ledger derived and published through the gate. */
+  async publishRun(bench: BenchId, studyId: string, run: ScenarioRun, sink: ScenarioSink): Promise<RecordCoordinates> {
+    const { entry, views } = await this.beginRun(bench, studyId, { scenarioId: run.scenarioId, runId: run.runId, mutation: run.mutation, coverage: run.coverage });
+    return this.publish(bench, studyId, run.runId, run.record(entry.revision, views), sink);
   }
   /** Publishes a run's record to the bench's own copy of a creek topic, through the gate, and records where it landed. */
   async publish(bench: BenchId, studyId: string, runId: string, record: { topic: string; key: string; value: string }, sink: ScenarioSink): Promise<RecordCoordinates> {

@@ -109,7 +109,7 @@ const ENDED: Readonly<Record<SandboxEndReason, string>> = {
   "left": "You left the line.",
   "returned": "You returned your slot. Its study was discarded.",
   "expired": "Your session reached its time limit. Its study was discarded.",
-  "idle": "Your session ended because this page stopped checking in.",
+  "idle": "Your session ended because this page stopped checking in, which can happen when a browser slows a tab left in the background.",
   "unclaimed": "Your slot was offered but not claimed in time, so it went to the next visitor.",
   "session-ended": "Your browser session expired.",
   "slot-failed": "Your sandbox slot failed, so the field station ended the session and took the slot out of service.",
@@ -164,15 +164,17 @@ export function sessionView(input: SessionInput): SessionView {
   if (lease && lease.status === "queued") {
     return { ...base, phase: "queued", returnLabel: "Leave the line", enabled: { ...NONE, return: !busy },
       headline: `You are number ${lease.position} of ${lease.queueLength} in line for a sandbox slot.`,
-      detail: `Keep this page open: it checks in for you, and the line forgets a place that stops checking in.${lease.nextFreeAt ? ` A slot frees within ${minutesUntil(lease.nextFreeAt, lease.now)} min at the latest.` : ""}` };
+      detail: `Keep this page open: it checks in for you, and the line forgets a place that stops checking in. A browser can slow a tab left in the background enough to miss check-ins.${lease.nextFreeAt ? ` A slot frees within ${minutesUntil(lease.nextFreeAt, lease.now)} min at the latest.` : ""}` };
   }
   if (lease && (lease.status === "ready" || lease.status === "active" || lease.status === "resetting")) {
     const held = { ...base, runtime: lease.runtime, clock: `${formatRemaining(Date.parse(lease.expiresAt) - now)} left in this session` };
     if (lease.status === "ready") {
+      // The countdown goes in the clock, outside the polite status region, which would otherwise announce it every second.
       const claim = lease.claimBy ? formatRemaining(Date.parse(lease.claimBy) - now) : null;
       return { ...held, phase: "ready", claimLabel: "Claim your slot", enabled: { ...NONE, claim: !busy, return: !busy },
+        clock: claim === null ? held.clock : `${claim} left to claim it · ${held.clock}`,
         headline: `Sandbox slot ${lease.slot} is yours to claim.`,
-        detail: claim === null ? "Claim it to open the workbench." : `Claim it within ${claim}, or it goes to the next visitor.` };
+        detail: claim === null ? "Claim it to open the workbench." : "Claim it within the time shown below, or it goes to the next visitor." };
     }
     if (lease.status === "resetting") {
       return { ...held, phase: "resetting", enabled: { ...NONE, return: !busy }, headline: `Starting a fresh study on slot ${lease.slot}…`,

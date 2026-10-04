@@ -4,7 +4,7 @@
  * The full feed is mostly `ok` traces, so by default the page shows a scenario view:
  * failed or rejected traces, source state changes, the record a fouled sensor stopped
  * on (topic, partition, offset), the visitor's actions, and bench events such as trace
- * gaps. When the same record comes back after Resume it is marked as retried.
+ * gaps. When the same record comes back, after Resume or a gateway restart, it is marked as retried.
  *
  * The bench's `record` item with outcome `processed` is written when its map handler
  * returns, before StreamOtter validates, delivers, or commits anything, so the page
@@ -33,12 +33,24 @@ export interface FeedLine {
   text: string;
   /** Shown in the scenario view, not only in the full feed. */
   scenario: boolean;
-  /** The record a Resume retried. */
+  /** A record that failed earlier in this lease and has now mapped. */
   retried: boolean;
 }
 
-/** The record a Resume retried, by its Kafka coordinates. */
-export interface RetriedRecord { topic: string; partition: number; offset: string }
+/** The action that let a held record be read again, if the feed shows one before it. */
+export type Recovery = Extract<LabAction, "source.resume" | "gateway.restart">;
+
+/** A retried record, by its Kafka coordinates, and the latest recovery action before it. */
+export interface RetriedRecord { topic: string; partition: number; offset: string; after: Recovery | null }
+
+/** The outcome line for a retried record. It names only an action the feed shows, and never claims a commit. */
+export function retriedOutcome(retried: RetriedRecord): string {
+  const where = `offset ${retried.offset} on ${retried.topic} partition ${retried.partition}, and the mapper returned`;
+  const what = retried.after === "source.resume" ? `After Resume the gateway retried the same record, ${where}.`
+    : retried.after === "gateway.restart" ? `After the gateway restart, the restarted gateway read the same record again, ${where}.`
+    : `The gateway retried the same record, ${where}.`;
+  return `${what} That isn't proof the offset was committed; the source state and your view show what happened next.`;
+}
 
 /** The slow client's most recent run, as far as the feed shows it. */
 export interface SatelliteRun {
@@ -56,10 +68,11 @@ export class LabFeedModel {
   /** Records whose map failed in this lease and haven't been retried successfully yet. */
   readonly #failed = new Set<string>();
   #retried: RetriedRecord | null = null;
+  #recovery: Recovery | null = null;
   #satellite: SatelliteRun | null = null;
   #gapCount = 0;
 
-  /** The latest record a Resume retried in this lease, if any. */
+  /** The latest record retried in this lease, if any. */
   get retried(): RetriedRecord | null {
     return this.#retried;
   }
@@ -72,6 +85,7 @@ export class LabFeedModel {
     this.#lines = [];
     this.#failed.clear();
     this.#retried = null;
+    this.#recovery = null;
     this.#satellite = null;
   }
 
@@ -105,6 +119,7 @@ export class LabFeedModel {
     const line = { id: item.id, at: item.at, scenario: true, retried: false };
     switch (item.kind) {
       case "action":
+        if (item.action === "source.resume" || item.action === "gateway.restart") this.#recovery = item.action;
         return { ...line, text: `You: ${ACTION_LABELS[item.action]}` };
       case "source":
         return { ...line, text: `Source ${item.sourceId}: ${item.status}${item.reason ? ` (${item.reason})` : ""}` };
@@ -116,7 +131,7 @@ export class LabFeedModel {
           return { ...line, text: `${item.stationId} record ${place(item)}: map failed${again ? " again (the same record, retried)" : ""}` };
         }
         if (this.#failed.delete(key)) {
-          this.#retried = { topic: item.topic, partition: item.partition, offset: item.offset };
+          this.#retried = { topic: item.topic, partition: item.partition, offset: item.offset, after: this.#recovery };
           return { ...line, retried: true, text: `Retried ${item.stationId} record ${place(item)}: mapper returned` };
         }
         return { ...line, scenario: false, text: `${item.stationId} record ${place(item)}: mapper returned` };

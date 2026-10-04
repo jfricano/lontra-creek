@@ -38,6 +38,8 @@ function mount(root: HTMLElement): void {
   let offset = 0;
   let checking = true;
   let busy = false;
+  /** True while this page's Start request is in flight: the field station may already hold a place for it. */
+  let starting = false;
   /** Claim without a second click: only right after this page's own Start or Reset. */
   let autoClaim = false;
   /** Bumped on pagehide and pageshow, so answers to requests from before are dropped. */
@@ -45,6 +47,8 @@ function mount(root: HTMLElement): void {
   let poll: ReturnType<typeof setTimeout> | undefined;
   let clock: ReturnType<typeof setInterval> | undefined;
   let lastStatusAt = 0;
+  /** True while a heartbeat is in flight, so a visibility change doesn't start a second one. */
+  let ticking = false;
 
   async function call<T>(path: string, method: "GET" | "POST" = "GET"): Promise<Answer<T>> {
     let response: Response;
@@ -85,26 +89,31 @@ function mount(root: HTMLElement): void {
     host.append(boot, style, app, script); host.hidden = false; mountedStudy = lease.studyId;
   }
 
+  /** Rendering runs every second; only a real change touches the DOM, so live regions announce changes only. */
+  function text(element: HTMLElement, value: string): void { if (element.textContent !== value) element.textContent = value; }
+
   function render(): void {
     const view = sessionView({ status, statusProblem, lease, checking, busy, now: now(), connectedStudy: connection?.studyId ?? null });
     root.dataset["phase"] = view.phase;
-    el("[data-sandbox-headline]").textContent = view.headline;
-    el("[data-sandbox-detail]").textContent = view.detail;
-    el("[data-sandbox-clock]").textContent = view.clock;
-    el("[data-sandbox-note]").textContent = [note, contact].filter(Boolean).join(" ");
-    el("[data-sandbox-pool]").textContent = checking ? "" : availabilityView(status, statusProblem).pool;
+    text(el("[data-sandbox-headline]"), view.headline);
+    text(el("[data-sandbox-detail]"), view.detail);
+    text(el("[data-sandbox-clock]"), view.clock);
+    text(el("[data-sandbox-note]"), [note, contact].filter(Boolean).join(" "));
+    text(el("[data-sandbox-pool]"), checking ? "" : availabilityView(status, statusProblem).pool);
+    // Revalidating mid-action would drop the action's answer, such as the place a Start was given.
+    el<HTMLButtonElement>("[data-sandbox-retry]").disabled = busy;
     const shown: Record<keyof typeof buttons, boolean> = {
       start: ["checking", "unavailable", "idle", "ended"].includes(view.phase), claim: view.phase === "ready" || (view.phase === "active" && view.enabled.claim),
       return: ["queued", "ready", "active", "resetting"].includes(view.phase), reset: view.phase === "active", repro: view.phase === "active"
     };
     for (const [name, button] of Object.entries(buttons) as [keyof typeof buttons, HTMLButtonElement][]) { button.hidden = !shown[name]; button.disabled = !view.enabled[name]; }
-    buttons.return.textContent = view.returnLabel; buttons.claim.textContent = view.claimLabel;
+    text(buttons.return, view.returnLabel); text(buttons.claim, view.claimLabel);
     const labels = runtimeLabels(checking ? null : view.runtime);
-    el("[data-sandbox-mode]").textContent = labels?.mode ?? "Not reported";
-    el("[data-sandbox-packages]").textContent = labels?.packages ?? "Not reported";
-    el("[data-sandbox-contract]").textContent = labels?.contract ?? "Not reported";
+    text(el("[data-sandbox-mode]"), labels?.mode ?? "Not reported");
+    text(el("[data-sandbox-packages]"), labels?.packages ?? "Not reported");
+    text(el("[data-sandbox-contract]"), labels?.contract ?? "Not reported");
     el("[data-sandbox-runtime-note]").hidden = labels !== null || checking;
-    el("[data-sandbox-mount-note]").textContent = view.phase === "active" ? mountNote : "";
+    text(el("[data-sandbox-mount-note]"), view.phase === "active" ? mountNote : "");
   }
 
   async function refreshStatus(): Promise<void> {
@@ -141,26 +150,35 @@ function mount(root: HTMLElement): void {
   }
 
   /** One lifecycle action from a button: disable the controls, send it, then show the field station's answer. */
-  async function act(action: () => Promise<void>): Promise<void> {
+  async function act(action: () => Promise<void>, from?: HTMLButtonElement): Promise<void> {
     if (busy) return;
+    const focused = from !== undefined && document.activeElement === from;
     busy = true; note = ""; render();
-    try { await action(); } finally { busy = false; render(); }
+    try { await action(); } finally { busy = false; render(); if (focused) refocus(from); }
+  }
+  /** The pressed button was disabled, and may now be hidden: give focus back to it, to the control that replaces it, or to the new state's headline. */
+  function refocus(from: HTMLButtonElement): void {
+    const active = document.activeElement;
+    if (active !== null && active !== document.body && active !== from) return; // the visitor has moved on
+    const usable = (button: HTMLButtonElement): boolean => !button.hidden && !button.disabled;
+    ([from, buttons.claim, buttons.start].find(usable) ?? el("[data-sandbox-headline]")).focus();
   }
   buttons.start.addEventListener("click", () => { void act(async () => {
-    const g = generation; const answer = await call<SandboxLease>("session", "POST"); if (g !== generation) return;
+    const g = generation; starting = true;
+    const answer = await call<SandboxLease>("session", "POST").finally(() => { starting = false; }); if (g !== generation) return;
     if (!answer.ok) { note = problemText(answer.problem); if (answer.problem.kind === "refused" && answer.problem.code === "sandbox-unavailable") await refreshStatus(); return; }
     autoClaim = true; setLease(answer.data);
     if (lease?.status === "ready") await claim();
-  }); });
-  buttons.claim.addEventListener("click", () => { void act(claim); });
+  }, buttons.start); });
+  buttons.claim.addEventListener("click", () => { void act(claim, buttons.claim); });
   buttons.return.addEventListener("click", () => { void act(async () => {
     const g = generation; const answer = await call<SandboxLease>("session/return", "POST"); if (g !== generation) return;
     if (answer.ok) setLease(answer.data); else note = problemText(answer.problem);
-  }); });
+  }, buttons.return); });
   buttons.reset.addEventListener("click", () => { void act(async () => {
     const g = generation; const answer = await call<SandboxLease>("session/reset", "POST"); if (g !== generation) return;
     if (answer.ok) { autoClaim = true; setLease(answer.data); } else { note = problemText(answer.problem); await refreshLease(); }
-  }); });
+  }, buttons.reset); });
   buttons.repro.addEventListener("click", () => { void act(async () => {
     const answer = await call<SandboxReproDownload>("session/repro", "POST");
     if (!answer.ok) { note = problemText(answer.problem); return; }
@@ -168,23 +186,28 @@ function mount(root: HTMLElement): void {
     link.href = URL.createObjectURL(new Blob([answer.data.content], { type: "application/json" })); link.download = answer.data.filename;
     link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 0);
     note = `Saved ${answer.data.filename}: this study's synthetic scenario, packages, and traces only.`;
-  }); });
+  }, buttons.repro); });
   el("[data-sandbox-retry]").addEventListener("click", () => { void revalidate(); });
 
   async function tick(): Promise<void> {
-    const g = generation;
-    if (holding()) {
-      await refreshLease(); if (g !== generation) return;
-      if (autoClaim && !busy && (lease?.status === "ready" || (lease?.status === "active" && connection?.studyId !== lease.studyId))) await act(claim);
-    }
-    if (g === generation && Date.now() - lastStatusAt >= STATUS_MS) await refreshStatus();
-    if (g !== generation) return;
-    render(); poll = setTimeout(() => { void tick(); }, HEARTBEAT_MS);
+    const g = generation; ticking = true;
+    try {
+      if (holding()) {
+        await refreshLease(); if (g !== generation) return;
+        if (autoClaim && !busy && (lease?.status === "ready" || (lease?.status === "active" && connection?.studyId !== lease.studyId))) await act(claim);
+      }
+      if (g === generation && Date.now() - lastStatusAt >= STATUS_MS) await refreshStatus();
+      if (g !== generation) return;
+      render(); poll = setTimeout(() => { void tick(); }, HEARTBEAT_MS);
+    } finally { if (g === generation) ticking = false; }
   }
+  // A browser can slow a background tab's timers to one wake-up a minute, as long as the idle limit,
+  // so check in as soon as the page is visible again rather than at the next timer.
+  document.addEventListener("visibilitychange", () => { if (document.hidden || checking || ticking || !holding()) return; clearTimeout(poll); void tick(); });
 
   /** Status, then this browser's session; nothing is shown as active until both have answered. */
   async function revalidate(): Promise<void> {
-    const g = ++generation; clearTimeout(poll);
+    const g = ++generation; clearTimeout(poll); ticking = false; // a heartbeat in flight is now stale
     const held = holding();
     checking = true; render();
     await refreshStatus(); if (g !== generation) return;
@@ -195,12 +218,12 @@ function mount(root: HTMLElement): void {
   }
 
   function start(): void { clock = setInterval(render, 1_000); void revalidate(); }
-  function stop(): void { generation++; clearTimeout(poll); clearInterval(clock); }
+  function stop(): void { generation++; ticking = false; clearTimeout(poll); clearInterval(clock); }
 
   window.addEventListener("pagehide", () => {
-    const held = holding();
+    const held = holding() || starting;
     stop(); unmount(); connection = null; discovery = null; autoClaim = false; checking = true;
-    // Leaving the page returns the slot or place; the empty body keeps keepalive preflight-free.
+    // Leaving the page returns the slot or place, including one a Start still in flight may get; the empty body keeps keepalive preflight-free.
     if (held) void fetch(`${origin}/api/sandbox/session/return`, { method: "POST", credentials: "include", keepalive: true }).catch(() => undefined);
   });
   // A restore from the back-forward cache revalidates and never allocates.

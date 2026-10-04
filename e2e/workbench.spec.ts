@@ -188,7 +188,8 @@ test("a ready slot found on load shows its claim window and waits for the visito
   const ui = panel(page);
   await page.goto("/workbench/");
   await expect(ui.root).toHaveAttribute("data-phase", "ready");
-  await expect(ui.detail).toContainText(/Claim it within 0:[23]\d, or it goes to the next visitor\./);
+  await expect(ui.detail).toHaveText("Claim it within the time shown below, or it goes to the next visitor.");
+  await expect(page.locator("[data-sandbox-clock]")).toContainText(/^0:[23]\d left to claim it · /);
   await expect(ui.claim).toBeVisible();
   await expect(ui.claim).toBeEnabled();
   expect(seen.filter(entry => entry.startsWith("POST"))).toEqual([]);
@@ -280,3 +281,106 @@ for (const scheme of ["light", "dark"] as const) {
     await check();
   });
 }
+
+test("while Start is in flight, Check again waits, so the field station's answer is shown and kept alive", async ({ page }) => {
+  let release!: () => void; const answered = new Promise<void>(resolve => { release = resolve; });
+  const queued: SandboxLease = { status: "queued", now: iso(), position: 1, queueLength: 1, joinedAt: iso(), nextFreeAt: null, sessionExpiresAt: iso(3_600_000) };
+  const seen = await stubSandbox(page, ({ method, path }) => {
+    if (path === "status") return { json: available() };
+    if (method === "GET" && path === "session") return seen.includes("POST session") ? { json: { ...queued, now: iso() } } : { status: 401, json: { error: "No session.", code: "no-session" } };
+    if (path === "session") return { json: queued };
+    return undefined;
+  });
+  await page.route("**/api/sandbox/session", async route => { if (route.request().method() === "POST") await answered; return route.fallback(); });
+  const ui = panel(page); const retry = page.locator("[data-sandbox-retry]");
+  await page.goto("/workbench/");
+  await expect(ui.start).toBeEnabled();
+  await ui.start.click();
+  await expect(retry).toBeDisabled();
+  release();
+  await expect(ui.root).toHaveAttribute("data-phase", "queued");
+  await expect(retry).toBeEnabled();
+  const before = seen.filter(entry => entry === "GET session").length;
+  await expect.poll(() => seen.filter(entry => entry === "GET session").length, { timeout: 8_000 }).toBeGreaterThan(before);
+});
+
+test("leaving the page while Start is in flight still returns the place", async ({ page }) => {
+  const seen = await stubSandbox(page, ({ method, path }) => {
+    if (path === "status") return { json: available() };
+    if (method === "GET" && path === "session") return { status: 401, json: { error: "No session.", code: "no-session" } };
+    if (path === "session/return") return { json: ended("left") };
+    if (path === "session") return { json: { status: "queued", now: iso(), position: 1, queueLength: 1, joinedAt: iso(), nextFreeAt: null, sessionExpiresAt: iso(3_600_000) } };
+    return undefined;
+  });
+  let release!: () => void; const answered = new Promise<void>(resolve => { release = resolve; });
+  let sent = false;
+  await page.route("**/api/sandbox/session", async route => { if (route.request().method() === "POST") { sent = true; await answered; } return route.fallback(); });
+  const ui = panel(page);
+  await page.goto("/workbench/");
+  await ui.start.click();
+  await expect.poll(() => sent).toBe(true);
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })));
+  await expect.poll(() => seen.includes("POST session/return")).toBe(true);
+  release();
+});
+
+for (const phase of ["idle", "ready"] as const) {
+  test(`the polite status region holds still in the ${phase} phase: the panel's once-a-second render rewrites nothing in it`, async ({ page }) => {
+    await stubSandbox(page, ({ path }) => path === "status" ? { json: available() } : path === "session" ? (phase === "ready" ? { json: lease("ready") } : { status: 401, json: { error: "No session.", code: "no-session" } }) : undefined);
+    await page.goto("/workbench/");
+    await expect(panel(page).root).toHaveAttribute("data-phase", phase);
+    const mutations = await page.evaluate(() => new Promise<number>(resolve => {
+      let count = 0;
+      const observer = new MutationObserver(records => { count += records.length; });
+      observer.observe(document.querySelector(".sandbox-state")!, { subtree: true, childList: true, characterData: true });
+      setTimeout(() => { observer.disconnect(); resolve(count); }, 3_000);
+    }));
+    expect(mutations).toBe(0);
+    if (phase === "ready") await expect(page.locator("[data-sandbox-clock]")).toContainText("left to claim it");
+  });
+}
+
+test("keyboard focus follows a lifecycle action instead of falling to the page", async ({ page }) => {
+  let state: SandboxLease = { status: "none", now: iso() };
+  await stubSandbox(page, ({ method, path }) => {
+    if (path === "status") return { json: available() };
+    if (method === "POST" && path === "session") { state = { status: "queued", now: iso(), position: 1, queueLength: 1, joinedAt: iso(), nextFreeAt: null, sessionExpiresAt: iso(3_600_000) }; return { json: state }; }
+    if (path === "session/return") { state = ended(state.status === "queued" ? "left" : "returned"); return { json: state }; }
+    if (path === "session/repro") return { json: { filename: "lontra-creek-sandbox-repro.json", content: "{}" } };
+    if (path === "session") return { json: state };
+    return undefined;
+  });
+  const ui = panel(page);
+  await page.goto("/workbench/");
+  await expect(ui.start).toBeEnabled();
+  await ui.start.focus(); await page.keyboard.press("Enter");
+  // Start is gone once queued: focus moves to the new state's headline.
+  await expect(ui.root).toHaveAttribute("data-phase", "queued");
+  await expect(ui.headline).toBeFocused();
+  await expect(ui.end).toBeEnabled(); await ui.end.focus(); await page.keyboard.press("Enter");
+  // Leaving the line brings Start back: focus goes to it.
+  await expect(ui.headline).toHaveText("You left the line.");
+  await expect(ui.start).toBeFocused();
+  state = lease("active");
+  await page.locator("[data-sandbox-retry]").click();
+  await expect(ui.root).toHaveAttribute("data-phase", "active");
+  // A button still there after its action keeps focus.
+  await expect(ui.repro).toBeEnabled(); await ui.repro.focus(); await page.keyboard.press("Enter");
+  await expect(ui.note).toContainText("Saved lontra-creek-sandbox-repro.json");
+  await expect(ui.repro).toBeFocused();
+  await expect(ui.end).toBeEnabled(); await ui.end.focus(); await page.keyboard.press("Enter");
+  await expect(ui.headline).toHaveText("You returned your slot. Its study was discarded.");
+  await expect(ui.start).toBeFocused();
+});
+
+test("coming back to the page checks in at once, without starting a second heartbeat", async ({ page }) => {
+  const seen = await stubSandbox(page, ({ path }) => path === "status" ? { json: available() } : path === "session" ? { json: lease("active") } : path === "session/claim" ? { json: connection() } : undefined);
+  const beats = () => seen.filter(entry => entry === "GET session").length;
+  await page.goto("/workbench/");
+  await expect(panel(page).root).toHaveAttribute("data-phase", "active");
+  const before = beats(); // the next timed heartbeat is 5 s away
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await expect.poll(beats, { timeout: 1_500 }).toBe(before + 1);
+  await page.waitForTimeout(5_500);
+  expect(beats()).toBe(before + 2);
+});

@@ -18,7 +18,7 @@ The route, its navigation entry, and the site summary in `site.ts` are unchanged
 
 ## States
 
-The panel's `data-phase` attribute names the state; the headline is a `role="status"` region.
+The panel's `data-phase` attribute names the state; the headline is a `role="status"` region. After a lifecycle button's action, focus stays on that button if it is still usable, or moves to Claim or Start when one replaces it, or else to the headline.
 
 | Phase | When | Controls |
 | --- | --- | --- |
@@ -26,7 +26,7 @@ The panel's `data-phase` attribute names the state; the headline is a `role="sta
 | `unavailable` | `status` is `unavailable` (`disabled`, `seam-unavailable`, `service-unavailable`, `all-slots-unavailable`), `status` answered 404 (no sandbox routes, shown as not enabled), or it did not answer (shown as unknown, with the network or HTTP reason) | Start disabled; Check again |
 | `idle` | Available and no place held. The pool line says how many slots are free, or that all are in use and Start will queue | Start |
 | `queued` | Position, line length, and the service's upper bound for the next free slot | Leave the line |
-| `ready` | Slot offered; claim window countdown from `claimBy` | Claim your slot, End session |
+| `ready` | Slot offered; claim window countdown from `claimBy`, in the clock line beside the session clock, outside the status region | Claim your slot, End session |
 | `active` | Lease clock from `expiresAt`; the mount note says why nothing is mounted | Open the workbench (only until this page holds the current study's connection), Start over with a fresh study, Download reproduction bundle, End session |
 | `resetting` | A reset is discarding the old study | End session |
 | `ended` | Each `SandboxEndReason` in its own sentence; Start only if the sandbox is still available | Start |

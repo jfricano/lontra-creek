@@ -1,7 +1,7 @@
 import type { Client } from "streamotter/client";
 import type { LabStatus, LabLease, LabToken, LabAction, LabActionResult, LabFeedPage, LabBenchState, LabErrorCode, LabIncidentView } from "../../../field-station/src/lab/contract.ts";
 import { channelVersions, type AppChannels } from "../generated/streamotter.generated.ts";
-import { LabFeedModel } from "./lab-feed.ts";
+import { LabFeedModel, retriedOutcome } from "./lab-feed.ts";
 import { capabilityAnswer, type CapabilityAnswer } from "./lab-catalog-model.ts";
 import type { BrowserStep } from "./lab-incident.ts";
 import { IncidentPanel } from "./lab-incident-panel.ts";
@@ -24,7 +24,7 @@ const MESSAGES: Record<LabErrorCode, string> = {
   "unsupported-scenario": "This backend does not support this scenario.",
   "too-many-requests": "Too many Lab requests from your address. Trying again shortly.",
   "too-many-actions": "One action a second, please.",
-  "too-many-places": "Your address already holds two places in the Lab.",
+  "too-many-places": "This network address already holds two places across the Failure Lab and the workbench sandbox. Return one of them, then try again.",
   "queue-full": "The line for a bench is full. Try again in a few minutes.",
   "lab-unavailable": "The Lab is unavailable.",
   "bench-unavailable": "Your bench stopped answering."
@@ -100,11 +100,14 @@ async function mount(root: HTMLElement): Promise<void> {
   function benchState(state: LabBenchState): void {
     benchStateNow = state;
     el("[data-lab-state]").textContent = `Gateway ${state.gateway} · source ${state.source.status}${state.source.reason ? ` (${state.source.reason})` : ""} · relay ${state.relay} · calibration ${state.calibration} · satellite ${state.satellite} · receipt timeout ${state.receiptTimeoutMs / 1000}s`;
+    // The bench's own predicates (field-station lab/runtime.ts), so a button is never offered for a 409 `not-applicable`.
+    // Every action needs a running gateway; Resume also waits for the calibration, or the record would only fail again.
+    const running = state.gateway === "running";
     const allowed: Record<LabAction, boolean> = {
-      "sensor.foul": state.calibration === "present", "sensor.restore": state.calibration === "removed",
-      "source.resume": state.source.status === "paused" && state.calibration === "present",
-      "relay.cut": state.relay === "up", "relay.restore": state.relay === "cut",
-      "satellite.start": state.satellite === "idle", "gateway.restart": state.gateway === "running"
+      "sensor.foul": running && state.calibration === "present", "sensor.restore": running && state.calibration === "removed",
+      "source.resume": running && state.source.status === "paused" && state.calibration === "present",
+      "relay.cut": running && state.relay === "up", "relay.restore": running && state.relay === "cut",
+      "satellite.start": running && state.satellite === "idle" && state.source.status === "healthy", "gateway.restart": running && state.relay === "up"
     };
     root.querySelectorAll<HTMLButtonElement>("[data-lab-action]").forEach(button => { button.disabled = !allowed[button.dataset["labAction"] as LabAction]; });
   }
@@ -147,7 +150,11 @@ async function mount(root: HTMLElement): Promise<void> {
     else if (next.status === "ready" || next.status === "active") {
       message.textContent = `Your isolated bench: ${next.bench}.`; benchState(next.benchState); nextActionAt = Date.parse(next.nextActionAt);
       if (leaseId !== next.leaseId && connectingLeaseId !== next.leaseId) await connect(next);
-    } else { message.textContent = next.status === "ended" ? `Your lease ended: ${next.reason}. You can join again.` : "Choose Borrow a bench to begin."; await disconnect(); resetPanel(); el("[data-lab-clock]").textContent = ""; }
+    } else {
+      // A background tab's timers can be slowed past the 30 s idle limit; the visibility poll then shows why the lease ended.
+      message.textContent = next.status !== "ended" ? "Choose Borrow a bench to begin." : next.reason === "idle" ? "Your lease ended because this page stopped checking in, which can happen when a browser slows a tab left in the background. You can join again." : `Your lease ended: ${next.reason}. You can join again.`;
+      await disconnect(); resetPanel(); el("[data-lab-clock]").textContent = "";
+    }
     // The pool changes whenever this visitor's place does: show it now, not at the next 10 s poll.
     if (changed) void status();
   }
@@ -165,8 +172,16 @@ async function mount(root: HTMLElement): Promise<void> {
   async function leasePoll(): Promise<void> {
     if (lease && lease.status !== "none" && lease.status !== "ended") {
       try { await renderLease(await request<LabLease>("lease")); }
-      catch(error) { heartbeatHealthy = false; message.textContent = explain(error); actions.disabled = true; }
+      catch(error) { heartbeatHealthy = false; actions.disabled = true; await failed(error); }
     }
+  }
+  /** Says why a request failed. A 401 `no-session` means the session cookie lapsed, and the place or lease ended with it: show it ended, as the workbench does. */
+  async function failed(error: unknown): Promise<void> {
+    if (error instanceof HttpStatusError && error.code === "no-session" && lease && lease.status !== "none" && lease.status !== "ended") {
+      const at = new Date(Date.now() + offset).toISOString();
+      await renderLease({ status: "ended", now: at, reason: "session-ended", endedAt: at, bench: null });
+    }
+    message.textContent = explain(error);
   }
   function renderFeed(): void {
     const list = el("[data-lab-feed]");
@@ -184,7 +199,7 @@ async function mount(root: HTMLElement): Promise<void> {
       const moved = satelliteFrom && revision && satelliteFrom !== revision ? ` and moved from revision ${satelliteFrom} to ${revision} since you started it` : "";
       outcome.textContent = `${satellite.overloaded ? `The slow client missed its ${timeout}receipt deadline and the gateway disconnected it (OVERLOADED).` : "The slow client disconnected."} Your LC-03 view is ${viewState}${moved}.`;
     } else if (kind === "retried" && retried) {
-      outcome.textContent = `After Resume the gateway retried the same record, offset ${retried.offset} on ${retried.topic} partition ${retried.partition}, and the mapper returned. That isn't proof the offset was committed; the source state and your view show what happened next.`;
+      outcome.textContent = retriedOutcome(retried);
     }
   }
   async function feed(): Promise<void> {
@@ -202,7 +217,7 @@ async function mount(root: HTMLElement): Promise<void> {
       if (page.items.length || page.gap) renderFeed();
       if (model.retried !== retried) renderOutcome("retried");
       if (run?.disconnected && changed) renderOutcome("satellite");
-    } catch(error) { message.textContent = explain(error); }
+    } catch(error) { await failed(error); }
   }
   /** The capability summary, once per page and on Check again. A 404 (the fixture demo, an older backend) leaves every new exercise unavailable. */
   async function loadCapabilities(): Promise<void> {
@@ -225,14 +240,14 @@ async function mount(root: HTMLElement): Promise<void> {
     } catch { /* The lease poll reports a lost lease; the panel keeps its last served state. */ }
   }
   fullFeed.addEventListener("change", renderFeed);
-  joins.addEventListener("click", () => { joins.disabled = true; void request<LabLease>("lease", {}).then(renderLease).catch(error => { message.textContent = explain(error); joins.disabled = false; }); });
-  returns.addEventListener("click", () => { returns.disabled = true; void request<LabLease>("lease/return", undefined, "POST").then(renderLease).catch(error => { message.textContent = explain(error); returns.disabled = false; }); });
+  joins.addEventListener("click", () => { joins.disabled = true; void request<LabLease>("lease", {}).then(renderLease).catch(async error => { await failed(error); joins.disabled = false; }); });
+  returns.addEventListener("click", () => { returns.disabled = true; void request<LabLease>("lease/return", undefined, "POST").then(renderLease).catch(async error => { returns.disabled = false; await failed(error); }); });
   el("[data-lab-retry]").addEventListener("click", () => { void status(); if (capabilities.kind !== "summary") void loadCapabilities(); });
   root.querySelectorAll<HTMLButtonElement>("[data-lab-action]").forEach(button => button.addEventListener("click", () => {
     if (actionBusy) return; actionBusy = true; actions.disabled = true;
     const action = button.dataset["labAction"] as LabAction; const from = revision;
     void request<LabActionResult>("actions", { action }).then(result => { nextActionAt = Date.parse(result.nextActionAt); benchState(result.benchState); if (action === "satellite.start") { satelliteFrom = from; outcome.textContent = ""; } })
-      .catch(error => { message.textContent = explain(error); }).finally(() => { actionBusy = false; });
+      .catch(failed).finally(() => { actionBusy = false; });
   }));
   let pollTick = 0;
   async function poll(): Promise<void> {

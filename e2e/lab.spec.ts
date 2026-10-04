@@ -160,3 +160,99 @@ test("an error answer without a JSON body reads as a sentence, not a parser erro
   await expect(page.locator("[data-lab-message]")).toHaveText("The Lab isn't answering right now. Trying again.");
   await expect(page.locator("[data-lab-join]")).toBeEnabled();
 });
+
+test("a session that lapses mid-lease ends the lease view and offers Borrow again", async ({ page }) => {
+  let session = true;
+  await page.route("**/api/lab/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/status")) return route.fulfill({ json:{ enabled:true, now:now(), benches:[{ bench:1, state:"leased" }], queueLength:0, nextFreeAt:null } });
+    if (!session) return route.fulfill({ status:401, json:{ error:"No session.", code:"no-session" } });
+    if (path.endsWith("/lease/token")) return route.fulfill({ json:token });
+    if (path.endsWith("/trace")) return route.fulfill({ json:{ items:[], next:"", gap:false } });
+    return route.fulfill({ json:ready() });
+  });
+  await page.goto("/lab/"); await page.locator("[data-lab-join]").click();
+  await expect(page.locator("[data-lab-clock]")).toContainText("left on your lease");
+  await expect(page.locator("[data-lab-state]")).toContainText("Gateway running");
+  session = false; // the lc_session cookie expired: every Lab request answers 401 no-session
+  await expect(page.locator("[data-lab-join]")).toBeEnabled({ timeout:5_000 });
+  await expect(page.locator("[data-lab-message]")).toHaveText("Your Lab session has ended. Borrow a bench to start again.");
+  await expect(page.locator("[data-lab-return]")).toBeDisabled();
+  await expect(page.locator("[data-lab-clock]")).toHaveText("");
+  await expect(page.locator("[data-lab-state]")).toHaveText("Not leased.");
+  await expect(page.locator("[data-lab-action]").first()).toBeDisabled();
+});
+
+test("a Return refused with no-session ends the lease view instead of leaving Return pressable", async ({ page }) => {
+  let session = true;
+  await page.route("**/api/lab/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/status")) return route.fulfill({ json:{ enabled:true, now:now(), benches:[{ bench:1, state:"leased" }], queueLength:0, nextFreeAt:null } });
+    if (path.endsWith("/lease/return")) { session = false; return route.fulfill({ status:401, json:{ error:"No session.", code:"no-session" } }); }
+    if (!session) return route.fulfill({ status:401, json:{ error:"No session.", code:"no-session" } });
+    if (path.endsWith("/lease/token")) return route.fulfill({ json:token });
+    if (path.endsWith("/trace")) return route.fulfill({ json:{ items:[], next:"", gap:false } });
+    return route.fulfill({ json:ready() });
+  });
+  await page.goto("/lab/"); await page.locator("[data-lab-join]").click();
+  await expect(page.locator("[data-lab-clock]")).toContainText("left on your lease");
+  await page.locator("[data-lab-return]").click();
+  await expect(page.locator("[data-lab-message]")).toHaveText("Your Lab session has ended. Borrow a bench to start again.");
+  await expect(page.locator("[data-lab-return]")).toBeDisabled();
+  await expect(page.locator("[data-lab-join]")).toBeEnabled();
+  await expect(page.locator("[data-lab-clock]")).toHaveText("");
+});
+
+test("a too-many-places refusal names the cap the Lab shares with the workbench sandbox", async ({ page }) => {
+  await page.route("**/api/lab/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/status")) return route.fulfill({ json:{ enabled:true, now:now(), benches:[{ bench:1, state:"ready" }], queueLength:0, nextFreeAt:null } });
+    return route.fulfill({ status:429, json:{ error:"Too many places.", code:"too-many-places" } });
+  });
+  await page.goto("/lab/"); await page.locator("[data-lab-join]").click();
+  await expect(page.locator("[data-lab-message]")).toHaveText("This network address already holds two places across the Failure Lab and the workbench sandbox. Return one of them, then try again.");
+  await expect(page.locator("[data-lab-join]")).toBeEnabled();
+});
+
+test("bench buttons are enabled only for actions the bench accepts in its current state", async ({ page }) => {
+  let bench: Record<string, unknown> = { ...state, source:{ status:"paused", reason:"HANDLER_FAILED" }, calibration:"removed" };
+  await page.route("**/api/lab/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/status")) return route.fulfill({ json:{ enabled:true, now:now(), benches:[{ bench:1, state:"leased" }], queueLength:0, nextFreeAt:null } });
+    if (path.endsWith("/lease/token")) return route.fulfill({ json:token });
+    if (path.endsWith("/trace")) return route.fulfill({ json:{ items:[], next:"", gap:false } });
+    return route.fulfill({ json:{ ...ready(), benchState:bench } });
+  });
+  const enabled = () => page.locator("[data-lab-action]").evaluateAll(buttons => (buttons as HTMLButtonElement[]).filter(button => !button.disabled).map(button => button.dataset["labAction"]));
+  await page.goto("/lab/"); await page.locator("[data-lab-join]").click();
+  await expect(page.locator("[data-lab-actions]")).toBeEnabled();
+  // A fouled sensor paused the source: no slow client until it is healthy again.
+  await expect.poll(enabled).toEqual(["sensor.restore", "relay.cut", "gateway.restart"]);
+  bench = { ...state, relay:"cut" }; // no gateway restart while the relay is cut
+  await expect.poll(enabled).toEqual(["sensor.foul", "relay.restore", "satellite.start"]);
+  bench = { ...state, gateway:"restarting" }; // nothing while the gateway restarts
+  await expect.poll(enabled).toEqual([]);
+  bench = state;
+  await expect.poll(enabled).toEqual(["sensor.foul", "relay.cut", "satellite.start", "gateway.restart"]);
+});
+
+test("coming back to a background tab polls the lease at once and says why an idle lease ended", async ({ page }) => {
+  let lease: Record<string, unknown> = ready();
+  let polls = 0;
+  await page.route("**/api/lab/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/status")) return route.fulfill({ json:{ enabled:true, now:now(), benches:[{ bench:1, state:"leased" }], queueLength:0, nextFreeAt:null } });
+    if (path.endsWith("/lease/token")) return route.fulfill({ json:token });
+    if (path.endsWith("/trace")) return route.fulfill({ json:{ items:[], next:"", gap:false } });
+    if (route.request().method() === "GET") polls++;
+    return route.fulfill({ json:lease });
+  });
+  await page.goto("/lab/"); await page.locator("[data-lab-join]").click();
+  await expect(page.locator("[data-lab-state]")).toContainText("Gateway running");
+  lease = { status:"ended", now:now(), reason:"idle", endedAt:now(), bench:1 };
+  const before = polls;
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await expect.poll(() => polls, { timeout:500 }).toBeGreaterThan(before);
+  await expect(page.locator("[data-lab-message]")).toHaveText("Your lease ended because this page stopped checking in, which can happen when a browser slows a tab left in the background. You can join again.");
+  await expect(page.locator("[data-lab-join]")).toBeEnabled();
+});

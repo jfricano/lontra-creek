@@ -26,7 +26,7 @@ export interface Selection {
 }
 
 export interface Availability {
-  /** `existing`: runs today with the bench controls; `pending`: not checked yet (and unavailable meanwhile). */
+  /** `existing`: runs with the bench controls when the backend has benches; `pending`: not checked yet (and unavailable meanwhile). */
   state: "existing" | "pending" | "available" | "unavailable";
   text: string;
 }
@@ -72,7 +72,14 @@ export function urlFor(current: URL, selection: Selection): string {
 
 export function scenarioAvailability(id: LabScenarioId, answer: CapabilityAnswer, pageRuns: ReadonlySet<LabScenarioId> = PAGE_RUNS): Availability {
   const entry = SCENARIOS[id];
-  if (entry.controls !== null) return { state: "existing", text: id === "fouled-sensor" ? "Runs today on a leased bench with the Fouled sensor controls below." : "Runs today on a leased bench with the controls below." };
+  if (entry.controls !== null) {
+    const controls = id === "fouled-sensor" ? "the Fouled sensor controls below" : "the controls below";
+    const reported = answer.kind === "summary" ? answer.summary.scenarios.find(scenario => scenario.id === id) : undefined;
+    // A backend with no benches says so (`lab-disabled`); without its answer, say what the scenario needs rather than that it runs.
+    if (reported?.available === false) return { state: "unavailable", text: reported.reason?.text ?? UNSUPPORTED };
+    if (reported?.available === true) return { state: "existing", text: `Runs today on a leased bench with ${controls}.` };
+    return { state: "existing", text: `Runs on a leased bench with ${controls}, when this backend has benches.` };
+  }
   // Also the static text: true with or without JavaScript, before the backend answers.
   if (answer.kind === "pending") return { state: "pending", text: "Unavailable until this backend reports support for it." };
   if (answer.kind === "unreachable") return { state: "unavailable", text: "This backend didn't answer its capability check, so this exercise is unavailable." };

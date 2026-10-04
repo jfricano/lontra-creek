@@ -6,7 +6,7 @@
   "description": "StreamOtter's home site and live demo: a fictional river-otter study running on real Kafka.",
   "license": "MIT",
   "engines": {
-    "node": ">=24"
+    "node": ">=24.15"
   },
   "workspaces": [
     "packages/*",

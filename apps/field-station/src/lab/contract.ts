@@ -539,7 +539,7 @@ export interface BenchIncidentFacts {
   studyId: string;
   /** Application state the bench's handlers read. `blips`: S06 starts in this study. */
   app: { calibration: "present" | "removed"; mapping: "broken" | "corrected"; blips: number };
-  /** The source's held incident, else the study's most recently observed one; null with no operator service (`off`) or no incident. */
+  /** The source's held incident, else the study's newest by first observation; null with no operator service (`off`) or no incident. */
   incident: BenchIncident | null;
   /** The source's automatic-continuation circuit; null without failure handling. */
   circuit: { state: "closed" | "open"; recentIncidents: number; limit: number } | null;

@@ -4,10 +4,10 @@
  *
  * A deep link (`#source-failures`, `?scenario=<id>`) selects explanation only: it never
  * borrows a bench, starts a scenario, or approves anything. A new source-failures
- * scenario is available only when the backend reports it available *and* this build of
- * the page has an exercise for it; none does yet. A missing summary (404, as the fixture
- * `npm run dev` answers), an unreachable one, or a summary that doesn't list a scenario
- * all leave it unavailable. There is no mock fallback.
+ * scenario is available only when the backend reports it, its intents, and its incident
+ * projection available *and* this build of the page has an exercise for it. A missing
+ * summary (404, as the fixture `npm run dev` answers), an unreachable one, or a summary
+ * that doesn't list a scenario all leave it unavailable. There is no mock fallback.
  */
 import type { LabCapabilities, LabScenarioId, LabTrack } from "../../../field-station/src/lab/contract.ts";
 import { SCENARIOS, TRACKS, homeTrack } from "../lab-catalog.ts";
@@ -34,8 +34,12 @@ export interface Availability {
 /** Shown beside the availability text, never instead of it. */
 export const AVAILABILITY_ICONS: Record<Availability["state"], string> = { existing: "▶", pending: "⊘", available: "✓", unavailable: "⊘" };
 
-/** New scenarios this build of the page has an exercise for. None until a release supplies the native APIs. */
-export const PAGE_RUNS: ReadonlySet<LabScenarioId> = new Set<LabScenarioId>();
+/**
+ * New scenarios this build of the page has an exercise for: each starts with `scenario.start`
+ * and continues with the incident's next supported intent. Whether one runs here is still
+ * the backend's answer; this only says the page can follow it.
+ */
+export const PAGE_RUNS: ReadonlySet<LabScenarioId> = new Set<LabScenarioId>(["garbled-reading", "bad-projection", "inspect-old-reading", "conflicting-readings", "calibration-blip", "too-many-bad-readings", "restart-recovery", "unavailable-evidence"]);
 
 export const UNSUPPORTED = "This backend does not support this scenario.";
 
@@ -47,7 +51,7 @@ export function isScenario(value: string | null): value is LabScenarioId {
 export function capabilityAnswer(body: unknown): CapabilityAnswer {
   const summary = body as Partial<LabCapabilities> | null;
   const usable = typeof summary === "object" && summary !== null && Array.isArray(summary.scenarios) && typeof summary.library?.version === "string"
-    && typeof summary.backend?.lab === "string" && typeof summary.features?.incidentProjection?.available === "boolean"
+    && typeof summary.backend?.lab === "string" && typeof summary.features?.incidentProjection?.available === "boolean" && typeof summary.features.intents?.available === "boolean"
     && summary.scenarios.every(scenario => typeof scenario === "object" && scenario !== null && typeof scenario.id === "string" && typeof scenario.available === "boolean");
   return usable ? { kind: "summary", summary: summary as LabCapabilities } : { kind: "unreachable" };
 }
@@ -88,7 +92,33 @@ export function scenarioAvailability(id: LabScenarioId, answer: CapabilityAnswer
   if (reported === undefined) return { state: "unavailable", text: UNSUPPORTED };
   if (!reported.available) return { state: "unavailable", text: reported.reason?.text ?? UNSUPPORTED };
   if (!pageRuns.has(id)) return { state: "unavailable", text: "This backend reports this exercise, but this version of the site can't run it yet." };
+  // The exercise needs both: intents to start and continue it, and the incident projection to follow it.
+  const missing = [answer.summary.features.intents, answer.summary.features.incidentProjection].find(feature => !feature.available);
+  if (missing) return { state: "unavailable", text: missing.reason?.text ?? UNSUPPORTED };
   return { state: "available", text: "Available on a leased bench." };
+}
+
+/** What the visitor's own bench allows for an available exercise. */
+export interface BenchContext {
+  /** A ready or active lease. */
+  leased: boolean;
+  /** An intent of this page is still waiting for the bench. */
+  busy: boolean;
+}
+
+export interface StartState {
+  /** False keeps the button focusable with `aria-disabled="true"`; a press sends nothing. */
+  enabled: boolean;
+  /** Replaces the availability text while the exercise is available. */
+  text: string;
+}
+
+/** Whether Start can send `scenario.start` now, and the line that says why or why not. */
+export function startState(availability: Availability, bench: BenchContext): StartState {
+  if (availability.state !== "available") return { enabled: false, text: availability.text };
+  if (!bench.leased) return { enabled: false, text: "Available on a leased bench. Borrow a bench below, then start it here." };
+  if (bench.busy) return { enabled: false, text: "Available on your bench once its current request finishes; follow it in Current incident below." };
+  return { enabled: true, text: "Available on your bench." };
 }
 
 /** One line about the backend, for the Source failures track. `builtWith` is the StreamOtter version this page was built against. */

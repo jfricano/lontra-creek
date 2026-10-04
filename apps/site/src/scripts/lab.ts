@@ -1,10 +1,12 @@
 import type { Client } from "streamotter/client";
-import type { LabStatus, LabLease, LabToken, LabAction, LabActionResult, LabFeedPage, LabBenchState, LabErrorCode, LabIncidentView } from "../../../field-station/src/lab/contract.ts";
+import type { LabStatus, LabLease, LabToken, LabAction, LabActionResult, LabFeedPage, LabBenchState, LabErrorCode, LabIncidentView, LabIntentRequest, LabOperation } from "../../../field-station/src/lab/contract.ts";
 import { channelVersions, type AppChannels } from "../generated/streamotter.generated.ts";
 import { LabFeedModel, retriedOutcome } from "./lab-feed.ts";
+import { ApprovalDialog, reviewFrom } from "./lab-approval.ts";
 import { capabilityAnswer, type CapabilityAnswer } from "./lab-catalog-model.ts";
 import type { BrowserStep } from "./lab-incident.ts";
 import { IncidentPanel } from "./lab-incident-panel.ts";
+import { approveRequest, isPending, newRequestId, nextRequest, operationText, runIntent, startRequest, type RunIo } from "./lab-operation.ts";
 import { mountTracks } from "./lab-tracks.ts";
 import { HttpStatusError, SignInRetry } from "./sign-in-retry.ts";
 import { installTabletNetwork } from "./tablet-network.ts";
@@ -63,6 +65,10 @@ async function mount(root: HTMLElement): Promise<void> {
   const outcome = el("[data-lab-outcome]");
   const fullFeed = el<HTMLInputElement>("[data-lab-feed-all]");
   const incident = new IncidentPanel(el("[data-lab-incident]"));
+  const approval = new ApprovalDialog(el<HTMLDialogElement>("[data-lab-approval]"));
+  /** The visitor's latest intent: aborted when the lease changes or another intent replaces it. */
+  let intentRun: AbortController | undefined;
+  let intentBusy = false;
   let capabilities: CapabilityAnswer = { kind: "pending" };
   let connection = "idle";
   let viewReason: string | undefined;
@@ -90,6 +96,8 @@ async function mount(root: HTMLElement): Promise<void> {
     outcome.textContent = "";
     benchStateNow = undefined; viewState = "idle"; revision = undefined; satelliteFrom = undefined;
     connection = "idle"; viewReason = undefined; lastValue = undefined; browserSteps.length = 0; announced = null; incident.clear();
+    // An intent belongs to the lease it was sent under: stop following it, and drop any review with it.
+    intentRun?.abort(); intentRun = undefined; setIntentBusy(false); incident.operation(""); approval.close();
     model.clear(); renderFeed();
   }
   async function disconnect(): Promise<void> {
@@ -144,6 +152,7 @@ async function mount(root: HTMLElement): Promise<void> {
     const changed = lease?.status !== next.status || ("leaseId" in next && (!lease || !("leaseId" in lease) || lease.leaseId !== next.leaseId));
     lease = next; offset = Date.parse(next.now) - Date.now();
     incident.explain(capabilities, next.status === "ready" || next.status === "active");
+    tracks?.showBench({ leased: next.status === "ready" || next.status === "active", busy: intentBusy });
     returns.disabled = next.status === "none" || next.status === "ended";
     joins.disabled = !returns.disabled;
     if (next.status === "queued") { message.textContent = `All benches are busy. Your place in line: ${next.position} of ${next.queueLength}.`; await disconnect(); resetPanel(); }
@@ -226,7 +235,7 @@ async function mount(root: HTMLElement): Promise<void> {
     tracks?.showCapabilities(capabilities);
     incident.explain(capabilities, lease?.status === "ready" || lease?.status === "active");
   }
-  /** The PROPOSED current-incident projection: fetched only when the backend says it serves one, which no release does yet. */
+  /** The current-incident projection: fetched only when the backend says it serves one. */
   async function incidentPoll(): Promise<void> {
     if (!leaseId || capabilities.kind !== "summary" || !capabilities.summary.features.incidentProjection.available) return;
     const activeSequence = sequence;
@@ -234,11 +243,52 @@ async function mount(root: HTMLElement): Promise<void> {
       const view = await request<LabIncidentView>("incident");
       if (activeSequence !== sequence) return;
       const state = incident.render(view, browserSteps);
+      approval.update(incident.incident, Date.now() + offset);
       if (state !== null) applicationView();
       if (state !== null && state !== announced) outcome.textContent = state;
       announced = state;
     } catch { /* The lease poll reports a lost lease; the panel keeps its last served state. */ }
   }
+  function leased(): boolean { return lease?.status === "ready" || lease?.status === "active"; }
+  function setIntentBusy(on: boolean): void {
+    intentBusy = on; incident.busy(on);
+    tracks?.showBench({ leased: leased(), busy: on });
+  }
+  /** Sends one intent and follows its operation until the bench reports how it ended (lab-operation.ts). */
+  function sendIntent(body: LabIntentRequest): void {
+    intentRun?.abort();
+    const run = new AbortController(); intentRun = run;
+    const io: RunIo = {
+      post: (intent, signal) => request<LabOperation>("actions", intent, "POST", signal),
+      get: (id, signal) => request<LabOperation>(`operations/${encodeURIComponent(id)}`, undefined, "GET", signal),
+      wait: (ms, signal) => new Promise(resolve => { const t = setTimeout(resolve, ms); signal.addEventListener("abort", () => { clearTimeout(t); resolve(); }, { once: true }); })
+    };
+    setIntentBusy(true);
+    incident.operation("Sending your request…");
+    void runIntent(body, io, run.signal, update => {
+      if (update.kind === "operation") {
+        incident.operation(operationText(update.operation));
+        setIntentBusy(isPending(update.operation.status));
+        // A finished step changes the incident: show it now, not at the next poll.
+        if (!isPending(update.operation.status)) void incidentPoll();
+      } else {
+        incident.operation(update.text); setIntentBusy(false);
+        if (update.kind === "refused" && update.code === "no-lease") void leasePoll(); else void incidentPoll();
+      }
+    }).finally(() => { if (intentRun === run) { intentRun = undefined; if (intentBusy) setIntentBusy(false); } });
+  }
+  tracks?.onStart(scenario => { if (!intentBusy && leased()) sendIntent(startRequest(scenario, newRequestId())); });
+  incident.onAct((current, button) => {
+    if (intentBusy || !leaseId) return;
+    if (current.nextIntent !== "incident.approve-reprocess") { const body = nextRequest(current, newRequestId()); if (body) sendIntent(body); return; }
+    const review = reviewFrom(current);
+    if (review === null) { incident.operation("The incident offers approval, but its evaluation has no plan this page can approve. Evaluate again."); return; }
+    approval.show(review, button, current, Date.now() + offset, {
+      fallback: () => root.querySelector<HTMLElement>("[data-lab-incident-title]"),
+      // One approval, one request: the reviewed plan's token and revision, never the latest ones.
+      approve: reviewed => { if (!intentBusy && leaseId) sendIntent(approveRequest({ expectedRevision: reviewed.revision, planToken: reviewed.planToken }, newRequestId())); }
+    });
+  });
   fullFeed.addEventListener("change", renderFeed);
   joins.addEventListener("click", () => { joins.disabled = true; void request<LabLease>("lease", {}).then(renderLease).catch(async error => { await failed(error); joins.disabled = false; }); });
   returns.addEventListener("click", () => { returns.disabled = true; void request<LabLease>("lease/return", undefined, "POST").then(renderLease).catch(async error => { returns.disabled = false; await failed(error); }); });
@@ -266,6 +316,7 @@ async function mount(root: HTMLElement): Promise<void> {
       el("[data-lab-clock]").textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2,"0")} left on your lease`;
       actions.disabled = !poolAvailable || !heartbeatHealthy || !client || !leaseId || actionBusy || Date.now() + offset < nextActionAt || seconds === 0;
     }
+    if (approval.open) approval.update(incident.incident, Date.now() + offset);
   }, 250);
   let timer: ReturnType<typeof setTimeout>;
   document.addEventListener("visibilitychange", () => { if (!document.hidden) void leasePoll(); });

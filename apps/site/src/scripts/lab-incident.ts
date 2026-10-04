@@ -1,10 +1,10 @@
 /**
- * The incident panel's view of a PROPOSED `LabIncidentSummary` (Lab contract section 12),
- * with the companion plan's precise labels (section 6, "Say / Do not imply").
+ * The incident panel's view of a `LabIncidentSummary` (Lab contract section 12), with the
+ * companion plan's precise labels (section 6, "Say / Do not imply").
  *
- * The page renders this only from a projection the backend actually served. No published
- * StreamOtter release backs one yet, so on today's backends the panel stays in its empty,
- * explained state; nothing here invents an incident, a disposition, or a step.
+ * The page renders this only from a projection the backend actually served; on a backend
+ * that doesn't serve one the panel stays in its empty, explained state. Nothing here
+ * invents an incident, a disposition, a step, or an outcome.
  *
  * Every mark carries text and an icon, so no state depends on color. A note beside a
  * mark says what it does not mean.
@@ -66,6 +66,17 @@ export const INTENT_LABELS: Record<LabIntent, string> = {
   "incident.approve-reprocess": "Review and approve reprocessing"
 };
 
+/** What the next intent does, beside its button: who acts, and what it doesn't do. */
+export const INTENT_NOTES: Record<LabIntent, string> = {
+  "scenario.start": "Starts a scenario on your bench's study.",
+  "scenario.restore-calibration": "Lontra Creek's application puts LC-03's calibration back. StreamOtter doesn't repair it, and the source stays held until a retry.",
+  "scenario.prepare-coverage": "Lontra Creek's application releases its authoritative-state update and coverage evidence. StreamOtter doesn't invent it.",
+  "incident.retry-current": "Asks the gateway to try the exact held record again. It may hold again.",
+  "incident.reassess": "Asks the recovery guard again whether continuing past the saved record is safe.",
+  "incident.evaluate": "A dry run of the saved record through today's mapper. It changes no source offset and sends no state.",
+  "incident.approve-reprocess": "Opens the evaluation for review. Nothing is reprocessed until you approve it there."
+};
+
 export type StepOrigin = "Application action" | "Library observation" | "Browser observation";
 const ORIGINS: Record<LabIncidentSummary["steps"][number]["origin"], StepOrigin> = { application: "Application action", library: "Library observation" };
 
@@ -87,6 +98,9 @@ export interface IncidentView {
   evaluation: Mark | null;
   reprocess: Mark | null;
   discarded: Mark | null;
+  /** The intent the backend would accept next, its button label, and the line beside it (or why there is none). */
+  nextIntent: LabIntent | null;
+  nextLabel: string | null;
   next: string;
   /** Behind disclosure. */
   detail: [string, string][];
@@ -97,7 +111,8 @@ export interface IncidentView {
 }
 
 export function incidentView(incident: LabIncidentSummary, browser: readonly BrowserStep[] = []): IncidentView {
-  const evaluation = incident.evaluation ? EVALUATION[incident.evaluation.result] : null;
+  // The backend's sentence about what this evaluation found comes first; the mark's fixed note still says what it didn't do.
+  const evaluation = incident.evaluation ? { ...EVALUATION[incident.evaluation.result], note: `${incident.evaluation.summary} ${EVALUATION[incident.evaluation.result].note}` } : null;
   const reprocess = incident.reprocess ? REPROCESS[incident.reprocess] : null;
   const steps: IncidentStep[] = [
     ...incident.steps.map(step => ({ at: step.at, origin: ORIGINS[step.origin], text: step.text })),
@@ -115,7 +130,13 @@ export function incidentView(incident: LabIncidentSummary, browser: readonly Bro
     recovery: RECOVERY[incident.recovery],
     evaluation, reprocess,
     discarded: incident.discarded ? DISCARDED : null,
-    next: incident.nextIntent === null ? "None right now." : `${INTENT_LABELS[incident.nextIntent]}. This version of the page can't send it.`,
+    nextIntent: incident.nextIntent,
+    nextLabel: incident.nextIntent === null ? null : INTENT_LABELS[incident.nextIntent],
+    next: incident.nextIntent !== null ? INTENT_NOTES[incident.nextIntent]
+      : incident.discarded ? "None: this study was discarded."
+      // No Lab intent continues past this hold (an integrity class, or an open continuation limit): only a reset ends it.
+      : incident.source === "held" ? "None. The source stays held at this record; returning the bench discards this study, which doesn't fix the incident."
+      : "None right now.",
     detail: [
       ["Source coordinates", `${detail.topic} · partition ${detail.partition} · offset ${detail.offset}`],
       ["Evidence fingerprint", detail.evidenceFingerprint ?? "Not reported"],

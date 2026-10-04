@@ -112,3 +112,11 @@ test("the workbench screenshot is captioned from its own capture, not the site's
   await expect(shot).toHaveAttribute("width", String(capture.images.preview.width));
   await expect(shot).toHaveAttribute("height", String(capture.images.preview.height));
 });
+
+test("install commands name the pinned release, not npm's latest tag", async ({ page }) => {
+  const release = (JSON.parse(readFileSync(new URL("../node_modules/streamotter/package.json", import.meta.url), "utf8")) as { version: string }).version;
+  await page.goto("/");
+  await expect(page.locator("button[data-copy]")).toHaveAttribute("data-copy", `npm install streamotter@${release}`);
+  await expect(page.locator("#start pre")).toContainText(`npm install streamotter@${release}`);
+  await expect(page.locator("main")).not.toContainText(/npm install streamotter(?!@)/);
+});

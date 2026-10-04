@@ -7,7 +7,7 @@ import fieldConfig from "../../../field-station/streamotter.json";
 import capture from "../../public/recordings/workbench/capture.json" with { type: "json" };
 import LiveCreek from "../components/LiveCreek.astro";
 import Base from "../layouts/Base.astro";
-import { LINKS, LISTED_PAGES, RELEASE } from "../site.ts";
+import { INSTALL_COMMAND, LINKS, LISTED_PAGES, RELEASE } from "../site.ts";
 import { UPCOMING_STABLE } from "../release-facts.ts";
 import { excerpt } from "../snippets/excerpt.ts";
 import handlersSource from "../snippets/handlers.ts?raw";
@@ -16,7 +16,7 @@ import subscribeSource from "../snippets/subscribe.ts?raw";
 const channelJson = JSON.stringify({ station: fieldConfig.channels.station }, null, 2);
 const quickstart = [
   "npm init -y",
-  "npm install streamotter",
+  INSTALL_COMMAND,
   "npx streamotter init .",
   "npx streamotter dev \\",
   "  --config streamotter.json --handlers server/handlers.mjs"
@@ -59,8 +59,8 @@ const states = [
     </p>
     <div class="cta">
       <a class="button button-primary" href="#live">Try the live demo</a>
-      <button class="install" type="button" data-copy="npm install streamotter" aria-label="Copy npm install streamotter">
-        <code>npm install streamotter</code><span data-copy-label>Copy</span>
+      <button class="install" type="button" data-copy={INSTALL_COMMAND} aria-label={`Copy ${INSTALL_COMMAND}`}>
+        <code>{INSTALL_COMMAND}</code><span data-copy-label>Copy</span>
       </button>
       <a class="button button-quiet" href={LINKS.gettingStarted}>Getting started guide ↗</a>
     </div>

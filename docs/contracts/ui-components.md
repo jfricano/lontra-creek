@@ -49,7 +49,7 @@ The SDK log (`.lc-log` in `LiveCreek.astro`, `field-log.ts` in #13) is the sixth
 
 - TypeScript shown on the site comes from a file under `snippets/` that the site's typecheck compiles against the pinned release, never from a string in a page.
 - Configuration shown comes from the real project files or passes `validateProjectConfig` in a test.
-- Install commands match the pinned release. `npm install streamotter` installs npm's `latest` tag, which is `0.1.0-rc.3` (checked September 26, 2026 with `npm view streamotter dist-tags`). If `latest` ever moves off the pinned version, pages pin it (`streamotter@${RELEASE}`); `research` checks at every release (R.1).
+- Install commands match the pinned release: pages show `INSTALL_COMMAND` from `site.ts`, `npm install streamotter@${RELEASE}`. An unversioned `npm install streamotter` installs npm's `latest` tag, which need not be the pinned release (on October 4, 2026 it was `0.1.0-rc.3` while the site pinned `0.2.0-rc.1`).
 - The `night-owl` theme and `--code-bg` background, in light and dark mode alike; long lines scroll sideways and never wrap.
 - Copy buttons say "Copy", then "Copied", or "Select and copy" when the clipboard is refused.
 - A code panel is never live. Output shown next to code, such as a CLI session, is a recording and carries a recording label.

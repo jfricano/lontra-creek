@@ -14,7 +14,7 @@ import {
   CIRCUIT, DISPOSITION_LIFECYCLE, INSTALLED_VALIDATOR_ON_FAILURE_HANDLING, NOT_OFFERED, OPERATOR_ACTIONS, POLICIES, POLICY_MATRIX,
   REDRIVE_OUTCOMES, V11_SOURCES, V11_SPEC_COMMIT
 } from "../src/planned-failure-handling.ts";
-import { RELEASE_VERSION } from "../src/release-facts.ts";
+import { RELEASE_VERSION, UPCOMING_STABLE } from "../src/release-facts.ts";
 import { serviceLines } from "../src/scripts/release-service.ts";
 import { PAGES, RELEASE, SITE } from "../src/site.ts";
 
@@ -26,13 +26,20 @@ function sources(dir: string): string[] {
 
 test("one library version everywhere: the site pin, the field station pin, the lockfile, and the installed package (LC11-A40)", () => {
   const locked = (lockfile as { packages: Record<string, { version?: string }> }).packages["node_modules/streamotter"]?.version;
-  assert.equal(RELEASE, sitePackage.dependencies.streamotter);
-  assert.equal(fieldStationPackage.dependencies.streamotter, RELEASE);
+  // An exact pin, not a range; or, before a release is on npm, its locally packed tarball in
+  // vendor/, which scripts/check-release-pins.mjs keeps out of every release build.
+  const pinned = (spec: string): string | undefined => /^\d+\.\d+\.\d+(-[\w.]+)?$/.test(spec) ? spec : /^file:\.\.\/\.\.\/vendor\/streamotter-([\w.-]+)\/streamotter-\1\.tgz$/.exec(spec)?.[1];
+  assert.equal(pinned(sitePackage.dependencies.streamotter), RELEASE);
+  assert.equal(pinned(fieldStationPackage.dependencies.streamotter), RELEASE);
   assert.equal(locked, RELEASE);
   assert.equal(installedPackage.version, RELEASE);
   assert.equal(RELEASE_VERSION, RELEASE);
-  // An exact pin, not a range.
-  assert.match(RELEASE, /^\d+\.\d+\.\d+(-[\w.]+)?$/);
+});
+
+test("the release-candidate notice names the stable version this release leads to, never a hand-typed one", () => {
+  assert.equal(UPCOMING_STABLE, RELEASE.includes("-") ? RELEASE.split("-")[0] : null);
+  const typed = sources(SRC).filter(file => /may change before \d/.test(readFileSync(file, "utf8")));
+  assert.deepEqual(typed, []);
 });
 
 test("the installed validator rejects failureHandling, so V1.1 policies stay labeled as planned", () => {

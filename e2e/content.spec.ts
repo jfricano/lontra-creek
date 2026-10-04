@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { expect, test, type Request } from "@playwright/test";
 
 /** The StreamOtter version the site pins, read from its package.json as the site itself does. */
-const release = (JSON.parse(readFileSync(new URL("../apps/site/package.json", import.meta.url), "utf8")) as { dependencies: { streamotter: string } }).dependencies.streamotter;
+const release = (JSON.parse(readFileSync(new URL("../node_modules/streamotter/package.json", import.meta.url), "utf8")) as { version: string }).version;
 /** Non-GET Lab requests: anything that would borrow a bench, start a scenario, or approve an operation. */
 function labWrites(page: import("@playwright/test").Page): string[] {
   const writes: string[] = [];

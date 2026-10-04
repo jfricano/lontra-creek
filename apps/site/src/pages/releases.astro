@@ -1,13 +1,13 @@
 ---
 import ReferencePage from "../layouts/ReferencePage.astro";
-import {RELEASE_VERSION, NPM_RELEASE_PAGE, SUPPORT_MATRIX,KAFKA_MODES,DEFAULT_LIMIT_VALUES,LIMIT_FACTS} from "../release-facts.ts";
+import {RELEASE_VERSION, UPCOMING_STABLE, NPM_RELEASE_PAGE, SUPPORT_MATRIX,KAFKA_MODES,DEFAULT_LIMIT_VALUES,LIMIT_FACTS} from "../release-facts.ts";
 import {SITE_RELEASE, SURFACES, SURFACE_LABELS} from "../demo-availability.ts";
 import {INSTALLED_VALIDATOR_ON_FAILURE_HANDLING, V11_SOURCES} from "../planned-failure-handling.ts";
 import {LINKS} from "../site.ts";
 const rejected = INSTALLED_VALIDATOR_ON_FAILURE_HANDLING.issues[0];
 ---
 <ReferencePage title="Releases and availability" description="The site release, the exact StreamOtter package it installs, what the demo can run today, and the verified operating boundary, each stated separately.">
-  <p class="notice"><strong>Release candidate.</strong> StreamOtter {RELEASE_VERSION}'s API may change before 0.1.0. <a href={NPM_RELEASE_PAGE}>View this release on npm</a> · <a href={LINKS.changelog}>Changelog</a></p>
+  <p class="notice">{UPCOMING_STABLE && <><strong>Release candidate.</strong> StreamOtter {RELEASE_VERSION}'s API may change before {UPCOMING_STABLE}. </>}<a href={NPM_RELEASE_PAGE}>View this release on npm</a> · <a href={LINKS.changelog}>Changelog</a></p>
   <section aria-labelledby="site-release" data-release-site>
     <h2 id="site-release">Site release</h2>
     <dl class="facts-list">

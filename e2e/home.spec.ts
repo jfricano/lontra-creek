@@ -73,7 +73,7 @@ test.describe("home page live panel", () => {
 });
 
 test.describe("home page V1.1 panel (LC11-A01, A02, A40)", () => {
-  const release = (JSON.parse(readFileSync(new URL("../apps/site/package.json", import.meta.url), "utf8")) as { dependencies: { streamotter: string } }).dependencies.streamotter;
+  const release = (JSON.parse(readFileSync(new URL("../node_modules/streamotter/package.json", import.meta.url), "utf8")) as { version: string }).version;
 
   test("labels V1.1 as planned, says what runs today, and links to the Source failures track without borrowing a bench", async ({ page }) => {
     const lab: string[] = [];

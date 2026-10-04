@@ -1,7 +1,10 @@
-import site from "../package.json" with { type: "json" };
+import installed from "streamotter/package.json" with { type: "json" };
 
-/** The StreamOtter release this site describes and its demo runs: the exact version the site installs. */
-export const RELEASE = site.dependencies.streamotter;
+/**
+ * The StreamOtter release this site describes and its demo runs: the version the site
+ * installs, read from the installed package. A test holds it equal to the exact pin.
+ */
+export const RELEASE: string = installed.version;
 
 /**
  * StreamOtter's headline: the home page's h1, the footer, and the link cards. The README,

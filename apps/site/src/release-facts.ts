@@ -22,6 +22,8 @@ import {
 
 /** The exact version this file describes; read from the installed package, never hand-typed. */
 export const RELEASE_VERSION: string = pkg.version;
+/** The stable version a prerelease leads to (`0.2.0` for `0.2.0-rc.1`), or null for a stable release. */
+export const UPCOMING_STABLE: string | null = RELEASE_VERSION.includes("-") ? RELEASE_VERSION.slice(0, RELEASE_VERSION.indexOf("-")) : null;
 /** The GitHub tag that version was published from. Every `source` below resolves under this tag. */
 export const RELEASE_TAG = `v${RELEASE_VERSION}`;
 

@@ -6,6 +6,7 @@ import fieldConfig from "../../../field-station/streamotter.json";
 import LiveCreek from "../components/LiveCreek.astro";
 import Base from "../layouts/Base.astro";
 import { LINKS, LISTED_PAGES, RELEASE } from "../site.ts";
+import { UPCOMING_STABLE } from "../release-facts.ts";
 import { excerpt } from "../snippets/excerpt.ts";
 import handlersSource from "../snippets/handlers.ts?raw";
 import subscribeSource from "../snippets/subscribe.ts?raw";
@@ -59,7 +60,7 @@ const states = [
       <a class="button button-quiet" href={LINKS.gettingStarted}>Getting started guide ↗</a>
     </div>
     <span class="sr-only" role="status" data-copy-status></span>
-    <p class="release-status"><strong>Release candidate.</strong> The API may change before 0.1.0. <a href={LINKS.status}>What’s verified in this release →</a></p>
+    {UPCOMING_STABLE && <p class="release-status"><strong>Release candidate.</strong> The API may change before {UPCOMING_STABLE}. <a href={LINKS.status}>What’s verified in this release →</a></p>}
     </div>
     <Picture
       src={otterMark}

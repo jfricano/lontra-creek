@@ -2,7 +2,7 @@
 
 October 4, 2026 · Owner: Jason Fricano · For the coordinated StreamOtter 0.2.0-rc.1 / Lontra Creek V1.1 deployment checklist
 
-This is a summary for whoever builds the deployment checklist. The step-by-step rollout (GitHub environments, Cloudflare, the Oracle host, sequence, smoke tests) is in the shared rollout plan, `release-0.2.0-rc.1/ROLLOUT_PLAN.md` in the project files, and is not repeated here. No credentials are named or needed here.
+This is a summary for whoever builds the deployment checklist. The step-by-step rollout (GitHub environments, Cloudflare, the Oracle host, sequence, smoke tests) is in the [rollout plan](https://github.com/jfricano/lontra-creek/blob/fix/streamotter-dev-domain/docs/releases/0.2.0-rc.1/ROLLOUT_PLAN.md) (on #41's branch; it moves to `docs/releases/0.2.0-rc.1/ROLLOUT_PLAN.md` on main when #41 merges) and is not repeated here. No credentials are named or needed here.
 
 ## What ships
 
@@ -42,7 +42,7 @@ This is a summary for whoever builds the deployment checklist. The step-by-step 
 - **Sandbox capacity:** nothing to provision in this release, because no sandbox service is deployed.
   - For W9a, the configured defaults are 3 slots, 600 s leases, a 30-place queue, and 2 places per visitor address shared with the Lab ([LC11-ADR-04](decisions/LC11-ADR-04-workbench-sandbox-architecture.md#defaults-configuration-not-measured-capacity)).
   - Real capacity gets measured locally and on the host first, and Jason decides it.
-- **Domain:** #41 plus the host and Cloudflare steps in the rollout plan (re-run `deploy/setup.sh` for `demo.streamotter.dev`, and `.dev` overrides in `stack.env`).
+- **Domain:** #41 plus the host and Cloudflare steps in the [rollout plan](https://github.com/jfricano/lontra-creek/blob/fix/streamotter-dev-domain/docs/releases/0.2.0-rc.1/ROLLOUT_PLAN.md) (re-run `deploy/setup.sh` for `demo.streamotter.dev`, and `.dev` overrides in `stack.env`).
 
 ## Acceptance checks
 
@@ -56,7 +56,7 @@ This is a summary for whoever builds the deployment checklist. The step-by-step 
   
   All of these are green on #40 at `d5c1b7b`.
 - **Locally:** run `npm run typecheck`, `npm test`, `npm run check:site` and `npm run test:browser`. They need **Node 24**: under Node 22, eight tests in `lab-coverage.test.ts` are cancelled by the test runner, and that is not a product failure.
-- **After deploy:** the smoke steps in the rollout plan (steps 2 and 3), especially checking on the real site that "Drop my connection" actually drops it.
+- **After deploy:** the smoke steps in the [rollout plan](https://github.com/jfricano/lontra-creek/blob/fix/streamotter-dev-domain/docs/releases/0.2.0-rc.1/ROLLOUT_PLAN.md) (steps 2 and 3), especially checking on the real site that "Drop my connection" actually drops it.
 
 ## Rollback
 

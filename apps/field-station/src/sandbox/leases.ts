@@ -41,6 +41,7 @@ export class SandboxPool {
   #bootId: string | null = null;
   #lastSeen: number;
   #nextPoll = 0;
+  #initialized = false;
   #tail: Promise<unknown> = Promise.resolve();
   constructor(options: { client: SandboxClient; slots: SlotId[]; gatewayOrigin: string; cap?: AddressCap; now?: () => number; timings?: Partial<SandboxTimings> }) {
     this.#client = options.client; this.#now = options.now ?? Date.now; this.#origin = options.gatewayOrigin; this.#t = { ...SANDBOX_DEFAULTS, ...options.timings };
@@ -49,8 +50,8 @@ export class SandboxPool {
   }
   run<T>(operation: () => Promise<T>): Promise<T> { const next = this.#tail.then(operation); this.#tail = next.catch(() => undefined); return next; }
   placesFor(address: string): number { let n = 0; for (const place of this.#places.values()) if (place.address === address) n++; return n; }
-  /** Every slot is returned before anything is granted, which also ends whatever an earlier field station left behind. */
-  async initialize(): Promise<void> { await this.run(async () => { for (const slot of this.#slots.keys()) await this.#return(slot, null); }); }
+  /** Every slot is returned before anything is granted, which also ends whatever an earlier field station left behind. Until then the pool is unavailable. */
+  async initialize(): Promise<void> { await this.run(async () => { for (const slot of this.#slots.keys()) await this.#return(slot, null); this.#initialized = true; }); }
 
   async #return(slot: SlotId, leaseId: string | null): Promise<void> {
     const s = this.#slots.get(slot)!; s.state = 'resetting'; s.resetAt = this.#now(); this.#nextPoll = 0;
@@ -65,6 +66,7 @@ export class SandboxPool {
   #holder(slot: SlotId): Place | undefined { for (const place of this.#places.values()) if (place.lease?.slot === slot) return place; return undefined; }
 
   async sweep(): Promise<void> {
+    if (!this.#initialized) return;
     const now = this.#now(); const t = this.#t;
     for (const [subject, ended] of this.#ended) if (now - Date.parse(ended.endedAt) >= t.endedMs) this.#ended.delete(subject);
     for (const place of [...this.#places.values()]) {

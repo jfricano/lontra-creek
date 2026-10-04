@@ -125,6 +125,18 @@ test('A44: an unreachable service ends leases as slot-failed; a restarted servic
   assert.equal(h.reason(b), 'sandbox-restarted');
 });
 
+test('A44: on startup nothing is granted until the field station has returned every slot', async () => {
+  // A request in the window between the API listening and initialize() (main.ts) runs a sweep.
+  const h = await harness({ slots: 1, initialize: false }); const s = h.session('early');
+  await h.settle();
+  assert.equal(h.pool.status().availability, 'unavailable');
+  await assert.rejects(h.join(s), code('sandbox-unavailable'));
+  assert.ok(!h.requests.some(r => r.path.endsWith('/lease')), 'no lease was requested');
+  await h.pool.initialize(); await h.settle();
+  assert.equal((await h.join(s)).status, 'ready'); await h.claim(s);
+  await h.advance(5000); assert.equal(h.view(s).status, 'active', 'a lease granted after initialize is kept');
+});
+
 test('A44: operations are limited to two a second per session, and only while active', async () => {
   const h = await harness(); const s = h.session('s'); await h.join(s);
   await assert.rejects(h.op(s, 'health'), code('no-lease'), 'a ready (unclaimed) lease cannot operate');

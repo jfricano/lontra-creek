@@ -9,7 +9,7 @@ import { FixtureBackend } from './sandbox-fixture.ts';
 
 export const SERVICE_TOKEN = 's'.repeat(40);
 
-export async function harness(options: { slots?: number; backend?: (now: () => number) => SlotBackend; cap?: AddressCap; client?: (inner: SandboxClient) => SandboxClient } = {}) {
+export async function harness(options: { slots?: number; backend?: (now: () => number) => SlotBackend; cap?: AddressCap; client?: (inner: SandboxClient) => SandboxClient; initialize?: boolean } = {}) {
   let now = Date.parse('2026-10-03T00:00:00Z');
   const clock = () => now;
   const fixture = new FixtureBackend(clock);
@@ -29,7 +29,7 @@ export async function harness(options: { slots?: number; backend?: (now: () => n
   const client = options.client?.(direct) ?? direct;
   const cap = options.cap ?? new AddressCap();
   const pool = new SandboxPool({ client, slots, gatewayOrigin: 'https://demo.test', now: clock, cap });
-  await service.start(); await pool.initialize();
+  await service.start(); if (options.initialize !== false) await pool.initialize();
   const settle = async () => { for (let i = 0; i < 2; i++) { await service.settled(); pool.refresh(); await pool.run(() => pool.sweep()); } };
   await settle();
   const h = {

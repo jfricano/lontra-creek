@@ -16,6 +16,9 @@ export interface Tracks {
   showCapabilities(answer: CapabilityAnswer): void;
 }
 
+/** A click the browser handles itself: another button, or a modifier that opens a new tab or window. */
+function modified(event: MouseEvent): boolean { return event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey; }
+
 export function mountTracks(root: ParentNode): Tracks | null {
   const chooser = root.querySelector<HTMLElement>("[data-lab-tracks]");
   if (!chooser) return null;
@@ -44,6 +47,7 @@ export function mountTracks(root: ParentNode): Tracks | null {
     apply(next, false);
   }
   for (const link of links) link.addEventListener("click", event => {
+    if (modified(event)) return;
     event.preventDefault();
     const track = link.dataset["labTrackLink"] as LabTrack;
     choose({ track, scenario: selection.scenario !== null && cards.some(card => card.dataset["labScenario"] === selection.scenario && card.closest<HTMLElement>("[data-lab-track]")?.dataset["labTrack"] === track) ? selection.scenario : null });
@@ -51,7 +55,7 @@ export function mountTracks(root: ParentNode): Tracks | null {
   for (const card of cards) card.querySelector<HTMLAnchorElement>("[data-lab-scenario-link]")?.addEventListener("click", event => {
     const id = card.dataset["labScenario"] ?? null;
     const track = card.closest<HTMLElement>("[data-lab-track]")?.dataset["labTrack"] as LabTrack | undefined;
-    if (!isScenario(id) || track === undefined) return;
+    if (!isScenario(id) || track === undefined || modified(event)) return;
     event.preventDefault();
     choose({ track, scenario: id });
   });

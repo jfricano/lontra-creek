@@ -205,3 +205,19 @@ test("a served incident projection renders with precise labels, hidden coordinat
   // The page reads the projection; it never sends an intent.
   expect(posts(requests).filter(path => path !== "/api/lab/lease" && path !== "/api/lab/lease/token")).toEqual([]);
 });
+
+test("a modified click on a track or scenario link opens it as a link would, leaving this page as it was", async ({ page, context }) => {
+  await workingLab(page);
+  await page.goto("/lab/");
+  for (const link of [page.locator('[data-lab-track-link="source-failures"]'), page.locator('[data-lab-track="connections"] [data-lab-scenario="relay-cut"] [data-lab-scenario-link]')]) {
+    const opened = context.waitForEvent("page");
+    await link.click({ modifiers: ["ControlOrMeta"] });
+    const tab = await opened;
+    await tab.waitForLoadState();
+    expect(new URL(tab.url()).pathname).toBe("/lab/");
+    await tab.close();
+    expect(new URL(page.url()).search + new URL(page.url()).hash).toBe("");
+    await expect(page.locator('[data-lab-track-link="connections"]')).toHaveAttribute("aria-current", "true");
+    await expect(page.locator("[data-lab-scenario][aria-current]")).toHaveCount(0);
+  }
+});

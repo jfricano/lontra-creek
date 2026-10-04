@@ -177,7 +177,8 @@ export class BenchRuntime {
       study.restarts.process++; await this.#store.save(study);
       this.#study = study; this.#scope = scopeFor(study.studyId); this.#scenario.calibration = study.calibration;
       // The lease continues: report it at once, so the field station keeps it while the gateway starts (control stays false until then).
-      if (study.phase === 'open') { this.#lease = study.lease; this.#feed.reset(study.lease!.leaseId); this.#feed.add({ kind: 'bench', event: 'gap' }); this.#state = 'leased'; }
+      // The feed starts a new epoch: the page's cursor from the old process is answered from here, with `gap`.
+      if (study.phase === 'open') { this.#lease = study.lease; this.#feed.reset(study.lease!.leaseId, study.restarts.process); this.#feed.add({ kind: 'bench', event: 'gap' }); this.#state = 'leased'; }
       await this.#relay(false);
       await this.#startGateway();
       if (study.phase === 'clean') { this.#cleanupOk = true; this.#state = 'ready'; }
@@ -216,7 +217,7 @@ export class BenchRuntime {
     if (this.#state !== 'ready' || !this.readiness().cleanLease || !study) throw new LabError('not-applicable', 409); if (!/^[\w-]{1,80}$/.test(leaseId) || !(Date.parse(expiresAt) > this.#now()) || Date.parse(expiresAt) > this.#now() + MAX_LEASE_MS) throw new LabError('invalid-request', 400);
     await this.#poll(false);
     study.phase = 'open'; study.lease = { leaseId, expiresAt }; await this.#store.save(study);
-    this.#lease = { leaseId, expiresAt }; this.#feed.reset(leaseId); this.#satelliteIds.clear(); this.#state = 'leased'; this.#nextAction = 0; this.#feed.add({ kind: 'bench', event: 'lease-started' }); }
+    this.#lease = { leaseId, expiresAt }; this.#feed.reset(leaseId, study.restarts.process); this.#satelliteIds.clear(); this.#state = 'leased'; this.#nextAction = 0; this.#feed.add({ kind: 'bench', event: 'lease-started' }); }
   #check(leaseId: unknown): void { if (!this.#lease || leaseId !== this.#lease.leaseId || Date.parse(this.#lease.expiresAt) <= this.#now()) throw new LabError('no-lease', 409); }
   token(leaseId: unknown): { token: string; expiresAt: string } { this.#check(leaseId); const token = `lab${this.#settings.number}_${randomBytes(32).toString('base64url')}`; if (this.#tokens.size >= 128) return { token: [...this.#tokens][0]!, expiresAt: this.#lease!.expiresAt }; this.#tokens.add(token); return { token, expiresAt: this.#lease!.expiresAt }; }
   feed(leaseId: unknown, after?: string, limit?: number) { this.#check(leaseId); return this.#feed.page(after, limit); }

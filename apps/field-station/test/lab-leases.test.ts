@@ -83,6 +83,10 @@ test('redaction drops handshakes and map noise, replaces identifiers, bounds pag
   assert.equal(feed.page().items.length, 100); assert.equal(feed.page().gap, true);
   const cursor = feed.page().next; feed.reset('second'); assert.throws(() => feed.page(cursor), code('invalid-request'));
   assert.throws(() => feed.page('second:999'), code('invalid-request'));
+  assert.throws(() => feed.page('second:0.1'), code('invalid-request'), 'not issued yet');
+  feed.add({ kind: 'bench', event: 'lease-started' }); assert.equal(feed.page().items[0]?.id, 'second:0.1');
+  feed.reset('second', 1); feed.add({ kind: 'bench', event: 'gap' });
+  assert.deepEqual(feed.page('second:0.1'), { items: feed.page().items, next: 'second:1.1', gap: true }, 'an earlier epoch is answered from the start');
 });
 test('bench environment rejects production and other-bench secrets; options have no protected channels or development principals', () => {
   const env = { LAB_BENCH: '1', LAB_BENCH_1_SERVICE_TOKEN: 's'.repeat(32), LAB_BENCH_1_RELAY_TOKEN: 'r'.repeat(32) };

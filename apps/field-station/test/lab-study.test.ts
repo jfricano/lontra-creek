@@ -157,6 +157,26 @@ describe('restart keeps the study (LC11-A14 app side, A33)', () => {
     const { token } = second.token('lease-1'); assert.equal(second.authenticate(token)?.sessionId, 'lease-1');
   });
 
+  test('the page\'s feed cursor from before a process restart is answered from the restarted feed, with its gap', async t => {
+    const v = await volume(t); const first = await v.runtime(); await lease(first, v.at());
+    const event = (item: { kind: string; event?: string }) => item.kind === 'bench' ? item.event : item.kind;
+    const act = async (bench: BenchRuntime, count: number) => { for (let i = 0; i < count; i++) { await bench.run(() => bench.action('lease-1', i % 2 ? 'sensor.restore' : 'sensor.foul')); v.advance(1000); } };
+    await act(first, 20);
+    const cursor = first.feed('lease-1').next; // what the page holds: lease-started and 20 actions
+    await first.close();
+    const second = await v.runtime();
+    const resumed = second.feed('lease-1', cursor);
+    assert.deepEqual([resumed.gap, resumed.items.map(event)], [true, ['gap']], 'accepted, and the page is told what it missed');
+    // Once the restarted feed has more items than the old process had, the old cursor still doesn't skip them.
+    await act(second, 25);
+    const later = second.feed('lease-1', cursor);
+    assert.equal(later.gap, true);
+    assert.deepEqual(later.items.map(event), ['gap', ...Array(25).fill('action')]);
+    const next = second.feed('lease-1', resumed.next);
+    assert.deepEqual([next.gap, next.items.length], [false, 25], 'the restarted feed\'s own cursor carries on as usual');
+    assert.throws(() => second.feed('lease-1', later.next.replace(/:(\d+)\./, (_, epoch: string) => `:${Number(epoch) + 1}.`)), /invalid-request/, 'a cursor from a later epoch was never issued');
+  });
+
   test('a process restart after the lease ended discards the study instead of resuming it', async t => {
     const v = await volume(t); const first = await v.runtime(); const old = studyOf(first);
     await lease(first, v.at(), 'lease-1', 10_000); await first.close();

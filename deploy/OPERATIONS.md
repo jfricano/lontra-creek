@@ -212,10 +212,17 @@ loopback listeners' `User:ANONYMOUS` the only super user, and on every start
 grants the gateway, the field station, and each `lab-N` bench user exactly the
 ACLs in Lab contract 10.9, creates each bench's `lab-N.quarantine` topic, and
 only then reports healthy. `migrate` is `acl` with
-`allow.everyone.if.no.acl.found=true`: every operation somebody is granted is
-enforced, but an operation nobody is granted (cluster operations, topic
-deletion, config reads) stays open, and its use appears in the authorizer log
-instead of failing. CI (`Stack`, `Lab spike`, `Shared host adapter`) and the
+`allow.everyone.if.no.acl.found=true`, which Kafka applies per resource, not
+per operation. On every topic or group that has any grant (every `field.`,
+`creek.`, `lab-N.`, `streamotter-lab-N-`, `streamotter-lontra-creek-` and
+`lontra-field-station-read-` name), `migrate` enforces exactly as `acl` does:
+an operation nobody is granted there, such as reading `field.gauges`' configs,
+is denied and fails at once. Only resources nobody is granted stay open: the
+cluster itself (and with it creating and deleting any topic, which Kafka allows
+to a user with `Create` or `Delete` on the cluster, and reading broker
+configs), and topics and groups outside every granted prefix. Kafka logs those
+allowed operations at DEBUG only, below the authorizer log's default INFO, so
+they leave no trace unless step 3 raises it. CI (`Stack`, `Lab spike`, `Shared host adapter`) and the
 local Lab (`compose.local-lab.yaml`) run `acl`; a new volume there gets its
 ACLs on first start.
 
@@ -270,11 +277,26 @@ sudo /usr/local/sbin/lontra-deploy "$(sudo cat /srv/lontra/current.sha)"
      127.0.0.1:9092 --list` matches Lab contract 10.9's grants, nothing more.
    - `lontra-health`, the site, a live view, a notebook sighting, and (with
      the Lab) a lease and a reset all work.
-   - After at least one hour of normal traffic, including a Lab reset,
-     `$compose exec kafka grep 'is Denied' /opt/kafka/logs/kafka-authorizer.log`
-     prints nothing for `User:gateway`, `User:field-station`, or a bench's
-     own `lab-N.*` topics and `streamotter-lab-N-` groups. Any line there is a missing
-     grant: stop and roll back.
+   - Make the operations `migrate` lets through visible: `$compose exec kafka
+     env KAFKA_HEAP_OPTS=-Xmx256m /opt/kafka/bin/kafka-configs.sh
+     --bootstrap-server 127.0.0.1:9092 --alter --entity-type broker-loggers
+     --entity-name 1 --add-config kafka.authorizer.logger=DEBUG`. At DEBUG the
+     authorizer logs every allowed request, so watch the disk and keep the
+     window to the hour below.
+   - After at least one hour of normal traffic, including a Lab reset, search
+     the authorizer logs, which roll hourly: `$compose exec kafka sh -c "grep
+     -h -E 'is Denied|DefaultAllow' /opt/kafka/logs/kafka-authorizer.log*"`.
+     An `is Denied` line for `User:gateway`, `User:field-station`, or a
+     bench's own `lab-N.*` topics and `streamotter-lab-N-` groups is a missing
+     grant on a granted resource, already failing: stop and roll back. A
+     `based on rule DefaultAllow` line for one of those users is an operation
+     on a resource nobody is granted, which `acl` will deny: stop and roll
+     back, except `IdempotentWrite` or `Create` on
+     `Cluster:LITERAL:kafka-cluster`, which Kafka checks again on the topic,
+     where the grants cover it (KIP-679 and topic `Create`).
+   - Return the logger to INFO: the same `kafka-configs.sh` command with
+     `--add-config kafka.authorizer.logger=INFO`. (Step 4's restart also
+     resets it.)
 4. **Enforce.** Change the line in `/srv/lontra/stack.env` to
    `KAFKA_AUTHORIZATION=acl` and redeploy the running release; Kafka restarts
    and the clients reconnect after it.

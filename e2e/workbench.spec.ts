@@ -352,11 +352,12 @@ test("keyboard focus follows a lifecycle action instead of falling to the page",
   });
   const ui = panel(page);
   await page.goto("/workbench/");
+  await expect(ui.start).toBeEnabled();
   await ui.start.focus(); await page.keyboard.press("Enter");
   // Start is gone once queued: focus moves to the new state's headline.
   await expect(ui.root).toHaveAttribute("data-phase", "queued");
   await expect(ui.headline).toBeFocused();
-  await ui.end.focus(); await page.keyboard.press("Enter");
+  await expect(ui.end).toBeEnabled(); await ui.end.focus(); await page.keyboard.press("Enter");
   // Leaving the line brings Start back: focus goes to it.
   await expect(ui.headline).toHaveText("You left the line.");
   await expect(ui.start).toBeFocused();
@@ -364,10 +365,10 @@ test("keyboard focus follows a lifecycle action instead of falling to the page",
   await page.locator("[data-sandbox-retry]").click();
   await expect(ui.root).toHaveAttribute("data-phase", "active");
   // A button still there after its action keeps focus.
-  await ui.repro.focus(); await page.keyboard.press("Enter");
+  await expect(ui.repro).toBeEnabled(); await ui.repro.focus(); await page.keyboard.press("Enter");
   await expect(ui.note).toContainText("Saved lontra-creek-sandbox-repro.json");
   await expect(ui.repro).toBeFocused();
-  await ui.end.focus(); await page.keyboard.press("Enter");
+  await expect(ui.end).toBeEnabled(); await ui.end.focus(); await page.keyboard.press("Enter");
   await expect(ui.headline).toHaveText("You returned your slot. Its study was discarded.");
   await expect(ui.start).toBeFocused();
 });

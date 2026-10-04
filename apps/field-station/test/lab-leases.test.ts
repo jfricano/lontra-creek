@@ -274,3 +274,18 @@ test('a bench whose reset takes longer than 60 seconds is granted once it is cle
   assert.equal(resets(), 1, 'the retry found the bench clean and did not reset it again');
   const a = f.session('a'); assert.equal((await f.pool.join(a, 'a')).status, 'ready');
 });
+
+test('requests that arrive while the pool starts grant nothing until every bench has been reset', async () => {
+  const f = fixture(1);
+  // The API listens before the pool initializes: a status poll sweeps, and a visitor joins.
+  await f.pool.run(() => f.pool.sweep());
+  const a = f.session('a');
+  await assert.rejects(f.pool.run(() => f.pool.join(a, 'a')), code('lab-unavailable'));
+  assert.deepEqual(f.calls.map(call => call.path), [], 'no bench is touched before the startup reset');
+  await f.pool.initialize();
+  assert.deepEqual(f.calls.map(call => call.path), ['/bench/v1/reset']);
+  const view = await f.pool.run(() => f.pool.join(a, 'a'));
+  assert.equal(view.status, 'ready', 'granted after the startup reset');
+  await f.pool.token(a); f.advance(5000); f.pool.heartbeat(a); await f.pool.sweep();
+  assert.equal(f.pool.view(a).status, 'active');
+});

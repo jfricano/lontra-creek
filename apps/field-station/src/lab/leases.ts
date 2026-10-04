@@ -22,6 +22,8 @@ export class LeasePool {
   readonly #cap: AddressCap;
   readonly #studies: StudyGate | undefined;
   #tail: Promise<unknown> = Promise.resolve();
+  /** Set once initialize() has reset every bench. The API listens first, and nothing is granted or polled before then. */
+  #initialized = false;
   constructor(options: { client: BenchClient; benches: BenchId[]; gatewayOrigin: string; now?: () => number; leaseMs?: number; queueMax?: number; cap?: AddressCap; studies?: StudyGate }) {
     this.#client = options.client; this.#studies = options.studies; this.#now = options.now ?? Date.now; this.#leaseMs = options.leaseMs ?? MAX_LEASE_MS; this.#queueMax = options.queueMax ?? 50; this.#origin = options.gatewayOrigin;
     if (this.#leaseMs > MAX_LEASE_MS) throw new RangeError(`A lease can last at most ${MAX_LEASE_MS / 1000} seconds; benches refuse longer ones.`);
@@ -32,7 +34,7 @@ export class LeasePool {
   placesFor(address: string): number { return [...this.#places.values()].filter(p => p.address === address).length; }
   get enabled(): boolean { return this.#slots.size > 0; }
   run<T>(operation: () => Promise<T>): Promise<T> { const next = this.#tail.then(operation); this.#tail = next.catch(() => undefined); return next; }
-  async initialize(): Promise<void> { await this.run(async () => { for (const bench of this.#slots.keys()) await this.#reset(bench); }); }
+  async initialize(): Promise<void> { await this.run(async () => { for (const bench of this.#slots.keys()) await this.#reset(bench); this.#initialized = true; }); }
   async #reset(bench: BenchId): Promise<void> {
     const slot = this.#slots.get(bench)!; slot.state = 'resetting'; slot.resetAt = this.#now(); slot.nextPoll = 0;
     // Shut the publisher gate on the study the field station opened, before the bench is asked to discard it (LC11-ADR-02
@@ -48,6 +50,7 @@ export class LeasePool {
     if (place.lease) await this.#reset(place.lease.bench);
   }
   async sweep(): Promise<void> {
+    if (!this.#initialized) return;
     const now = this.#now();
     for (const [subject, ended] of this.#ended) if (now - Date.parse(ended.endedAt) >= 60_000) this.#ended.delete(subject);
     for (const place of this.#places.values()) {

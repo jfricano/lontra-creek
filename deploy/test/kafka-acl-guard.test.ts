@@ -2,7 +2,8 @@
  * The Kafka ACL probes must never write against a broker that does not deny what no
  * ACL allows: their expected-denied writes would land in the creek's topics. Checks
  * both guards without Docker or Kafka: deploy/test/kafka-acls.test.ts with a fake
- * STACK_KAFKA_EXEC, and deploy/test/kafka-acl-probes.mjs with a fake kafkajs.
+ * STACK_KAFKA_EXEC, and deploy/test/kafka-acl-probes.mjs with a fake kafkajs, which
+ * also shows which names the probes use.
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -52,7 +53,7 @@ test("kafka-acls.test.ts runs no probe unless the broker denies what no ACL allo
 });
 
 /** Runs the probes as `role` with a fake kafkajs: "open" accepts everything, "enforcing" denies everything. */
-function probes(role: string, broker: "open" | "enforcing") {
+function probes(role: string, broker: "open" | "enforcing", bench = 1) {
   const dir = mkdtempSync(join(tmpdir(), "lontra-acl-probes-"));
   mkdirSync(join(dir, "node_modules/kafkajs"), { recursive: true });
   writeFileSync(join(dir, "node_modules/kafkajs/index.js"), `
@@ -76,7 +77,8 @@ class Kafka {
   producer() {
     return { connect: async () => undefined, disconnect: async () => undefined, send: ({ topic }) => { record('write ' + topic); return answer([]); } };
   }
-  consumer() {
+  consumer({ groupId }) {
+    record('join ' + groupId);
     return {
       events: { FETCH: 'fetch', CRASH: 'crash' }, on: () => undefined,
       connect: () => answer(undefined), disconnect: async () => undefined,
@@ -92,7 +94,7 @@ module.exports = { Kafka, logLevel: { DEBUG: 5 } };
       env: {
         ...process.env, FAKE_BROKER: broker, FAKE_LOG: join(dir, "calls.log"), KAFKA_PROBE_CA_FILE: join(here, "kafka-acl-probes.mjs"), KAFKA_PROBE_BENCHES: "1,2,3",
         KAFKA_GATEWAY_USERNAME: "gateway", KAFKA_GATEWAY_PASSWORD: "x", KAFKA_FIELD_STATION_USERNAME: "field-station", KAFKA_FIELD_STATION_PASSWORD: "x",
-        LAB_BENCH: "1", KAFKA_LAB_USERNAME: "lab-1", KAFKA_LAB_PASSWORD: "x"
+        LAB_BENCH: String(bench), KAFKA_LAB_USERNAME: "lab-1", KAFKA_LAB_PASSWORD: "x"
       }
     });
     const calls = readFileSync(join(dir, "calls.log"), "utf8").trim().split("\n");
@@ -110,5 +112,13 @@ test("kafka-acl-probes.mjs refuses to probe a broker that allows what no ACL all
     // Past the guard, the same fake records the probes' writes.
     const enforcing = probes(role, "enforcing");
     assert.ok(enforcing.calls.some(call => call.startsWith("write ")), `${role}: ${enforcing.calls.join("\n")}`);
+  }
+});
+
+test("a bench's cross-bench group probe uses the other bench's real group prefix", () => {
+  for (const [bench, other] of [[1, 2], [2, 3], [3, 1]] as const) {
+    const joins = probes("bench", "enforcing", bench).calls.filter(call => call.startsWith("join "));
+    assert.ok(joins.some(call => call.startsWith(`join streamotter-lab-${other}-acl-probe-`)), joins.join("\n"));
+    assert.deepEqual(joins.filter(call => !/^join streamotter-(lab-[123]|lontra-creek)-/.test(call)), []);
   }
 });

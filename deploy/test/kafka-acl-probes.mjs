@@ -166,7 +166,7 @@ try {
     await probe(`read ${quarantine}`, 'allowed', () => consume(quarantine, `${group}-q`));
     await probe('delete its own quarantine read group', 'allowed', deleteGroup(`${group}-q`));
     for (const topic of WORLD.filter(topic => topic !== 'field.holts').map(topic => `${mine}${topic}`)) await probe(`write ${topic} (its own source)`, 'denied', () => produce(topic));
-    await probe(`read ${mine}field.gauges in another bench's group`, 'denied', () => consume(`${mine}field.gauges`, `lab-${number % 3 + 1}-acl-probe-${run}`));
+    await probe(`read ${mine}field.gauges in another bench's group`, 'denied', () => consume(`${mine}field.gauges`, `streamotter-lab-${number % 3 + 1}-acl-probe-${run}`));
     await probe(`read ${mine}field.gauges in the production gateway's group`, 'denied', () => consume(`${mine}field.gauges`, 'streamotter-lontra-creek-field'));
     for (const topic of [...WORLD, NOTEBOOKS]) {
       await probe(`describe ${topic}`, 'denied', describeTopic(topic));

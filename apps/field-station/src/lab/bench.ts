@@ -40,6 +40,12 @@ export function failureHandlingFor(number: number, profile: BenchFailureProfile)
     sources: { field: { invalidJson: 'quarantine-hold', invalidPublicPayload: 'quarantine-resync', transientMapperRetries: 2, replaySafeMapping: true, automaticAdvanceLimit: { incidents: 5, windowMs: 60_000 }, boundaryRetirement: 'generation' } }
   };
 }
+/**
+ * Reading quarantine evidence back joins a throwaway consumer group, `<clientId>-quarantine-read-<uuid>`,
+ * with StreamOtter's client ID `streamotter-<projectId>`; the library deletes it after use. Bench N's
+ * Kafka user may read and delete exactly these (deploy/kafka/start.sh, lab-api.md 10.9).
+ */
+export const quarantineReadGroupPrefix = (number: number): string => `streamotter-${bench(number).projectId}-quarantine-read-`;
 export function benchConfig(number: number, options: BenchOptions = {}): ProjectConfig<LabChannels> {
   const b = bench(number); const production = projectConfig('production'); const field = production.connections['field']; const source = production.sources['field'];
   if (!field || field.tls === false || source?.kind !== 'kafka') throw new Error('Production Kafka over TLS is required.');

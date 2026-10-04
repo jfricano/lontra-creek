@@ -66,6 +66,7 @@ async function volume(t: TestContext) {
       now: () => now, tickMs: 3_600_000, stateDir, gate, quiesceMs: 50,
       // The real admin client reaches Kafka at BENCH_KAFKA_BROKERS, the relay proxy itself: refused while the relay is cut.
       deleteGroup: async group => { steps.push(`deleteGroup ${group}`); if (faults.deleteGroup) throw new Error('broker refused'); if (world.relay === 'cut') throw new Error('connect ECONNREFUSED lab-1-kafka:9101'); groups.delete(group); },
+      listGroups: async prefix => [...groups].filter(group => group.startsWith(prefix)),
       services: async (config, registry) => {
         const group = config.sources['field']!.kind === 'kafka' ? (config.sources['field'] as { consumerGroup: string }).consumerGroup : '';
         steps.push(`gateway.start ${group}`); configs.push(config); handlers.push(registry); groups.add(group);
@@ -104,6 +105,13 @@ describe('study identity', () => {
     const persisted = JSON.parse(await readFile(join(v.stateDir, 'lab-1', 'study.json'), 'utf8')) as Record<string, unknown>;
     assert.equal(persisted['studyId'], study.studyId); assert.equal(persisted['phase'], 'clean');
     assert.deepEqual(bench.status().readiness, { control: true, source: true, cleanLease: true });
+  });
+
+  test('the bench keeps its state owner-only: directories 0700, files 0600', async t => {
+    const v = await volume(t); const bench = await v.runtime(); const study = studyOf(bench);
+    await lease(bench, v.at()); await bench.run(() => bench.reset());
+    for (const dir of ['lab-1', 'lab-1/studies', `lab-1/studies/${studyOf(bench).studyId}`, 'lab-1/summaries']) assert.equal((await stat(join(v.stateDir, dir))).mode & 0o777, 0o700, dir);
+    for (const file of ['lab-1/study.json', `lab-1/summaries/${study.studyId}.json`]) assert.equal((await stat(join(v.stateDir, file))).mode & 0o777, 0o600, file);
   });
 
   test('every study ID makes a generation and group rc.3 accepts', () => {
@@ -243,6 +251,19 @@ describe('restart keeps the study (LC11-A14 app side, A33)', () => {
 });
 
 describe('reset discards the study (LC11-A25, A26)', () => {
+  test('reset deletes a quarantine read group StreamOtter left behind, and no other group', async t => {
+    const v = await volume(t); const bench = await v.runtime(); const old = studyOf(bench);
+    // An evidence read whose member's leave was lost leaves its throwaway group; another bench's is not this bench's to delete.
+    const leftover = 'streamotter-lontra-creek-lab-1-quarantine-read-5f0c1a2e-7d4b-4c55-9a51-0d6f3c2b8e11';
+    const other = 'streamotter-lontra-creek-lab-2-quarantine-read-5f0c1a2e-7d4b-4c55-9a51-0d6f3c2b8e11';
+    v.groups.add(leftover); v.groups.add(other);
+    v.steps.length = 0;
+    await bench.run(() => bench.reset());
+    const fresh = studyOf(bench);
+    assert.deepEqual(v.steps, [`gate.close ${old.studyId}`, `gateway.stop ${old.consumerGroup}`, `deleteGroup ${old.consumerGroup}`, `gate.discard ${old.studyId}`, `deleteGroup ${leftover}`, `gateway.start ${fresh.consumerGroup}`]);
+    assert.ok(!v.groups.has(leftover)); assert.ok(v.groups.has(other));
+  });
+
   test('reset runs the ADR order, rotates every identity, and leaves a bounded summary', async t => {
     const v = await volume(t); const bench = await v.runtime(); const old = studyOf(bench);
     await lease(bench, v.at()); const { token } = bench.token('lease-1');

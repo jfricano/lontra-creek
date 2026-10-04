@@ -7,7 +7,7 @@ const api = runtime.api();
 // held source can't put the container in a restart loop (LC11-A33).
 await new Promise<void>((resolve, reject) => { api.once('error', reject); api.listen(Number(process.env['BENCH_API_PORT'] ?? 7420), process.env['BENCH_API_HOST'] ?? '0.0.0.0', resolve); });
 await runtime.start();
-if (runtime.status().state === 'failed') console.error('Bench startup failed. Check its private configuration and broker; the field station will retry its reset.');
+if (runtime.status().state === 'failed') console.error('Check the bench\'s private configuration and broker; the field station will retry its reset.');
 let stopping = false;
 async function stop() { if (stopping) return; stopping = true; api.close(); api.closeAllConnections(); await runtime.close(); process.exit(0); }
 process.on('SIGINT', () => void stop()); process.on('SIGTERM', () => void stop());

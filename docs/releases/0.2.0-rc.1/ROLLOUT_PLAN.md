@@ -1,13 +1,15 @@
 # Rollout plan: StreamOtter 0.2.0-rc.1, Lontra Creek V1.1, streamotter.dev
 
-Prepared 2026-10-04 for the devops team and reconciled the same day with devops's own rollout notes (`dev-ops/domain-rollout.md`, private). Checked against `jfricano/StreamOtter` (#55, #20, #56 at `4e67ef8`, and #57) and `jfricano/lontra-creek` (#40 and #41). Nothing here has been run against production, and the live hosts were not reachable from where this was written.
+Prepared 2026-10-04 for the devops team and reconciled the same day with devops's own rollout notes (`dev-ops/domain-rollout.md` and its review handoff, private). Devops's notes are the detailed operational procedure; this file is the shared upstream plan. Checked against `jfricano/StreamOtter` (#55, #20, #56 at `4e67ef8`, and #57) and `jfricano/lontra-creek` (#40 and #41). Nothing here has been run against production, and the live hosts were not reachable from where this was written.
 
 ## Ground rules
 
 - **jason's preview hold.** Every merge, npm publication and deployment below waits for jason's explicit go. Nothing in this plan authorizes one.
 - **Merges never publish or deploy.** StreamOtter CI only verifies. npm publication is a manual, owner-approved action. Lontra Creek's `images.yml` only builds an image (and only when `LONTRA_IMAGES_ENABLED=true`); activating it on the host is a separate devops step.
 - **Shared host, not the standalone layout.** The demo runs on the shared ARM host beside iYosi and Roost, behind devops's shared TLS edge. Use devops's shared-host activation procedure. The standalone `/srv/lontra` scripts (`deploy/setup.sh`, `lontra-deploy`, `lontra-checkpoint`, `lontra-health`) and the `Deploy demo` workflow serve the standalone layout only: do not run them on the shared host, and leave `LONTRA_DEPLOY_ENABLED` unset.
-- **Shared-host adapter status.** `deploy/compose.shared.yaml`, `Caddyfile.shared`, `start-caddy-shared.sh` and the backup hooks in `deploy/shared-host/` are tested locally and in disposable CI rehearsals, but are not installed on the host. The live Docker rehearsal on the shared host is still pending and is the first gate of phase 1.
+- **Shared-host adapter status.** `deploy/compose.shared.yaml`, `Caddyfile.shared`, `start-caddy-shared.sh` and the backup hooks in `deploy/shared-host/` are tested locally and in disposable CI rehearsals, and devops's prepared shared-host adapter passes its isolated tests, but none of it is installed on the host. The live Docker activation rehearsal on the shared host is still pending and is the first gate of phase 1.
+- **Transport.** Activation is operator-triggered over pinned SSH from the operator's address. GitHub-hosted runners cannot reach the host's SSH boundary, so no workflow deploys the backend.
+- **Preserve on every step:** data volumes, the study epoch and generation, journals, strict TLS, resource and network boundaries, and the peer services on the host. A healthy container set does not accept a release; only the public acceptance checks below do. Backup and deploy are serialized, and an interrupted activation follows the adapter's recovery rules.
 
 ## What ships, and what is decoupled
 
@@ -51,11 +53,11 @@ Shared host (devops, with their procedure):
 
 ### Step 1. StreamOtter 0.2.0-rc.1 on npm (owner)
 
-1. On jason's go, merge #55, then #20, then #56. CI on main: `Verify (Node 24)` and `Verify (Node 26)` green. Run `Extended checks` by hand on main (Kafka, install, browser and deploy tiers, plus the replicated Kafka tier); it otherwise runs only nightly.
-2. Reconcile publisher #57 (owner-approved npm trusted publishing) with the merged main: its release checklist replaces the manual one and needs aligning with the V1.2 docs. Merge it only on jason's go.
+1. On jason's go, merge #55, then #20, then #56, retargeting each stacked branch to `main` before its merge and refreshing its checks. CI on main: `Verify (Node 24)` and `Verify (Node 26)` green. Run `Extended checks` by hand on main (Kafka, install, browser and deploy tiers, plus the replicated Kafka tier); it otherwise runs only nightly.
+2. Reconcile publisher #57 (owner-approved npm trusted publishing, green and unmerged at `b89feb8`) with the merged main, especially its overlapping CI and its release checklist, which replaces the manual one. Merge it only on jason's go.
 3. Prepare the release commit: `node scripts/release/set-version.mjs 0.2.0-rc.1` (the manifests are still `0.1.0-rc.3`), date the CHANGELOG entry, full suite. The step-by-step handoff is [docs/releases/0.2.0-rc.1/RELEASE_HANDOFF.md](https://github.com/jfricano/StreamOtter/blob/feat/v1.2-quality-fixes/docs/releases/0.2.0-rc.1/RELEASE_HANDOFF.md).
-4. On jason's go, tag `v0.2.0-rc.1` on main and publish all six packages with `--tag latest`: through #57's approval-gated workflow if it has merged, otherwise from jason's machine with StreamOtter's [release checklist](https://github.com/jfricano/StreamOtter/blob/main/docs/RELEASE_CHECKLIST.md).
-5. Verify: `npm dist-tag ls` shows `latest: 0.2.0-rc.1` for all six, and `STREAMOTTER_INSTALL_FROM=registry pnpm test:install` passes.
+4. On jason's go, tag `v0.2.0-rc.1` on main and publish all six packages: dispatch `publish.yml` (from #57) on main with the release tag and the distribution tag, then jason approves the `npm-release` environment. Nothing publishes on a push, tag or release event. Direct publishing from jason's machine with StreamOtter's [release checklist](https://github.com/jfricano/StreamOtter/blob/main/docs/RELEASE_CHECKLIST.md) stays allowed. The distribution tag is jason's final choice; `latest` is recommended, and any `next` promotion is a separate step.
+5. Verify: all six packages are on npm with provenance and the chosen tag (`npm dist-tag ls`), and a clean registry install passes (`STREAMOTTER_INSTALL_FROM=registry pnpm test:install`). Saved npm trust settings are setup evidence, not proof of publication.
 
 Publishing with `--tag latest` (the rule until the first stable version) moves every unpinned `npm install streamotter` to 0.2.0-rc.1. Two changes can refuse a config or request that rc.3 accepted (the `maxControlFrameBytes` minimum, and production answers to invalid subscribe parameters; see the CHANGELOG).
 
@@ -77,7 +79,7 @@ Step 1 can run before, during or after phase 1; phase 2 waits for it.
    - `/lab/1/socket.io/` and any unrouted path on the demo host answer 404 (Lab off).
    - `KAFKA_AUTHORIZATION` is unset or `none` in `lontra.env`.
 
-Rollback: re-point `/srv/apps/lontra/current.env` at the previous retained release and image, and bring the project up again, with devops's procedure. This does not roll back Kafka data or study history. Never use `down --volumes` on the shared host.
+Rollback: re-point `/srv/apps/lontra/current.env` at the previous retained release and image, and bring the project up again, with devops's procedure. This does not roll back Kafka data or study history. Never use `down --volumes` on the shared host. The production gateway runs without `failureHandling` in both phases, so it keeps no source-failure journal that a downgrade could strand; the Lab benches' study volumes only exist with the Lab on.
 
 **1b. Website (after 1a is accepted).**
 
@@ -90,13 +92,18 @@ Rollback: re-point `/srv/apps/lontra/current.env` at the previous retained relea
    - The page source's canonical URL, `/robots.txt` and `/sitemap.xml` name streamotter.dev.
    - With the backend stopped, pages still load and live panels show the unavailable state.
 
-Rollback: Cloudflare Pages → Deployments → roll back to the previous production deployment, or re-run the workflow from the previous main commit.
+Rollback: Cloudflare Pages → Deployments → roll back to the previous production deployment, or re-run the workflow from the previous main commit. Roll the site back only to a build that works with the backend that is running: never to a pre-#41 build, which points at `demo.streamotter.app`.
 
 ### Phase 2. Lontra Creek on StreamOtter 0.2.0-rc.1 (after step 1 is verified on npm)
 
-1. The Lontra Creek V1.1 thread opens a separate PR pinning `streamotter@0.2.0-rc.1`, clearing the three tripwire tests and re-running the Lab security checks. jason merges on his go.
+1. The Lontra Creek V1.1 thread opens a separate pin PR (today on `feat/v1.1-source-failure-exercises`, stacked on #41). Its scope, which needs its own review and devops reconciliation before merge:
+   - `streamotter@0.2.0-rc.1` in both apps and the lockfile, the three tripwire tests, capability labels, and the WHC-1 version and integrity facts.
+   - `@streamotter/workbench` mounted on `/workbench/`, with a Pages `_headers` policy for it (`frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff`).
+   - A workbench sandbox Compose overlay (`deploy/compose.sandbox.yaml`) with a new `SANDBOX_SERVICE_TOKEN`, routed only in the standalone `Caddyfile`. It has no shared-host overlay or adapter tests yet.
+   - A release-pin guard (`scripts/check-release-pins.mjs`) that `images.yml` and `site.yml` run first: it refuses to build while StreamOtter comes from anywhere but the npm registry. The branch's temporary pre-publish tarballs (`vendor/`) must be removed, so this PR can only be built after step 1 is verified on npm.
+   jason merges on his go, after the Lab security checks are re-run.
 2. Repeat 1a (new image, record the current release, activate, acceptance), then 1b (preview, production, acceptance).
-3. The pin PR alone does not turn on the Lab benches or the sandbox. They stay unavailable on the hosted demo until jason separately approves enabling them (a `lab.enabled` release with its own acceptance, and W9's sandbox service once it exists).
+3. The pin PR alone does not turn on the Lab benches or the sandbox. The phase 2 release layout carries neither the Lab nor the sandbox overlay, and no `SANDBOX_SERVICE_TOKEN` is created on the host. They stay unavailable on the hosted demo, with accurate labels, until jason approves enabling them: a `lab.enabled` release, and a shared-host sandbox overlay with adapter tests, each with its own acceptance. Any Kafka permission change stays behind the separate, owner-approved authorization migration and never weakens existing authorization.
 
 Rollback: re-activate the phase 1 release and roll Pages back to the phase 1 deployment. Both still run rc.3.
 

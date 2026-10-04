@@ -316,6 +316,22 @@ describe('reset discards the study (LC11-A25, A26)', () => {
     assert.deepEqual(v.steps, ['revoke lab-lease-1', `gate.close ${old.studyId}`]);
   });
 
+  test('a reset retried after the gate refused still revokes the lease and names it in the old study\'s summary', async t => {
+    const v = await volume(t); const bench = await v.runtime(); const old = studyOf(bench);
+    await lease(bench, v.at()); v.faults.close = true;
+    await assert.rejects(bench.run(() => bench.reset()));
+    v.faults.close = false; v.steps.length = 0;
+    await bench.run(() => bench.reset());
+    assert.equal(bench.status().state, 'ready');
+    assert.deepEqual(v.steps.slice(0, 2), ['revoke lab-lease-1', `gate.close ${old.studyId}`], 'the retry revokes the lease again before the gate closes');
+    const summary = JSON.parse(await readFile(join(v.stateDir, 'lab-1', 'summaries', `${old.studyId}.json`), 'utf8')) as StudySummary;
+    assert.equal(summary.leaseId, 'lease-1');
+    // The next study had no lease: its reset names none, the ended one having gone with its own summary.
+    const second = studyOf(bench).studyId;
+    await bench.run(() => bench.reset());
+    assert.equal((JSON.parse(await readFile(join(v.stateDir, 'lab-1', 'summaries', `${second}.json`), 'utf8')) as StudySummary).leaseId, null);
+  });
+
   test('a new study whose source will not consume fails the reset rather than reach a visitor', async t => {
     const v = await volume(t); const bench = await v.runtime(); await lease(bench, v.at());
     world.sources = 'paused';

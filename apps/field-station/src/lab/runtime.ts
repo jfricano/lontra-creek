@@ -81,7 +81,7 @@ export class BenchRuntime {
   /** The study this bench runs; null only before boot and between discarding one study and provisioning the next. */
   #study: StudyDescriptor | null = null;
   #scope: StudyScope = scopeFor('');
-  /** A lease invalidated by the bench API ahead of the queued reset, which still has to revoke it. */
+  /** The lease the reset under way ended: revoked and named in its study's summary. Kept until that summary is written, so a retried reset still has it. */
   #ended: { leaseId: string; expiresAt: string } | null = null;
   /** Whether the last cleanup (reset, or provisioning at boot) completed. */
   #cleanupOk = false;
@@ -237,12 +237,12 @@ export class BenchRuntime {
    */
   async reset(): Promise<void> {
     this.#invalidate();
-    const lease = this.#ended; this.#ended = null;
+    const lease = this.#ended;
     try {
       const study = this.#study;
       if (study && study.lease) { study.lease = null; await this.#store.save(study); }
       if (lease) await this.#gateway?.revoke({ kind: 'subject', tenantId: TENANT_ID, subject: `lab-${lease.leaseId}` });
-      await this.#discard(lease, true);
+      await this.#discard(lease, true); this.#ended = null;
       await this.#provision();
     } catch { this.#state = 'failed'; this.#cleanupOk = false; throw new Error('Bench reset failed.'); }
   }

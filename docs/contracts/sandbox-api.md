@@ -31,7 +31,7 @@ The Lab contract's §3 rules apply unchanged: CORS and exact Origin, the `lc_ses
 - **Request budget.** `/api/sandbox/*` shares the per-address Lab budget (20 at once, 3 a second) with `/api/lab/*`: one bucket for both. Over budget: 429 with `Retry-After` (`too-many-requests` on lifecycle routes, `OVERLOADED` on §6 routes). The page is on another origin, so `/api/sandbox/*` answers list `Retry-After` (and, on §6 routes, `X-Request-Id`) in `Access-Control-Expose-Headers`.
 - **Bodies.** JSON, at most 64 KB for `config.validate` and `config.export`, 4 KB otherwise; larger is 413. Lifecycle `POST`s take an empty body (or `{}`), so `return` can be sent with `keepalive: true` on `pagehide` without a preflight. No route takes query parameters except `traces`.
 - **WHC-1 routes (§6)** refuse a foreign `Origin` on every method (403) and require `X-StreamOtter-Workbench: 1` on every `POST` (403 without it), as `createManagementHandler` does; the workbench sends it on every request in session mode. An `Authorization` header is ignored and never forwarded (the workbench never sends one in session mode). The preflight for `/api/sandbox/wb/*` allows the `x-streamotter-workbench` header; other `/api` preflights are unchanged.
-- **Operation budget.** 2 operations a second per session after a burst of up to 8, counting §6 operations and `repro` (429). The burst is for the published workbench, which reads five operations at once when it mounts.
+- **Operation budget.** 2 operations a second per session after a burst of up to 8, counting §6 operations and `repro` (429). The burst is for the published workbench, which reads five operations at once when it mounts and two more for its first view straight after: seven within a few milliseconds.
 
 ## 3. Types
 

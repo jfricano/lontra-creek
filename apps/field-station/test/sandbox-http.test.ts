@@ -52,6 +52,7 @@ test('A42/A43: lifecycle and WHC-1 routes enforce Origin, the workbench header, 
     const joinFrom = (ip: string) => fetch(`${origin}/api/sandbox/session`, { method: 'POST', headers: { origin: SITE, 'x-client-ip': ip } });
     for (let i = 0; i < 2; i++) assert.ok((await joinFrom('192.0.2.9')).headers.get('set-cookie'));
     const capped = await joinFrom('192.0.2.9'); assert.equal(capped.status, 429); assert.equal(capped.headers.get('set-cookie'), null, 'a refused join starts no session');
+    assert.equal(capped.headers.get('retry-after'), '1'); assert.equal(capped.headers.get('access-control-expose-headers'), 'retry-after', 'the cross-origin page can read Retry-After');
     assert.equal((await fetch(`${origin}/api/sandbox/session`, { method: 'POST', headers: { origin: SITE, cookie, 'content-type': 'application/json' }, body: JSON.stringify({ slot: 3 }) })).status, 400, 'a request cannot name a slot');
     assert.equal((await fetch(`${origin}/api/sandbox/session?slot=3`, { headers: { cookie } })).status, 400);
     const call = (path: string, init: RequestInit = {}) => fetch(`${origin}/api/sandbox/wb/v1${path}`, { ...init, headers: { ...WB, cookie, ...(init.headers as Record<string, string> ?? {}) } });
@@ -61,6 +62,7 @@ test('A42/A43: lifecycle and WHC-1 routes enforce Origin, the workbench header, 
 
     const health = await call('/health'); const body = await health.json() as { ok: boolean; requestId: string; data: { ready: boolean } };
     assert.equal(health.status, 200); assert.equal(body.ok, true); assert.equal(body.data.ready, true); assert.equal(health.headers.get('x-request-id'), body.requestId);
+    assert.deepEqual(health.headers.get('access-control-expose-headers')?.split(/,\s*/).sort(), ['retry-after', 'x-request-id'], 'the cross-origin workbench can read X-Request-Id and Retry-After');
     const discovery = await (await call('/workbench')).json() as { ok: boolean; data: { hostContract: number; operations: string[]; limits: { maxRequestBytes: number } } };
     assert.deepEqual([discovery.ok, discovery.data.hostContract, discovery.data.operations.length, discovery.data.limits.maxRequestBytes], [true, 1, 15, 65_536]);
     assert.ok(discovery.data.operations.includes('workbench') && !discovery.data.operations.some(op => op.startsWith('failures')));

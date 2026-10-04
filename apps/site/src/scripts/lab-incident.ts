@@ -23,12 +23,14 @@ export interface Mark {
 export const EVIDENCE: Record<LabIncidentSummary["evidence"], Mark> = {
   saved: { icon: "✓", text: "Evidence saved", tone: "neutral", note: "The record isn't repaired, and the view isn't recovered by this." },
   unknown: { icon: "?", text: "Evidence status unknown", tone: "held", note: "No acknowledged quarantine write has been observed." },
-  unavailable: { icon: "✕", text: "Evidence unavailable", tone: "failed", note: "Stored reprocessing will be refused." }
+  unavailable: { icon: "✕", text: "Evidence unavailable", tone: "failed", note: "Stored reprocessing will be refused." },
+  "not-required": { icon: "–", text: "No evidence kept", tone: "neutral", note: "This policy holds the record in place to be retried; nothing is skipped." }
 };
 
 export const SOURCE: Record<LabIncidentSummary["source"], Mark> = {
   held: { icon: "⏸", text: "Source held at this record", tone: "held", note: "Nothing after it is processed or committed." },
   advanced: { icon: "→", text: "Source advanced past quarantined record", tone: "neutral", note: "The browser did not receive the excluded record." },
+  processed: { icon: "✓", text: "Record processed on retry", tone: "neutral", note: "Nothing was skipped." },
   uncertain: { icon: "?", text: "Source position uncertain", tone: "held" }
 };
 

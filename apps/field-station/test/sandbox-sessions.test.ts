@@ -149,13 +149,20 @@ test('A44: on startup nothing is granted until the field station has returned ev
   await h.advance(5000); assert.equal(h.view(s).status, 'active', 'a lease granted after initialize is kept');
 });
 
-test('A44: operations are limited to two a second per session, and only while active', async () => {
+test('A44: operations are limited to two a second per session after a burst of eight, and only while active', async () => {
   const h = await harness(); const s = h.session('s'); await h.join(s);
   await assert.rejects(h.op(s, 'health'), code('no-lease'), 'a ready (unclaimed) lease cannot operate');
   await h.claim(s);
-  await h.op(s, 'health'); await h.op(s, 'health');
+  // The published workbench reads config, channels, sources, principals, and health at once when it mounts.
+  await Promise.all((['config', 'channels', 'sources', 'dev.principals', 'health'] as const).map(op => h.op(s, op)));
+  await h.op(s, 'health'); await h.op(s, 'health'); await h.op(s, 'health');
   await assert.rejects(h.op(s, 'health'), code('too-many-requests'));
-  await h.advance(1000); await h.op(s, 'health');
+  await h.advance(500); await h.op(s, 'health');
+  await assert.rejects(h.op(s, 'health'), code('too-many-requests'));
+  await h.advance(1000); await h.op(s, 'health'); await h.op(s, 'health');
+  await assert.rejects(h.op(s, 'health'), code('too-many-requests'));
+  await h.advance(10_000); for (let i = 0; i < 8; i++) await h.op(s, 'health');
+  await assert.rejects(h.op(s, 'health'), code('too-many-requests'), 'an idle session saves up at most eight');
 });
 
 test('A42: reset rotates the study and invalidates previews, trace cursors, and late answers from the old study', async () => {

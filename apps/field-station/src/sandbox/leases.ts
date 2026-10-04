@@ -16,14 +16,14 @@ import { CONFIG_BODY_BYTES, HOST_CONTRACT, SANDBOX_OPERATIONS, SandboxFault } fr
 /** The sandbox service's private API (service.ts); throws only when it cannot be reached. */
 export interface SandboxClient { request(path: string, method?: string, body?: unknown): Promise<{ status: number; body: unknown }>; }
 export interface SandboxTimings {
-  leaseMs: number; claimMs: number; idleMs: number; queueIdleMs: number; endedMs: number; queueMax: number; opsPerSecond: number;
+  leaseMs: number; claimMs: number; idleMs: number; queueIdleMs: number; endedMs: number; queueMax: number; opsPerSecond: number; opsBurst: number;
   pollMs: number; failMs: number; resetDeadlineMs: number; retryMs: number;
 }
 /** LC11-ADR-04 defaults; the queue idle limit and the poll, failure, and reset timings are the Lab's. */
-export const SANDBOX_DEFAULTS: SandboxTimings = { leaseMs: 600_000, claimMs: 30_000, idleMs: 60_000, queueIdleMs: 90_000, endedMs: 60_000, queueMax: 30, opsPerSecond: 2, pollMs: 5000, failMs: 15_000, resetDeadlineMs: 60_000, retryMs: 30_000 };
+export const SANDBOX_DEFAULTS: SandboxTimings = { leaseMs: 600_000, claimMs: 30_000, idleMs: 60_000, queueIdleMs: 90_000, endedMs: 60_000, queueMax: 30, opsPerSecond: 2, opsBurst: 8, pollMs: 5000, failMs: 15_000, resetDeadlineMs: 60_000, retryMs: 30_000 };
 /** How often the field station sweeps the pool: the service poll interval while a slot or study resets. A sweep polls only when the poll is due. */
 export const SANDBOX_SWEEP_MS = 1000;
-interface Lease { id: string; studyId: string; slot: SlotId; granted: number; expires: number; claimed: boolean; resetting: boolean; resetAt: number; ops: number[]; runtime: SandboxRuntime; }
+interface Lease { id: string; studyId: string; slot: SlotId; granted: number; expires: number; claimed: boolean; resetting: boolean; resetAt: number; ops: { tokens: number; at: number }; runtime: SandboxRuntime; }
 interface Place { session: SessionClaims; address: string; joined: number; heartbeat: number; lease?: Lease; }
 interface Slot { state: SandboxStatus['slots'][number]['state']; resetAt: number; retryAt: number; }
 const iso = (n: number): string => new Date(n).toISOString();
@@ -95,7 +95,7 @@ export class SandboxPool {
       if (s.state !== 'ready') continue;
       const place = [...this.#places.values()].find(p => !p.lease);
       if (!place) break;
-      const lease: Lease = { id: randomUUID(), studyId: randomUUID(), slot, granted: now, expires: Math.min(now + t.leaseMs, place.session.exp), claimed: false, resetting: false, resetAt: 0, ops: [], runtime: this.#service.runtime! };
+      const lease: Lease = { id: randomUUID(), studyId: randomUUID(), slot, granted: now, expires: Math.min(now + t.leaseMs, place.session.exp), claimed: false, resetting: false, resetAt: 0, ops: { tokens: t.opsBurst, at: now }, runtime: this.#service.runtime! };
       try { const r = await this.#client.request(`/sandbox/v1/slots/${slot}/lease`, 'PUT', { leaseId: lease.id, studyId: lease.studyId, expiresAt: iso(lease.expires) }); if (r.status !== 200) throw new Error('refused'); place.lease = lease; s.state = 'leased'; }
       catch { s.state = 'unavailable'; s.retryAt = now + t.retryMs; }
     }
@@ -186,9 +186,11 @@ export class SandboxPool {
     if (!r || r.status >= 300) { const place = this.#places.get(session.subject); if (place?.lease === lease) await this.#end(place, 'slot-failed'); throw new SandboxFault('slot-unavailable'); }
     return this.view(session);
   }
+  /** A token bucket: the published workbench sends several reads at once when it mounts, so a burst is allowed and the rate holds over time. */
   #throttle(lease: Lease): void {
-    const now = this.#now(); lease.ops = lease.ops.filter(at => now - at < 1000);
-    if (lease.ops.length >= this.#t.opsPerSecond) throw new SandboxFault('too-many-requests'); lease.ops.push(now);
+    const now = this.#now(); const ops = lease.ops;
+    ops.tokens = Math.min(this.#t.opsBurst, ops.tokens + ((now - ops.at) / 1000) * this.#t.opsPerSecond); ops.at = now;
+    if (ops.tokens < 1) throw new SandboxFault('too-many-requests'); ops.tokens -= 1;
   }
   /**
    * One allowlisted operation on the session's own slot, in its current study. Call

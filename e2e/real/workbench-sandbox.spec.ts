@@ -56,10 +56,18 @@ async function openWorkbench(page: Page): Promise<void> {
 }
 
 const tab = (page: Page, name: string) => page.locator("#app").getByRole("tab", { name });
+/**
+ * A person's pace between actions that call the slot. The session's operation budget is 2 a second
+ * after a burst of 8 (sandbox contract §2), and the workbench spends 7 of those when it mounts.
+ */
+const pace = (page: Page, ms = 600) => page.waitForTimeout(ms);
 
 test.afterEach(async ({ page }) => {
   // Leave nothing held for the next spec: a client address may hold only two places.
   await page.request.post("/api/sandbox/session/return").catch(() => undefined);
+  // Every spec runs from one address, far faster than a visitor: let the per-address request budget the
+  // sandbox shares with the Lab (20 at once, 3 a second; sandbox contract §2) refill before the next one.
+  await page.waitForTimeout(7_000);
 });
 
 test("Start claims a slot and mounts the published workbench, labeled from the service, under the page's policy", async ({ page }) => {
@@ -90,6 +98,7 @@ test("Connect, Define, Preview, Inspect, and Export work against the slot", asyn
   const app = page.locator("#app");
 
   await expect(app.getByRole("heading", { name: "Connect", level: 2 })).toBeVisible();
+  await pace(page, 4_000);
 
   // Define: a candidate that changes a server-owned field is refused by the sandbox's allowlist.
   await tab(page, "Define").click();
@@ -97,7 +106,7 @@ test("Connect, Define, Preview, Inspect, and Export work against the slot", asyn
   const config = JSON.parse(await candidate.inputValue()) as { gateway: { port: number } };
   config.gateway.port += 1;
   await candidate.fill(JSON.stringify(config, null, 2));
-  await app.getByRole("button", { name: "Validate candidate" }).click();
+  await pace(page); await app.getByRole("button", { name: "Validate candidate" }).click();
   await expect(app.getByRole("alert")).toContainText("FIELD_NOT_EDITABLE");
   await app.getByRole("button", { name: "Reset to active" }).click();
 
@@ -112,31 +121,31 @@ test("Connect, Define, Preview, Inspect, and Export work against the slot", asyn
       const field = app.locator("label", { hasText: name }).locator("input, select");
       if (await field.evaluate(element => element.tagName === "SELECT")) await field.selectOption(value); else await field.fill(value);
     }
-    await app.getByRole("button", { name: "Start preview" }).click();
+    await pace(page); await app.getByRole("button", { name: "Start preview" }).click();
     await expect(app.getByText("live", { exact: true })).toBeVisible({ timeout: 30_000 });
   };
   await preview("creek-volunteer", "station", { stationId: "LC-03" });
   await app.getByRole("button", { name: "Stop preview" }).click();
   await preview("developer", "jobProgress", { jobId: "job_1" });
-  await app.getByRole("button", { name: /^Advance ".+" by 1$/ }).click();
+  await pace(page); await app.getByRole("button", { name: /^Advance ".+" by 1$/ }).click();
   await expect(app.getByText("Advanced one fixture record.")).toBeVisible();
   await app.getByRole("button", { name: "Stop preview" }).click();
 
   // Inspect: the advance left payload-free trace metadata for this study.
-  await tab(page, "Inspect").click();
+  await pace(page); await tab(page, "Inspect").click();
   await expect(app.getByRole("heading", { name: "Inspect", level: 2 })).toBeVisible();
   await expect(app).toContainText("jobProgress", { timeout: 15_000 });
   await expect(app.getByRole("alert")).toHaveCount(0);
 
   // Export: the canonical candidate downloads; the gateway is unchanged.
-  await tab(page, "Export").click();
+  await pace(page, 2_000); await tab(page, "Export").click();
   await app.getByRole("button", { name: "Export candidate" }).click();
   const download = page.waitForEvent("download");
   await app.getByRole("link", { name: /^Download streamotter\.json$/ }).click();
   expect((await download).suggestedFilename()).toBe("streamotter.json");
 
   // And the session's own reproduction bundle.
-  const bundle = page.waitForEvent("download");
+  await pace(page); const bundle = page.waitForEvent("download");
   await panel(page).repro.click();
   expect((await bundle).suggestedFilename()).toBe("lontra-creek-sandbox-repro.json");
   expect(violations).toEqual([]);
@@ -229,7 +238,8 @@ test("stopping the sandbox service ends the session and says so; nothing is simu
     await expect(ui.app).toHaveCount(0);
     await expect(ui.start).toBeDisabled();
     await page.locator("[data-sandbox-retry]").click();
-    await expect(ui.headline).toHaveText(/The sandbox service is not answering\.|Every sandbox slot is out of service\./);
+    // An ended session keeps its own headline (why it ended) and says the sandbox's state below it.
+    await expect(ui.root.getByRole("status")).toContainText(/The sandbox service is not answering\.|Every sandbox slot is out of service\./);
   } finally {
     execSync(start!, { stdio: "inherit" });
   }

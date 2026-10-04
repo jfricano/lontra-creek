@@ -215,6 +215,19 @@ test("expiry ends the session on the next heartbeat and offers a new start, neve
   expect(seen.filter(entry => entry.startsWith("POST"))).toEqual([]);
 });
 
+test("a session that fails asks for the status at once, so Start is not offered on an old answer", async ({ page }) => {
+  let state: SandboxLease = lease("active"); let pool = available();
+  await stubSandbox(page, ({ path }) => path === "status" ? { json: pool } : path === "session" ? { json: state } : undefined);
+  const ui = panel(page);
+  await page.goto("/workbench/");
+  await expect(ui.root).toHaveAttribute("data-phase", "active");
+  // The status poll is every 15 s; the next heartbeat comes within 5 s.
+  state = ended("slot-failed"); pool = unavailable("service-unavailable");
+  await expect(ui.root).toHaveAttribute("data-phase", "ended", { timeout: 10_000 });
+  await expect(ui.detail).toHaveText(/^The sandbox service is not answering\./, { timeout: 1_000 });
+  await expect(ui.start).toBeDisabled();
+});
+
 for (const [code, status, text] of [
   ["too-many-places", 429, "already holds two places across the Failure Lab and the workbench sandbox"],
   ["queue-full", 503, "The line for a sandbox slot is full."]
@@ -484,6 +497,25 @@ test("a service on another workbench version is not mounted, and says why", asyn
   await expect(ui.mountNote).toHaveText(`The sandbox runs @streamotter/workbench@0.0.0-design-fixture; this page pins ${PUBLISHED_SEAM!.version}.`);
   await expect(page.locator("#app")).toHaveCount(0);
   expect(scripts).toEqual([]);
+});
+
+test("a refused discovery says why and nothing mounts; Open the workbench asks again and mounts", async ({ page }) => {
+  let refuse = true;
+  const { seen } = await stubMounted(page, { hostApi: path => refuse && path === "wb/v1/workbench"
+    ? { status: 429, json: { ok: false, requestId: "fixture", error: { code: "OVERLOADED", message: "Too many requests.", retryable: true, requestId: "fixture", details: { code: "too-many-requests" } } }, headers: { "retry-after": "2" } }
+    : hostApi(path) });
+  const ui = panel(page);
+  await page.goto("/workbench/");
+  await ui.start.click();
+  await expect(ui.root).toHaveAttribute("data-phase", "active");
+  await expect(ui.mountNote).toHaveText("The sandbox did not describe its host API. Too many requests from this address. Try again in 2 s.");
+  await expect(page.locator("#app")).toHaveCount(0);
+  await expect(ui.claim).toHaveText("Open the workbench");
+  refuse = false;
+  await ui.claim.click();
+  await expect(page.locator("#app").getByRole("heading", { name: "StreamOtter Workbench" })).toBeVisible();
+  await expect(ui.mountNote).toBeHidden();
+  expect(allocations(seen)).toBe(1);
 });
 
 test("when the field station ends the browser session, the mounted workbench shows Session ended", async ({ page }) => {

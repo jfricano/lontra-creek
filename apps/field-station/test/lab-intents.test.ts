@@ -60,7 +60,7 @@ function scriptedBench(now: () => number) {
   const outcomes = new Map<string, { status: BenchOperation['status']; outcome: string } | 'hold'>();
   let restarting = false; let failing = false; let resets = 0;
   /** Runs as the bench accepts an intent: the world can tick meanwhile, as it does every two seconds. */
-  const hooks: { onIntent?: () => void } = {};
+  const hooks: { onIntent?: () => void; beforeFacts?: () => Promise<void> } = {};
   const client: BenchClient = { async call<T>(_bench: BenchId, path: string, method = 'GET', body?: unknown): Promise<T> {
     const at = new Date(now()).toISOString();
     if (failing) throw new LabError('bench-unavailable', 503);
@@ -69,7 +69,7 @@ function scriptedBench(now: () => number) {
     if (path === '/bench/v1/reset') { status.state = 'ready'; status.lease = null; status.readiness.cleanLease = true; return structuredClone(status) as T; }
     if (path === '/bench/v1/lease') { status.state = 'leased'; status.lease = body as BenchStatus['lease']; status.readiness.cleanLease = false; return structuredClone(status) as T; }
     if (path === '/bench/v1/tokens') return { token: 'lab1_token', expiresAt: status.lease!.expiresAt } as T;
-    if (path.startsWith('/bench/v1/incident')) { if (restarting) throw new LabError('not-applicable', 409); return structuredClone(facts) as T; }
+    if (path.startsWith('/bench/v1/incident')) { if (restarting) throw new LabError('not-applicable', 409); const read = structuredClone(facts); await hooks.beforeFacts?.(); return read as T; }
     if (path === '/bench/v1/intents' && method === 'POST') {
       const request = body as BenchIntentRequest; sent.push(request); hooks.onIntent?.();
       const outcome = outcomes.get(request.intent) ?? { status: 'succeeded', outcome: 'armed' };
@@ -124,10 +124,24 @@ describe('the answers to an intent, in order (section 12.5)', () => {
     const again = await l.submit(body);
     assert.equal(again.operationId, first.operationId, 'the same operation, without spending the budget');
     await assert.rejects(l.submit({ ...body, scenario: 'fouled-sensor' }), refused('not-applicable'));
-    await assert.rejects(l.submit({ requestId: 'req-00000002', intent: 'scenario.start', scenario: 'fouled-sensor' }), refused('too-many-actions'), 'a new decision within the second');
-    l.advance(1000);
     assert.equal((await l.settled(first.operationId)).status, 'succeeded');
+    await assert.rejects(l.submit({ requestId: 'req-00000002', intent: 'scenario.start', scenario: 'fouled-sensor' }), refused('too-many-actions'), 'a new decision within the second');
     assert.equal(l.bench.sent.length, 1, 'the bench saw the intent once');
+  });
+
+  test('one intent at a time: another is not-applicable while one is accepted or running', async t => {
+    const l = await lab(t);
+    l.bench.outcomes.set('scenario.start', 'hold');
+    const first = await l.submit({ requestId: 'req-00000001', intent: 'scenario.start', scenario: 'calibration-blip' });
+    l.advance(1000);
+    await assert.rejects(l.submit({ requestId: 'req-00000002', intent: 'scenario.start', scenario: 'fouled-sensor' }), refused('not-applicable'));
+    assert.equal((await l.submit({ requestId: 'req-00000001', intent: 'scenario.start', scenario: 'calibration-blip' })).operationId, first.operationId, 'the running one is still answered by its request ID');
+    l.bench.operations.get(first.operationId)!.status = 'succeeded';
+    assert.equal((await l.settled(first.operationId)).status, 'succeeded');
+    l.bench.outcomes.delete('scenario.start');
+    const second = await l.submit({ requestId: 'req-00000002', intent: 'scenario.start', scenario: 'fouled-sensor' });
+    assert.equal(second.status, 'accepted', 'accepted once the first is final');
+    assert.deepEqual(l.bench.sent.map(request => request.scenario), ['calibration-blip', 'fouled-sensor']);
   });
 
   test('preconditions: no incident for incident intents, nothing to restore, no withheld run, a start while an incident is open', async t => {
@@ -210,6 +224,26 @@ describe('the projection (section 12.7)', () => {
     l.bench.facts.evaluation = { ...l.bench.facts.evaluation, planToken: 'u'.repeat(43), expiresAt: new Date(l.now() - 1).toISOString() };
     const expired = await l.view();
     assert.deepEqual(expired.status === 'open' && [expired.incident.evaluation?.planToken, expired.incident.nextIntent], [null, 'incident.evaluate'], 'an expired token is never offered');
+  });
+
+  test('an older read that answers late never rolls the projection back', async t => {
+    const l = await lab(t);
+    l.bench.facts.incident = incident();
+    const first = await l.view();
+    // A read is asked for (it captures the bench's facts now) and answers only after a newer one.
+    let release!: () => void;
+    l.bench.hooks.beforeFacts = () => new Promise<void>(resolve => { release = resolve; });
+    const late = l.intents.incident(l.session.subject);
+    await sleep(5);
+    delete l.bench.hooks.beforeFacts;
+    l.bench.facts.incident = incident({ revision: 4, quarantine: 'acknowledged', progress: 'advanced', state: 'resolved', nextAction: 'evaluate', recovery: 'boundary-in-force', boundary: 'in-force' });
+    const newer = await l.view();
+    assert.ok(revisionOf(newer)! > revisionOf(first)!);
+    release();
+    const answered = await late;
+    assert.deepEqual(answered.status === 'open' && [answered.incident.scenarioRevision, answered.incident.source], [revisionOf(newer), 'advanced'], 'the late read answers the newer projection');
+    const after = await l.view();
+    assert.deepEqual(after.status === 'open' && [after.incident.scenarioRevision, after.incident.source], [revisionOf(newer), 'advanced'], 'and the revision did not move back');
   });
 
   test('while the bench\'s gateway restarts, the last projection is answered unchanged', async t => {
@@ -353,17 +387,21 @@ describe('the public routes (sections 12.5 to 12.7)', () => {
       // Visitor-1 returns the bench; the HTTP visitor gets it.
       await l.pool.run(() => l.pool.leave(l.session));
       await fetch(`${origin}/api/lab/lease/token`, { method: 'POST', headers: { origin: 'https://site.test', cookie } });
+      l.bench.outcomes.set('scenario.start', 'hold');
       const accepted = await post({ intent: 'scenario.start', requestId: 'req-00000011', scenario: 'bad-projection' });
       assert.equal(accepted.status, 202);
       const operation = await accepted.json() as LabOperation;
       assert.equal(operation.status, 'accepted');
       const repeated = await post({ intent: 'scenario.start', requestId: 'req-00000011', scenario: 'bad-projection' });
       assert.deepEqual([repeated.status, (await repeated.json() as LabOperation).operationId], [202, operation.operationId], 'a lost answer re-sent with the same requestId');
-      const budget = await post({ intent: 'scenario.start', requestId: 'req-00000012', scenario: 'garbled-reading' });
-      assert.deepEqual([budget.status, budget.headers.get('retry-after'), (await budget.json() as { code: string }).code], [429, '1', 'too-many-actions']);
+      const running = await post({ intent: 'scenario.start', requestId: 'req-00000012', scenario: 'garbled-reading' });
+      assert.deepEqual([running.status, (await running.json() as { code: string }).code], [409, 'not-applicable'], 'one intent at a time');
+      l.bench.outcomes.delete('scenario.start'); l.bench.operations.get(operation.operationId)!.status = 'succeeded';
       let final: LabOperation | undefined;
       for (let i = 0; i < 200 && !(final && !['accepted', 'running'].includes(final.status)); i++) { final = await (await fetch(`${origin}/api/lab/operations/${operation.operationId}`, { headers: { cookie } })).json() as LabOperation; await sleep(5); }
       assert.equal(final!.status, 'succeeded');
+      const budget = await post({ intent: 'scenario.start', requestId: 'req-00000013', scenario: 'garbled-reading' });
+      assert.deepEqual([budget.status, budget.headers.get('retry-after'), (await budget.json() as { code: string }).code], [429, '1', 'too-many-actions']);
       const view = await (await fetch(`${origin}/api/lab/incident`, { headers: { cookie, origin: 'https://site.test' } })).json() as LabIncidentView;
       assert.equal(view.status, 'none');
       assert.equal((await fetch(`${origin}/api/lab/incident?x=1`, { headers: { cookie } })).status, 400);

@@ -16,7 +16,7 @@ Updated October 4, 2026 · The live tracker for [IMPLEMENTATION_PLAN.md](IMPLEME
 | W5 | Study identity and coverage ledger | Combined in #40 | `feat/v1.1-study-identity` · #36 (closed) | A14 (app side), A25, A26, A33: unit; Lab workflow on local Kafka |
 | W6 | Local launcher (`dev:lab`) | Combined in #40 | `feat/v1.1-dev-lab` · #30 (closed) | See #30 |
 | W7 | Kafka authorization (local and CI) | Combined in #40 | `feat/v1.1-kafka-acls` · #33 (closed) | A29 at local and CI level; hosted broker unchanged |
-| W8 | Site content | Combined in #40 | `feat/v1.1-site-content` · #37 (closed) | A01, A02, A40: unit and fixture |
+| W8 | Site content | Combined in #40; updated for 0.2.0-rc.1 on `w9/content` | `feat/v1.1-site-content` · #37 (closed); `w9/content` | A01, A02, A40: unit and fixture. On 0.2.0-rc.1 the source-failure copy describes the installed release (opt-in), tested against its validator, CLI and gateway; A34 playground presets: unit and Chromium fixture browser. Release-tag and npm links resolve only after the tag push and npm publish |
 | W9a | Actual sandbox | Blocked on upstream R1–R6 | | |
 | W9b | Source failure exercises | Blocked on upstream R7–R9 | | |
 | W10 | Verification and release review | Independent review done; cross-browser and hosted checks remain | `review/v1.1` · #40 | [REVIEW_FINDINGS.md](REVIEW_FINDINGS.md) |

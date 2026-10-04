@@ -73,17 +73,18 @@ test.describe("home page live panel", () => {
   });
 });
 
-test.describe("home page V1.1 panel (LC11-A01, A02, A40)", () => {
+test.describe("home page source-failure panel (LC11-A01, A02, A40)", () => {
   const release = (JSON.parse(readFileSync(new URL("../node_modules/streamotter/package.json", import.meta.url), "utf8")) as { version: string }).version;
 
-  test("labels V1.1 as planned, says what runs today, and links to the Source failures track without borrowing a bench", async ({ page }) => {
+  test("describes the installed release's opt-in policies, keeps what this demo runs separate, and links to the Source failures track without borrowing a bench", async ({ page }) => {
     const lab: string[] = [];
     page.on("request", request => { const { pathname } = new URL(request.url()); if (pathname.startsWith("/api/lab/") && request.method() !== "GET") lab.push(pathname); });
     await page.goto("/");
     const panel = page.locator("[data-v11-panel]");
-    await expect(panel.locator(".eyebrow")).toHaveText(`Planned for StreamOtter V1.1 · not in ${release}`);
-    await expect(panel).toContainText("specified, not released");
-    await expect(panel).toContainText(`In streamotter@${release}, which this site runs, a bad record pauses its source`);
+    await expect(panel.locator(".eyebrow")).toHaveText(`In streamotter@${release} · opt-in`);
+    await expect(panel).not.toContainText(/planned|specified, not released/i);
+    await expect(panel).toContainText("Without a policy, a bad record pauses its source");
+    await expect(panel).toContainText("asks this demo's backend which of them it can run");
     await expect(panel.getByRole("heading", { level: 3 })).toHaveText(["Preserve the record", "Continue only under control", "See each outcome"]);
     // The live hero is unchanged: the panel sits below it and doesn't replace it.
     await expect(page.locator("[data-live-creek] [data-card] [data-state]").first()).toHaveAttribute("data-state", "live", { timeout: 30_000 });
@@ -98,7 +99,7 @@ test.describe("home page V1.1 panel (LC11-A01, A02, A40)", () => {
   test("the explore cards carry the updated Lab summary", async ({ page }) => {
     await page.goto("/");
     const card = page.locator('#explore a[href="/lab/"]');
-    await expect(card).toContainText("The Source failures track also lists the quarantine exercises that wait for StreamOtter V1.1.");
+    await expect(card).toContainText("The Source failures track lists the quarantine exercises and whether this demo's backend can run each one.");
     await expect(page.locator("main")).not.toContainText(/four controlled failures/i);
   });
 });

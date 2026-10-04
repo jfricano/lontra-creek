@@ -61,7 +61,7 @@ export const PAGES: readonly Page[] = [
     href: "/lab/",
     label: "Failure Lab",
     question: "What happens when it breaks?",
-    summary: "Borrow an isolated bench for five minutes. Cut the relay, stall a laptop, restart the gateway, or foul a sensor, and follow each record through the gateway. The Source failures track also lists the quarantine exercises that wait for StreamOtter V1.1.",
+    summary: "Borrow an isolated bench for five minutes. Cut the relay, stall a laptop, restart the gateway, or foul a sensor, and follow each record through the gateway. The Source failures track lists the quarantine exercises and whether this demo's backend can run each one.",
     ready: true
   },
   {
@@ -82,14 +82,14 @@ export const PAGES: readonly Page[] = [
     href: "/when-it-breaks/",
     label: "When it breaks",
     question: "How does it fail, exactly?",
-    summary: "Every failure mode in this release: the state it produces, the error your code receives, whether it retries, and how to handle it. Plus the source-failure policies planned for V1.1, marked as planned.",
+    summary: "Every failure mode in this release: the state it produces, the error your code receives, whether it retries, and how to handle it. Plus the opt-in source-failure policies: quarantine, the recovery guard, and the operator commands.",
     ready: true
   },
   {
     href: "/docs/",
     label: "Docs",
     question: "How do I build with it?",
-    summary: "The guides and the V1 reference, where they're maintained: on GitHub and npm.",
+    summary: "The guides and the API reference, where they're maintained: on GitHub and npm.",
     ready: true
   },
   {

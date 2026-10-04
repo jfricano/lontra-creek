@@ -22,9 +22,9 @@ const quickstart = [
   "  --config streamotter.json --handlers server/handlers.mjs"
 ].join("\n");
 
-/** The V1.1 panel: planned behavior from StreamOtter's approved specification, never presented as running here. */
+/** The source-failure panel: what the installed library offers, kept apart from what this demo runs. */
 const v11Points = [
-  { title: "Preserve the record", text: "A policy can save the original record to a quarantine topic. Only a write Kafka acknowledged counts as saved; until then the source holds." },
+  { title: "Preserve the record", text: "A policy can copy the original record to a quarantine topic. Only a write Kafka acknowledged counts as saved; until then the source holds." },
   { title: "Continue only under control", text: "Moving past the record needs your application's recovery guard to vouch for its snapshots. Otherwise the source stays held. There is no skip or ignore option." },
   { title: "See each outcome", text: "Whether evidence was saved, whether the source advanced, and whether views resynchronized are reported separately. None stands in for another." }
 ];
@@ -165,11 +165,11 @@ const states = [
   <section class="section" id="next-release" aria-labelledby="next-release-title" data-v11-panel>
     <div class="wrap">
       <div class="section-head">
-        <p class="eyebrow">Planned for StreamOtter V1.1 · not in <span class="version">{RELEASE}</span></p>
-        <h2 id="next-release-title">Next: give a bad record a visible fate</h2>
+        <p class="eyebrow">In <span class="version">streamotter@{RELEASE}</span> · opt-in</p>
+        <h2 id="next-release-title">Give a bad record a visible fate</h2>
         <p class="lede">
-          StreamOtter V1.1 is specified, not released. It plans failure policies that keep a bad Kafka record as evidence
-          and let the stream move on only when your application can show its snapshots cover what that record would have changed.
+          Source-failure policies keep a bad Kafka record as evidence and let the stream move on only when your application
+          can show its snapshots cover what that record would have changed. Without them, a bad record pauses its source, as before.
         </p>
       </div>
       <ul class="v11-points">
@@ -179,14 +179,14 @@ const states = [
       </ul>
       <div class="v11-today">
         <p>
-          <strong>What runs today.</strong> In <code>streamotter@{RELEASE}</code>, which this site runs, a bad record pauses its
-          source: it is never committed or skipped, views go stale, and <code>resumeSource()</code> retries the same record after a fix.
-          The Failure Lab's Fouled sensor shows that on a real bench. Its other source-failure exercises are listed with the reason each
-          one can't run yet.
+          <strong>What this demo runs.</strong> Without a policy, a bad record pauses its source: it is never committed or skipped,
+          views go stale, and <code>resumeSource()</code> retries the same record after a fix. The Failure Lab's Fouled sensor shows that on
+          a real bench. Its Source failures track lists the exercises built on the new policies, asks this demo's backend which of them
+          it can run, and gives the reason for any it can't.
         </p>
         <p class="v11-links">
           <a class="button button-primary" href="/lab/#source-failures">Try source failures</a>
-          <a href="/when-it-breaks/#source-failure-policies">How V1.1 plans to handle each failure →</a>
+          <a href="/when-it-breaks/#source-failure-policies">How each failure is handled →</a>
         </p>
       </div>
     </div>

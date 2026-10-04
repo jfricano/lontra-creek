@@ -5,13 +5,13 @@
  * Nothing here is hand-typed where a real source exists: the library version is the site's
  * exact pin (`RELEASE`, which a test holds equal to the installed package and the
  * lockfile), the recording's version and date come from its `capture.json`, the count of
- * unavailable source-failure exercises comes from the Lab catalog, and the playground's
- * `failureHandling` answer comes from the installed validator. What the running field
- * station reports is read in the browser (`scripts/release-service.ts`), never assumed.
+ * unavailable source-failure exercises comes from the Lab catalog, and whether the sandbox
+ * has a published seam to mount comes from `scripts/workbench-seam.ts`. What the running
+ * field station reports is read in the browser (`scripts/release-service.ts`), never assumed.
  */
 import capture from "../public/recordings/workbench/capture.json" with { type: "json" };
 import { SCENARIOS, TRACKS } from "./lab-catalog.ts";
-import { INSTALLED_VALIDATOR_ON_FAILURE_HANDLING } from "./planned-failure-handling.ts";
+import { PUBLISHED_SEAM } from "./scripts/workbench-seam.ts";
 import { RELEASE, SITE } from "./site.ts";
 
 /** The recorded workbench tour's own provenance, so a later version pin can't relabel it. */
@@ -19,9 +19,6 @@ export const RECORDING = { version: capture.version, install: capture.install, c
 
 /** Source-failure stories the Lab lists but the current bench can't run (every one except Fouled sensor). */
 export const WAITING_EXERCISES = TRACKS["source-failures"].filter(id => SCENARIOS[id].controls === null);
-
-/** The playground's answer to a V1.1 configuration, from the installed validator. */
-const failureHandlingIssue = INSTALLED_VALIDATOR_ON_FAILURE_HANDLING.issues[0]?.code ?? "no issue";
 
 export const SITE_RELEASE = {
   name: "streamotter.dev: StreamOtter's home site and the fictional Lontra Creek demo",
@@ -63,16 +60,18 @@ export const SURFACES: readonly Surface[] = [
   {
     name: "Failure Lab: Source failures", href: "/lab/#source-failures", state: "partial",
     runs: `Fouled sensor, on the same benches. The other ${WAITING_EXERCISES.length} stories are listed with the reason each one can't run.`,
-    needs: `Quarantine, a recovery guard, evaluation, and reprocessing from a published StreamOtter release. streamotter@${RELEASE} has none of them.`
+    needs: `streamotter@${RELEASE} provides quarantine, the recovery guard, evaluation, and reprocessing. Each exercise also needs a bench whose backend reports it can run it; what this field station reports is below.`
   },
   {
     name: "Workbench", href: "/workbench/", state: "recorded",
     runs: `A recorded tour of the workbench: streamotter@${RECORDING.version} (${RECORDING.install}), captured ${RECORDING.capturedOn} on a local fixture project.`,
-    needs: `An interactive sandbox needs a published workbench integration seam. streamotter@${RELEASE} doesn't have one.`
+    needs: PUBLISHED_SEAM === null
+      ? "An interactive sandbox needs this site to mount the workbench's published host contract, which it doesn't yet."
+      : "A sandbox service on this backend; /workbench/ asks it whether one is available."
   },
   {
     name: "Playground", href: "/playground/", state: "runs",
     runs: `The real validator from streamotter@${RELEASE}, in your browser, plus a read-only connection to the field station.`,
-    needs: `Failure-policy presets wait for a validator that accepts a failureHandling section. This one rejects it (${failureHandlingIssue}).`
+    needs: "Nothing more for validation, which checks configuration only. Type generation in the browser needs a release that exports a browser-safe generator; use npx streamotter generate locally."
   }
 ];

@@ -92,7 +92,8 @@ test("the walkthrough keeps six chapters and offers an optional next step into S
   await expect(page.locator("[data-chapter-link]")).toHaveCount(6);
   const next = page.locator("[data-walk-next]");
   await expect(next).toContainText("never breaks the shared creek");
-  await expect(next).toContainText(`This demo runs streamotter@${release}. Quarantine and guarded continuation are planned for StreamOtter V1.1 and aren't in this release.`);
+  await expect(next).toContainText(`This demo runs streamotter@${release}, which also offers quarantine and guarded continuation as opt-in policies.`);
+  await expect(next).not.toContainText("planned");
   const link = next.getByRole("link", { name: "Next: handle a bad reading" });
   await expect(link).toHaveAttribute("href", "/lab/?scenario=fouled-sensor#source-failures");
   await link.click();
@@ -102,22 +103,26 @@ test("the walkthrough keeps six chapters and offers an optional next step into S
   expect(writes).toEqual([]);
 });
 
-test("the failure reference shows the planned policy matrix and record-disposition lifecycle, labeled as planned", async ({ page }) => {
+test("the failure reference shows the installed release's policy matrix and record-disposition lifecycle as opt-in", async ({ page }) => {
   await page.goto("/when-it-breaks/");
-  const planned = page.locator("[data-planned-policies]");
-  await expect(planned.getByRole("heading", { level: 2 })).toHaveText("Planned: source-failure policies in StreamOtter V1.1");
-  await expect(planned.locator(".notice")).toContainText(`Not in ${release}.`);
-  await expect(planned.locator(".notice")).toContainText("UNKNOWN_KEY");
-  await expect(planned).toContainText("There is no ignore, discard, or force-skip option.");
-  const matrix = planned.getByRole("table", { name: "Failure-policy matrix (planned)" });
+  const policies = page.locator("[data-failure-policies]");
+  await expect(policies.getByRole("heading", { level: 2 })).toHaveText(`Source-failure policies in streamotter@${release}`);
+  await expect(policies.locator(".notice")).toContainText("Opt-in.");
+  await expect(policies.locator(".notice")).toContainText("the installed validator accepts a failureHandling section");
+  await expect(policies).not.toContainText(/planned|UNKNOWN_KEY|not in \d/i);
+  await expect(policies).toContainText("There is no ignore, discard, or force-skip option.");
+  const matrix = policies.getByRole("table", { name: "Failure-policy matrix" });
   await expect(matrix.locator("tbody tr")).toHaveCount(8);
   await expect(matrix.locator("tbody tr").first()).toContainText("invalid-json");
-  await expect(planned.locator(".lifecycle h4")).toHaveText(["Held", "Evidence saved", "Hold, or ask the recovery guard", "Source advanced", "Views resynchronized"]);
-  await expect(planned).toContainText("Subscription states don't change.");
-  // Every planned source is pinned to one StreamOtter commit, never main.
-  for (const href of await planned.locator('a[href^="https://github.com/jfricano/StreamOtter/"]').evaluateAll(nodes => nodes.map(node => node.getAttribute("href")!))) {
-    expect(href).toMatch(/\/(?:blob|tree)\/[0-9a-f]{40}\/docs\/releases\/v1\.1/);
-  }
+  await expect(policies.locator(".lifecycle h4")).toHaveText(["Held", "Evidence saved", "Hold, or ask the recovery guard", "Source advanced", "Views resynchronized"]);
+  await expect(policies).toContainText("Subscription states don't change.");
+  await expect(policies.getByRole("region", { name: "Operator actions" }).locator("tbody tr")).toHaveCount(10);
+  // What the demo runs is the backend's answer, not this page's.
+  await expect(policies).toContainText("asks the demo's backend which of them its benches can run");
+  // Every source is the release's own documentation at its tag, never main or a planning commit.
+  const hrefs = await policies.locator('a[href^="https://github.com/jfricano/StreamOtter/"]').evaluateAll(nodes => nodes.map(node => node.getAttribute("href")!));
+  expect(hrefs.length).toBeGreaterThan(5);
+  for (const href of hrefs) expect(href).toMatch(new RegExp(`/(?:blob|tree)/v${release.replaceAll(".", "\\.")}/docs/`));
   // The installed release's reference is still first and unchanged in kind.
   await expect(page.getByLabel("Subscription state")).toBeVisible();
   await expect(page.locator("details summary").filter({ hasText: "HANDLER_FAILED" })).toHaveCount(1);
@@ -129,7 +134,8 @@ test("releases keep the site release, library package, demo availability, and ve
   await expect(page.locator("[data-release-site]")).toContainText("Pre-launch.");
   await expect(page.locator("[data-release-site]")).toContainText("V1.1, in development.");
   await expect(page.locator("[data-release-library]")).toContainText(`install streamotter@${release}, pinned exactly`);
-  await expect(page.locator("[data-release-library]")).toContainText("StreamOtter V1.1 is planned, not installed.");
+  await expect(page.locator("[data-release-library]")).toContainText("Source-failure handling is in this release, opt-in.");
+  await expect(page.locator("[data-release-library]")).not.toContainText(/planned|REQUIRED|UNKNOWN_KEY/);
   const rows = page.locator("[data-release-demo] tbody tr");
   await expect(rows).toHaveCount(5);
   await expect(rows.filter({ hasText: "Source failures" })).toContainText("Fouled sensor, on the same benches. The other 8 stories");

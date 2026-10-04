@@ -19,6 +19,7 @@ import {
   POLICY_MATRIX, REDRIVE_OUTCOMES
 } from "../src/failure-handling.ts";
 import { RELEASE_TAG } from "../src/release-facts.ts";
+import { benchConfig } from "../../field-station/src/lab/bench.ts";
 
 const FIELD_STATION = new URL("../../field-station/", import.meta.url);
 
@@ -102,9 +103,18 @@ test("source-failure links point at the release tag, never a branch or a plannin
   for (const stage of DISPOSITION_LIFECYCLE) assert.ok((Object.values(FAILURE_SOURCES) as string[]).includes(stage.source), stage.name);
 });
 
-test("the live creek configures no failure policies, as /when-it-breaks/ says", () => {
+test("the live creek configures no failure policies and only Lab benches do, as /when-it-breaks/ says", () => {
   for (const file of ["streamotter.json", "streamotter.fixture.json", "streamotter.production.json"]) {
     const config = JSON.parse(readFileSync(new URL(file, FIELD_STATION), "utf8")) as Record<string, unknown>;
     assert.equal(config["failureHandling"], undefined, `${file} now has failureHandling; update "What this demo runs" on /when-it-breaks/`);
   }
+  // Each bench's own project, built in code: retries under every profile but `off`, quarantine with a guard only under `quarantine`.
+  assert.equal(benchConfig(1, { profile: "off" }).failureHandling, undefined);
+  const retry = benchConfig(1, { profile: "retry" }).failureHandling;
+  assert.equal(retry?.sources?.["field"]?.transientMapperRetries, 2);
+  assert.equal(retry?.quarantine, undefined);
+  const quarantine = benchConfig(1, { profile: "quarantine" }).failureHandling;
+  assert.equal(quarantine?.quarantine?.topic, "lab-1.quarantine");
+  assert.equal(quarantine?.sources?.["field"]?.invalidPublicPayload, "quarantine-resync");
+  assert.notEqual(benchConfig(1, { profile: "quarantine" }).projectId, fieldConfig.projectId, "a bench is its own project, not the live creek's");
 });

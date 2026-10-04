@@ -17,6 +17,8 @@ const PRODUCTION = process.env["LONTRA_BROWSER_MODE"] === "production";
 
 export default defineConfig({
   testDir: "./e2e",
+  // e2e/real/ runs against a running `npm run dev:lab` stack instead (playwright.real.config.ts).
+  testIgnore: ["real/**"],
   fullyParallel: true,
   forbidOnly: CI,
   retries: CI ? 2 : 0,

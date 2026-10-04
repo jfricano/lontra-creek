@@ -56,7 +56,13 @@ export class LeasePool {
       if (reason) await this.#end(place, reason);
     }
     for (const [bench, slot] of this.#slots) {
-      if (slot.state === 'unavailable') { if (now >= slot.retryAt) await this.#reset(bench); else continue; }
+      if (slot.state === 'unavailable') {
+        if (now < slot.retryAt) continue;
+        // A slow reset may have finished since the bench was marked unavailable: one that now reports a clean study is ready, not reset again.
+        const status = await this.#client.call<BenchStatus>(bench, '/bench/v1/status').catch(() => null);
+        if (status?.state === 'ready' && status.readiness?.cleanLease === true) { slot.status = status; slot.lastSeen = this.#now(); slot.nextPoll = slot.lastSeen + 5000; slot.state = 'ready'; continue; }
+        await this.#reset(bench);
+      }
       if (now < slot.nextPoll) continue;
       slot.nextPoll = now + 5000;
       try {

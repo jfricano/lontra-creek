@@ -255,3 +255,22 @@ test('a grant made after a slow bench call in the same sweep starts when it is m
   assert.ok(view.status === 'ready');
   assert.deepEqual([Date.parse(view.grantedAt), Date.parse(view.claimBy!), Date.parse(view.expiresAt)], [now, now + 30_000, now + 300_000]);
 });
+
+test('a bench whose reset takes longer than 60 seconds is granted once it is clean, not reset again', async () => {
+  const f = fixture(1); const slot = f.slots.get(1)!;
+  const resets = () => f.calls.filter(call => call.path === '/bench/v1/reset').length;
+  // Each reset takes 70 s: a slow gate close, the quiesce, the group delete, and a gateway start.
+  let seen = 0; let readyAt = 0;
+  const bench = () => {
+    if (resets() > seen) { seen = resets(); readyAt = Date.parse(f.pool.status().now) + 70_000; }
+    const ready = Date.parse(f.pool.status().now) >= readyAt;
+    Object.assign(slot, { state: ready ? 'ready' : 'resetting', readiness: { control: ready, source: ready, cleanLease: ready } });
+  };
+  await f.pool.initialize(); bench();
+  const states: string[] = [];
+  for (let i = 0; i < 40; i++) { f.advance(5000); await f.pool.sweep(); bench(); states.push(f.pool.status().benches[0]!.state); }
+  assert.ok(states.includes('unavailable'), 'the slow reset is marked unavailable after 60 s');
+  assert.equal(states.at(-1), 'ready');
+  assert.equal(resets(), 1, 'the retry found the bench clean and did not reset it again');
+  const a = f.session('a'); assert.equal((await f.pool.join(a, 'a')).status, 'ready');
+});

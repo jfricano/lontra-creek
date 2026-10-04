@@ -1,5 +1,7 @@
 # Deployment candidate and operator runbook
 
+> **October 4, 2026: this is the standalone layout's runbook** (`/srv/lontra`, `deploy/setup.sh`, `lontra-deploy`, `lontra-checkpoint`, `lontra-health`, the `Deploy demo` workflow). The hosted demo now runs on devops's shared host (`/srv/apps/lontra`, `/etc/apps/lontra/lontra.env`) with devops's activation procedure; don't run these scripts there. The [rollout plan](../docs/releases/0.2.0-rc.1/ROLLOUT_PLAN.md) governs the coordinated release, and [SHARED_HOST_READINESS.md](../docs/SHARED_HOST_READINESS.md) and [shared-host/BACKUP.md](shared-host/BACKUP.md) are the shared-host contract. The sections on Kafka authorization and the Compose overlays still describe the application's behavior on either layout.
+
 E5.1–E5.5 and E2.3, prepared September 27, 2026. This is a **review-ready implementation**,
 not a deployed system. The setup rehearsal must pass in GitHub Actions before
 server use. No accounts, environment protections, credentials, cloud resources,
@@ -7,7 +9,7 @@ registry publication, or public deployment were created by this change.
 
 The product/hosting decisions remain in [PLAN](../docs/PLAN.md),
 [deployment plan](../docs/DEPLOYMENT_PLAN.md), and
-[owner checklist](../docs/HOSTING.md). This file is the operator procedure and
+[owner checklist](../docs/HOSTING.md) (superseded for hosting by the rollout plan). This file is the operator procedure and
 verification record for the scripts, not a replacement hosting budget. Prices
 and entitlements in older planning documents must be rechecked by the owner
 before committing resources.

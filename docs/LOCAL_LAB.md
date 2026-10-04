@@ -30,7 +30,7 @@ demonstrate it.
 - Port 8443 free on 127.0.0.1.
 - Network access to pull the pinned Kafka, Caddy and Node base images and npm
   packages on the first build. Kafka runs with a 512 MB heap here; the other
-  ten containers are small Node and Caddy processes.
+  nine containers are small Node and Caddy processes.
 
 The launcher checks each of these before doing anything and says what is
 missing.
@@ -106,8 +106,9 @@ first, because port 8443 is fixed by `deploy/compose.local-lab.yaml` and
 
 **Stop** (`npm run dev:lab -- stop`) ends the containers and keeps everything
 that makes up the current study: the Kafka log, the field station's
-checkpoints, Caddy's data volume, and `.local/lab/` with the secrets, test CA
-and study epoch. The next `npm run dev:lab` resumes the same study; the field
+checkpoints, each bench's study volume (`lab-1-state` to `lab-3-state`: its
+`study.json`, journal, and discarded-study summaries), Caddy's data volume,
+and `.local/lab/` with the secrets, test CA and study epoch. The next `npm run dev:lab` resumes the same study; the field
 station catches up to the wall clock from its checkpoint. This is the only
 way the launcher stops the stack, and it never deletes a volume.
 
@@ -116,7 +117,9 @@ the project's volumes and the local directory, then asks you to type the
 project name. Only that exact answer proceeds; anything else cancels. In a
 non-interactive shell (a script or CI), it refuses unless `--yes` is given.
 Confirmed, it runs `docker compose down --volumes --remove-orphans` for this
-project only and deletes the local directory. It refuses to delete a directory
+project only and deletes the local directory. The bench study volumes go with
+it, so each bench's current study and its discarded-study summaries are gone
+too. It refuses to delete a directory
 the launcher did not make (one without `dev-lab.json`). Images are kept. The
 next `npm run dev:lab` starts a new study with new secrets and a new test CA,
 so remove the old CA from any test browser profile that trusted it.
@@ -175,12 +178,13 @@ nothing about the build changes.
 On October 3, 2026, `npm run dev:lab` ran end to end in a Linux (amd64)
 container with Docker 29.6.2 and Compose 5.3.1, behind a TLS-intercepting proxy
 (so with `--extra-ca`): a cold `up` pulled the base images, built the site and
-image, and had all eleven services healthy at `https://localhost:8443` in
+image, and had all ten services healthy at `https://localhost:8443` in
 about 75 seconds, with all three benches ready about ten seconds later (a fresh
 study from the existing image, `up --no-build`, took under a minute). `deploy/test/lab.test.ts` then
 passed all seven tests against it (lease, relay cut and restore, fouled sensor,
 satellite timeout, gateway restart, token and edge isolation). `stop` kept the
-three volumes and the study epoch, `up --no-build` resumed with them, the
+three volumes the stack had then (the bench study volumes came later) and the
+study epoch, `up --no-build` resumed with them, the
 port-in-use check and the discard guard (non-interactive refusal, wrong typed
 answer) refused as described, and a confirmed `discard` removed exactly the
 project's volumes and `.local/lab/`. The Lab's container topology is also
@@ -235,4 +239,5 @@ docker compose -p lontra-local-lab -f deploy/compose.yaml -f deploy/compose.lab.
 
 Discard (what `discard` runs after confirmation): the same command with
 `down --volumes --remove-orphans`, which deletes only this local Compose
-project's Kafka, checkpoint and Caddy volumes, then `rm -rf .local/lab`.
+project's six volumes (Kafka, checkpoint, Caddy, and the three bench study
+volumes), then `rm -rf .local/lab`.

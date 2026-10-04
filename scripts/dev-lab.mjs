@@ -436,7 +436,7 @@ controls and management listeners are private to the Compose network.
 
   npm run dev:lab -- status     # containers and URL checks
   npm run dev:lab -- logs -f    # stream logs
-  npm run dev:lab -- stop       # stop; keeps Kafka data, checkpoints, and the study epoch
+  npm run dev:lab -- stop       # stop; keeps Kafka data, checkpoints, bench studies, and the study epoch
   npm run dev:lab -- discard    # delete this local study (asks first)`);
 }
 

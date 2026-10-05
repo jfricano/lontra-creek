@@ -391,6 +391,8 @@ export class BenchRuntime {
     if (scope.closed) return;
     // Draining the old gateway's traces is best effort: one slow or failed poll changes nothing, and the `gap` below covers what it missed.
     await this.#poll(true).catch(() => undefined); await this.#stopGateway(); this.#feed.add({ kind: 'bench', event: 'gateway-stopped' });
+    // The library's evaluation plans lived in the stopped gateway's memory.
+    this.#failures?.forgetPlans();
     study.restarts.gateway++; await this.#store.save(study);
     await this.#startGateway(true); this.#feed.add({ kind: 'bench', event: 'gateway-started' }); this.#feed.add({ kind: 'bench', event: 'gap' });
   }

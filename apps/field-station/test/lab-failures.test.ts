@@ -464,6 +464,31 @@ describe('inspect-old-reading (LC11-S04): evaluate with corrected handlers, then
     const again = await run(b, { intent: 'incident.approve-reprocess', incident: target(after), planToken: token });
     assert.deepEqual([again.status, again.outcome], ['refused', 'plan-unknown'], 'single use');
   });
+  test('a gateway restart forgets plan tokens: the library\'s plans went with it, and a new evaluation offers a new one', async t => {
+    reset();
+    const b = await bench(t, 'quarantine', [v2(), live(510)]);
+    station.assess = recoverable(1);
+    await b.advance();
+    await b.until(f => f.incident?.progress === 'advanced', 'the S03 advance');
+    await run(b, { intent: 'scenario.start', scenario: 'inspect-old-reading' });
+    await run(b, { intent: 'incident.evaluate', incident: target(await b.facts()) });
+    const token = (await b.facts()).evaluation!.planToken!;
+    assert.ok(token);
+
+    await b.runtime.action('lease-1', 'gateway.restart');
+    for (let i = 0; i < 400 && b.runtime.status().scenario?.gateway !== 'running'; i++) await sleep(50);
+    const restarted = await b.facts();
+    assert.deepEqual(b.runtime.status().study!.restarts, { gateway: 2, process: 0 });
+    assert.equal(restarted.evaluation!.planToken, null, 'no token is offered for a plan the library no longer holds');
+    const stale = await run(b, { intent: 'incident.approve-reprocess', incident: target(restarted), planToken: token });
+    assert.deepEqual([stale.status, stale.outcome], ['refused', 'plan-unknown']);
+
+    await run(b, { intent: 'incident.evaluate', incident: target(restarted) });
+    const fresh = (await b.facts()).evaluation!.planToken!;
+    assert.ok(fresh && fresh !== token);
+    const approved = await run(b, { intent: 'incident.approve-reprocess', incident: target(await b.facts()), planToken: fresh });
+    assert.deepEqual([approved.status, approved.outcome], ['succeeded', 'superseded']);
+  });
 });
 
 describe('restart durability and the intent surface', () => {

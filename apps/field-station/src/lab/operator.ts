@@ -135,6 +135,8 @@ export class BenchFailures {
   step(text: string): void { if (this.#closed) return; this.#steps.push({ at: iso(this.#now()), text }); if (this.#steps.length > MAX_STEPS) this.#steps.shift(); }
   /** A snapshot for the leaseholder succeeded (a `snapshot` `ok` trace not from the satellite). */
   observeSnapshot(at: string): void { if (this.#closed) return; this.#snapshots.push(at); if (this.#snapshots.length > 200) this.#snapshots.shift(); }
+  /** The gateway restarted: the library kept its plans in memory, so no token may still offer one. */
+  forgetPlans(): void { this.tokens.clear(); if (this.#evaluation) this.#evaluation.planToken = null; }
   close(): void {
     if (this.#closed) return;
     this.#closed = true; this.tokens.clear();

@@ -470,7 +470,7 @@ V1.1 W9b. On each bench's API (port 7420, section 8), with the same service toke
 
 All three answer outside the bench's work queue, so they stay available during a gateway restart. `scenario.*` work runs in the queue, since it changes the study's handlers; `incident.*` work doesn't, since the library's retry and reassess wait up to 15 seconds for the source to settle. A refusal the library returns stays a refusal (`refused` with the library's outcome word); a call that throws is `unknown`, or `refused` with `invalid-request` when the library rejected the request's shape; an evaluation refused at the request stage (`stale-revision`, `not-found`, `generation-changed`) is `refused` and records nothing.
 
-Operations and plan tokens live in the bench's memory, scoped to the study: a reset (section 8, step 1) cancels unfinished operations and forgets every token. The bench runs no operator socket and no health listener: the gateway's `operatorSocket` and `health` options stay unset (ADR-03, in-process only).
+Operations and plan tokens live in the bench's memory, scoped to the study: a reset (section 8, step 1) cancels unfinished operations and forgets every token. A same-study gateway restart also forgets every token: the library keeps its evaluation plans in memory, so they don't survive it, and the incident needs a new evaluation. The bench runs no operator socket and no health listener: the gateway's `operatorSocket` and `health` options stay unset (ADR-03, in-process only).
 
 **Profile, journal, and handler build.** `LAB_FAILURE_HANDLING` (default `off`) picks the bench config's `failureHandling` (`src/lab/bench.ts`, `failureHandlingFor`):
 

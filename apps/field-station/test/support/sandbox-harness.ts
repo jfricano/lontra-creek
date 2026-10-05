@@ -40,6 +40,8 @@ export async function harness(options: { slots?: number; backend?: (now: () => n
     setDown(value: boolean) { down = value; },
     settle,
     async advance(ms: number) { now += ms; await settle(); },
+    /** Moves the clock without sweeping, for use while a call is in flight. */
+    tick(ms: number) { now += ms; },
     /** One maintenance sweep after `ms`, as main.ts's timer runs it: no forced poll. */
     async sweepAfter(ms: number) { now += ms; await pool.settled(); await service.settled(); pool.sweep(); await pool.settled(); },
     session: (subject: string, ttlMs = 1_800_000): SessionClaims => ({ subject, role: 'volunteer', exp: now + ttlMs }),

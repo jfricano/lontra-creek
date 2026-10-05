@@ -154,12 +154,15 @@ export class SandboxPool {
     if (service?.availability !== 'available') return;
     for (const [slot, s] of this.#slots) {
       if (s.state !== 'ready') continue;
-      const place = [...this.#places.values()].find(p => !p.lease && !p.offer);
+      // A session that ended while a poll was in flight is left for the sweep: its lease would end in the past.
+      const place = [...this.#places.values()].find(p => !p.lease && !p.offer && p.session.exp > now);
       if (!place) break;
       const lease: Lease = { id: randomUUID(), studyId: randomUUID(), slot, granted: now, expires: Math.min(now + this.#t.leaseMs, place.session.exp), claimed: false, resetting: false, resetAt: 0, ops: { tokens: this.#t.opsBurst, at: now }, runtime: service.runtime! };
       s.state = 'leased';
       const done = this.#slotCall(s, `/sandbox/v1/slots/${slot}/lease`, 'PUT', { leaseId: lease.id, studyId: lease.studyId, expiresAt: iso(lease.expires) }, r => {
         if (place.offer?.lease === lease) delete place.offer;
+        // A refusal (4xx) is of the offer, not the slot, which is still clean; no answer, or a 5xx, takes the slot out.
+        if (r && r.status >= 400 && r.status < 500) { s.state = 'ready'; return; }
         if (r?.status !== 200) { s.state = 'unavailable'; s.retryAt = this.#now() + this.#t.retryMs; return; }
         if (this.#places.get(place.session.subject) === place) place.lease = lease; else void this.#return(slot, lease.id);
       });

@@ -336,6 +336,32 @@ test('A44: a grant answered after its place left returns the slot', async () => 
   const b = h.session('b'); assert.equal((await h.join(b)).status, 'ready');
 });
 
+test('A44: a place whose session ends while a status poll is in flight is not offered the slot; the next in line is', async () => {
+  let onStatus: (() => void) | null = null;
+  const h = await harness({ slots: 1, client: inner => ({ async request(path, method, body) { if (path === '/sandbox/v1/status' && onStatus) { onStatus(); onStatus = null; } return inner.request(path, method, body); } }) });
+  const a = h.session('a'); const b = h.session('b', 20_000); const c = h.session('c');
+  await h.join(a); await h.claim(a); await h.join(b); await h.join(c);
+  await h.leave(a); await h.pool.settled(); await h.service.settled();
+  h.tick(19_999); h.pool.heartbeat(b); h.pool.heartbeat(c);
+  // b has 1 ms left when the poll is sent, and none when its answer frees the slot.
+  onStatus = () => h.tick(5); h.pool.refresh(); h.pool.sweep(); await h.pool.settled(); await h.service.settled();
+  assert.equal(h.view(c).status, 'ready', 'the slot went to the next in line, not out of service');
+  h.pool.sweep(); assert.equal(h.reason(b), 'session-ended');
+});
+
+test('A44: a lease the service refuses (4xx) leaves the slot ready; a 5xx still takes it out for the retry period', async () => {
+  const refuse: number[] = [];
+  const h = await harness({ slots: 1, client: inner => ({ async request(path, method, body) { const status = path.endsWith('/lease') ? refuse.shift() : undefined; return status ? { status, body: { error: 'Refused.', code: status < 500 ? 'invalid-request' : 'slot-unavailable' } } : inner.request(path, method, body); } }) });
+  refuse.push(400); const s = h.session('s');
+  assert.equal((await h.join(s)).status, 'queued');
+  assert.deepEqual(h.pool.status().slots, [{ slot: 1, state: 'ready' }]);
+  await h.sweepAfter(SANDBOX_SWEEP_MS); assert.equal(h.view(s).status, 'ready', 'offered again on the next sweep');
+  await h.leave(s); await h.settle();
+  refuse.push(503); const t = h.session('t');
+  assert.equal((await h.join(t)).status, 'queued');
+  assert.deepEqual(h.pool.status().slots, [{ slot: 1, state: 'unavailable' }]);
+});
+
 test('A42: the service reclaims a slot only for an explicit null lease ID, never for a body without one', async () => {
   const h = await harness({ slots: 1 }); const s = h.session('s'); await h.join(s); await h.claim(s);
   const v = h.view(s); assert.ok(v.status === 'active');

@@ -194,7 +194,8 @@ From jason's dev-ops workspace, over the pinned SSH config and host alias named 
 | 1 | `LONTRA_SITE_ENABLED` before | | | |
 | 1 | Pages rollback target | `01aa1aed-5697-430c-b1d6-95c6f395d477` (to confirm) | | |
 | 1 | Today's site works with `d6e426a` backend | | | |
-| 2 | Preview run ID / run SHA | | | |
+| 2 | Preview run ID / run SHA | [`37317070125`](https://github.com/jfricano/lontra-creek/actions/runs/37317070125) on `d6e426a`; **failed** at the wrangler upload. `npm ci`, typecheck, tests and the site build passed; nothing was uploaded. Cause: the `preview` `CLOUDFLARE_API_TOKEN` value contains a line break (wrangler: `"***\n***" is an invalid header value`). Fix: re-save the secret on one line (and the `production` one), then re-run. | 2026-10-05 13:28–13:29 | jason dispatched and approved |
+| 2 | Preview run ID / run SHA (retry) | | | |
 | 2 | Preview deployment ID / URL | | | |
 | 2 | Preview static checks | | | |
 | 3 | Production run ID / run SHA | | | |

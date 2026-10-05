@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -224,6 +224,22 @@ describe("the field station's runner", () => {
     const moved = new FieldStation({ queue: new PublishQueue(new FakePublisher(), () => undefined), dataDir: dir, epoch: "2026-09-02T00:00:00.000Z", tickMs: TICK_MS, generation: 1, now: time.now, log: line => logs.push(line) });
     await moved.start();
     assert.match(logs[0]!, /epoch 2026-09-01T00:00:00.000Z, not 2026-09-02/);
+  });
+
+  test("a failing checkpoint still publishes every tick", async () => {
+    const dir = await dataDir();
+    const publisher = new FakePublisher();
+    const time = clock(0);
+    const field = await station({ dir, publisher, now: time.now });
+    await field.flush();
+    const before = publisher.batches.length;
+    await mkdir(join(dir, "world.json.tmp")); // the volume refuses checkpoint writes
+    for (let tick = 1801; tick < 1811; tick++) { // over an hour later, so each tick tries to checkpoint
+      time.to(tick);
+      await assert.rejects(field.advance());
+    }
+    assert.equal(publisher.batches.length - before, 10, "a batch per tick");
+    assert.equal(field.pendingCount, 0);
   });
 
   test("without a configured epoch, a restart keeps the checkpoint's", async () => {

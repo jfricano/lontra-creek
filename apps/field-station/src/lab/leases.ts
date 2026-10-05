@@ -11,7 +11,7 @@ export interface BenchClient { call<T>(bench: BenchId, path: string, method?: st
 /** The publisher gate (studies.ts): opened when a lease is granted on a study, closed before any reset is asked for. `current` is the study it holds open. */
 export interface StudyGate { open(bench: BenchId, studyId: string): void; close(bench: BenchId, studyId: string): Promise<unknown>; current(bench: BenchId): string | null; }
 interface Place { session: SessionClaims; address: string; joined: number; heartbeat: number; lease?: { id: string; bench: BenchId; granted: number; expires: number; claimed: boolean; nextAction: number }; }
-interface Slot { state: LabStatus['benches'][number]['state']; status?: BenchStatus; resetAt: number; retryAt: number; lastSeen: number; nextPoll: number; }
+interface Slot { state: LabStatus['benches'][number]['state']; status?: BenchStatus; resetAt: number; retryAt: number; lastSeen: number; nextPoll: number; mismatch?: string | null; }
 const iso = (n: number): string => new Date(n).toISOString();
 /** All state transitions are serialized, including remote calls: concurrent joins cannot double-book. */
 export class LeasePool {
@@ -62,6 +62,17 @@ export class LeasePool {
     const failures = status.failures ?? { profile: 'off', durable: false, handlerBuildId: null };
     return status.readiness?.cleanLease === true && failures.profile === this.#profile && (this.#profile === 'off' || failures.durable);
   }
+  /**
+   * Whether a ready bench's failure handling isn't this deployment's. A reset can't change that, so such a bench
+   * stays unavailable without one, and is logged once until what it reports changes.
+   */
+  #mismatched(bench: BenchId, slot: Slot, status: BenchStatus): boolean {
+    const failures = status.failures ?? { profile: 'off', durable: false, handlerBuildId: null };
+    const mismatch = failures.profile !== this.#profile ? `reports failure handling ${failures.profile}; this field station requires ${this.#profile}`
+      : this.#profile !== 'off' && !failures.durable ? `reports failure handling ${failures.profile} without a durable journal` : null;
+    if (mismatch && mismatch !== slot.mismatch) console.error(`${iso(this.#now())} Lab bench ${bench} ${mismatch}.`);
+    slot.mismatch = mismatch; return mismatch !== null;
+  }
   async #end(place: Place, reason: LabEndReason): Promise<void> {
     this.#places.delete(place.session.subject);
     if (place.lease) for (const listener of this.#ending) listener(place.session.subject, place.lease.id);
@@ -82,7 +93,9 @@ export class LeasePool {
         if (now < slot.retryAt) continue;
         // A slow reset may have finished since the bench was marked unavailable: one that now reports a clean study is ready, not reset again.
         const status = await this.#client.call<BenchStatus>(bench, '/bench/v1/status').catch(() => null);
+        const mismatched = status?.state === 'ready' && this.#mismatched(bench, slot, status);
         if (status?.state === 'ready' && this.#eligible(status)) { slot.status = status; slot.lastSeen = this.#now(); slot.nextPoll = slot.lastSeen + 5000; slot.state = 'ready'; continue; }
+        if (mismatched) { slot.retryAt = this.#now() + 30_000; continue; }
         await this.#reset(bench);
       }
       if (now < slot.nextPoll) continue;
@@ -97,8 +110,8 @@ export class LeasePool {
         slot.status = status; slot.lastSeen = at;
         if (place && (status.state !== 'leased' || status.lease?.leaseId !== place.lease!.id)) { await this.#end(place, 'bench-failed'); continue; }
         // Only a clean-lease-eligible bench is granted (LC11-ADR-02). A leased bench whose source is held stays leased.
-        // A ready bench that isn't eligible (its last cleanup didn't finish) is reset again on the usual schedule.
-        if (!place && status.state === 'ready') { if (this.#eligible(status)) slot.state = 'ready'; else { slot.state = 'unavailable'; slot.retryAt = at + 30_000; } }
+        // A ready bench that isn't eligible (its last cleanup didn't finish) is reset again on the usual schedule; one with another failure handling only checked again.
+        if (!place && status.state === 'ready') { this.#mismatched(bench, slot, status); if (this.#eligible(status)) slot.state = 'ready'; else { slot.state = 'unavailable'; slot.retryAt = at + 30_000; } }
         else if (status.state === 'failed' || slot.state === 'resetting' && at - slot.resetAt >= 60_000) { slot.state = 'unavailable'; slot.retryAt = at + 30_000; }
       } catch { const at = this.#now(); if (at - slot.lastSeen < 15_000) continue; const place = [...this.#places.values()].find(p => p.lease?.bench === bench); if (place) await this.#end(place, 'bench-failed'); slot.state = 'unavailable'; slot.retryAt = this.#now() + 30_000; }
     }

@@ -298,3 +298,23 @@ test('requests that arrive while the pool starts grant nothing until every bench
   await f.pool.token(a); f.advance(5000); f.pool.heartbeat(a); await f.pool.sweep();
   assert.equal(f.pool.view(a).status, 'active');
 });
+
+test('a bench with another failure handling is logged once and left unavailable, never reset for it', async t => {
+  const f = fixture(1); const slot = f.slots.get(1)!;
+  const resets = () => f.calls.filter(call => call.path === '/bench/v1/reset').length;
+  const logged: string[] = []; t.mock.method(console, 'error', (line: string) => { logged.push(line); });
+  // This field station runs profile off; the bench was started with retry.
+  slot.failures = { profile: 'retry', durable: true, handlerBuildId: 'h' };
+  await f.pool.initialize();
+  for (let i = 0; i < 120; i++) { f.advance(5000); await f.pool.sweep(); }
+  assert.equal(resets(), 1, 'only the startup reset: another one cannot change the profile');
+  assert.equal(f.pool.status().benches[0]!.state, 'unavailable');
+  assert.equal(logged.length, 1);
+  assert.match(logged[0]!, /Lab bench 1 reports failure handling retry; this field station requires off\.$/);
+  // Restarted with the deployment's profile, it is granted without another reset.
+  delete slot.failures;
+  for (let i = 0; i < 7; i++) { f.advance(5000); await f.pool.sweep(); }
+  assert.equal(f.pool.status().benches[0]!.state, 'ready');
+  assert.equal(resets(), 1);
+  assert.equal((await f.pool.join(f.session('a'), 'a')).status, 'ready');
+});

@@ -12,8 +12,8 @@ Kafka topic confinement disposition, and launch approval remain outstanding.
 
 **October 4, 2026 update:** V1.1 is built, not deployed. Draft PR #40 (with #41's
 move to streamotter.dev) runs on StreamOtter 0.1.0-rc.3; the phase 2 branch adds
-the workbench sandbox and the source-failure exercises on 0.2.0-rc.1, which is
-not on npm yet ([V1.1 status](releases/v1.1/STATUS.md)). Hosting changed: the demo
+the workbench sandbox and the source-failure exercises on 0.2.0-rc.1, published
+to npm on October 5 ([V1.1 status](releases/v1.1/STATUS.md)). Hosting changed: the demo
 will run on a shared ARM host behind devops's shared TLS edge, not a dedicated VM
 (see [Architecture and hosting](#architecture-and-hosting)). The
 [rollout plan](releases/0.2.0-rc.1/ROLLOUT_PLAN.md) governs the deployment, in two
@@ -26,7 +26,7 @@ This document owns the site's scope, the demo's behavior and operating rules, an
 
 ## Future site releases
 
-The [site release index](releases/README.md) and [V1.1 plan](releases/v1.1/README.md) own future site/demo work. The former V1.5 milestone is now V1.1. It adds Source failures inside `/lab/` and replaces the existing `/workbench/` tour with the actual published workbench sandbox, without another route or navigation item. `/playground/` remains the quick validator. Both are built (the sandbox and the exercises on the phase 2 branch, against a pre-publish StreamOtter 0.2.0-rc.1) and run under `npm run dev:lab`; neither is deployed, and neither runs on the hosted demo until the owner approves it. The route table and operating rules below describe the baseline until launch checks pass. Implementation progress is tracked in [V1.1 status](releases/v1.1/STATUS.md).
+The [site release index](releases/README.md) and [V1.1 plan](releases/v1.1/README.md) own future site/demo work. The former V1.5 milestone is now V1.1. It adds Source failures inside `/lab/` and replaces the existing `/workbench/` tour with the actual published workbench sandbox, without another route or navigation item. `/playground/` remains the quick validator. Both are built (the sandbox and the exercises on the phase 2 branch, on StreamOtter 0.2.0-rc.1) and run under `npm run dev:lab`; neither is deployed, and neither runs on the hosted demo until the owner approves it. The route table and operating rules below describe the baseline until launch checks pass. Implementation progress is tracked in [V1.1 status](releases/v1.1/STATUS.md).
 
 Library policies, native acceptance, and package publication stay in StreamOtter's `docs/releases/v1.1/`; Lontra Creek owns visitor sessions, synthetic integration, site acceptance, and deployment. Their release decisions remain independent.
 

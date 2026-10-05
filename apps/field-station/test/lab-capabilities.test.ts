@@ -104,8 +104,8 @@ test('0.2.0-rc.1 is verified for every new scenario, and the deployment still de
 });
 
 test('the recorded evidence ran exactly the StreamOtter packages the lockfile installs', () => {
-  // An independent read of package-lock.json. When it changes (the registry release replacing the
-  // pre-publish pack, or any other rebuild of a recorded version), this fails until
+  // An independent read of package-lock.json. When it changes (a new release, or any other
+  // rebuild of a recorded version), this fails until
   // deploy/test/lab-source-failures.test.ts (and deploy/test/sandbox.test.ts) are run again on dev:lab
   // against that install and VERIFIED_WITH records the new integrity (lab-api.md section 12.3).
   const lock = JSON.parse(readFileSync(new URL('../../../package-lock.json', import.meta.url), 'utf8')) as Parameters<typeof streamOtterIntegrity>[0];

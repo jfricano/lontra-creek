@@ -1,9 +1,8 @@
 /**
  * The published workbench this site mounts on /workbench/ (WHC-1, sandbox contract §4).
  * The literals are copied from the `workbench-host.json` manifest of the installed
- * `@streamotter/workbench@0.2.0-rc.1`, the vendored pre-publish tarball, and the hashes
- * were recomputed from its files. Re-pin them from the published tarball after
- * `npm publish`, when vendor/ gives way to the registry pin: test/workbench-seam.test.ts
+ * `@streamotter/workbench@0.2.0-rc.1`, the published npm release, and the hashes were
+ * checked against its files. Re-pin them with every new pin: test/workbench-seam.test.ts
  * and the site build (integrations/workbench-assets.mjs) both fail until they match the
  * installed files again. The site serves `entry.script`, `entry.hostStyle` and the
  * license file under a versioned path, so a cached file from an older pin never meets

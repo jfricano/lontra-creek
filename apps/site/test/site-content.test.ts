@@ -22,9 +22,9 @@ function sources(dir: string): string[] {
 
 test("one library version everywhere: the site pin, the field station pin, the lockfile, and the installed package (LC11-A40)", () => {
   const locked = (lockfile as { packages: Record<string, { version?: string }> }).packages["node_modules/streamotter"]?.version;
-  // An exact pin, not a range; or, before a release is on npm, its locally packed tarball in
-  // vendor/, which scripts/check-release-pins.mjs keeps out of every release build.
-  const pinned = (spec: string): string | undefined => /^\d+\.\d+\.\d+(-[\w.]+)?$/.test(spec) ? spec : /^file:\.\.\/\.\.\/vendor\/streamotter-([\w.-]+)\/streamotter-\1\.tgz$/.exec(spec)?.[1];
+  // An exact registry version, not a range, a tag, or a local tarball
+  // (scripts/check-release-pins.mjs refuses those in every release build).
+  const pinned = (spec: string): string | undefined => /^\d+\.\d+\.\d+(-[\w.]+)?$/.test(spec) ? spec : undefined;
   assert.equal(pinned(sitePackage.dependencies.streamotter), RELEASE);
   assert.equal(pinned(fieldStationPackage.dependencies.streamotter), RELEASE);
   assert.equal(locked, RELEASE);

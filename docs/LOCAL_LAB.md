@@ -26,7 +26,7 @@ demonstrate it.
 
 - Node 24.15 or later (the failure journal's floor), and `npm ci` already run in
   this checkout. On this branch `npm ci` installs StreamOtter 0.2.0-rc.1 from the
-  pre-publish tarballs in `vendor/` ([vendor/README.md](../vendor/README.md)).
+  npm registry, at the exact version the apps pin.
 - Docker (Engine or Desktop) with the daemon running, and the Docker Compose v2
   plugin, 2.24.4 or later (the local overlay uses `!override`).
 - OpenSSL, for the throwaway secrets and test certificates.
@@ -390,6 +390,15 @@ station, and `deploy/test/kafka-acls.test.ts`. A bench container restarted in
 place resumed its study; one recreated after being killed failed on its
 journal lock, which names the old container's host name, and the field
 station's reset replaced its study within a minute (Lab contract 8b).
+
+On October 5, 2026, after the switch to StreamOtter 0.2.0-rc.1 from npm, a
+cold `up` built from the registry lockfile passed
+`deploy/test/lab-source-failures.test.ts` 11 of 11 under the default
+(`quarantine`, ACLs on) with no authorizer denials, and S01, S06 and A32 under
+`LAB_FAILURE_HANDLING=retry LAB_LOCAL_EXERCISES=0 KAFKA_AUTHORIZATION=none`;
+`deploy/test/sandbox.test.ts` 7 of 7 with the pause commands;
+`deploy/test/kafka-acls.test.ts` 6 of 6; and `deploy/test/lab.test.ts` 7 of 7
+with `LAB_SERVES_SITE=1` (the lease-expiry test not run).
 
 On October 4, 2026, after the W9a review fixes, a cold `up` of the same kind
 (its own `--dir` and `--project`) passed all seven tests of

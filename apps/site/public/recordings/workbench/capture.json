@@ -1,9 +1,9 @@
 {
   "version": "0.2.0-rc.1",
-  "capturedAt": "2026-10-04T14:20:20.809Z",
-  "install": "pre-publish tarball",
+  "capturedAt": "2026-10-05T04:05:27.949Z",
+  "install": "published npm",
   "platform": "Linux",
-  "source": "Workbench from a pre-publish tarball, not from npm; CLI-generated fixture project on loopback, Linux",
+  "source": "Published npm workbench; CLI-generated fixture project on loopback, Linux",
   "viewport": {
     "width": 1280,
     "height": 900

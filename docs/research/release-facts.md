@@ -6,7 +6,7 @@ Everything below describes `streamotter@0.1.0-rc.3`, checked against the install
 
 ## Updated for 0.2.0-rc.1 (October 4, 2026)
 
-Rechecked against the installed `streamotter@0.2.0-rc.1` (vendored pre-publish tarballs) and the StreamOtter repository at the commit those tarballs were packed from, whose docs the tag `v0.2.0-rc.1` will carry. Every `source` still points at `v0.2.0-rc.1`, so the links resolve once that tag is pushed. What changed on the pages:
+Rechecked against the installed `streamotter@0.2.0-rc.1` (then a pre-publish pack, which the npm release replaced on October 5) and the StreamOtter repository at the commit that pack was built from. Every `source` points at the tag `v0.2.0-rc.1`, which now exists. What changed on the pages:
 
 - `FORBIDDEN` and `INVALID_PARAMS`: in production, parameters that fail `paramsSchema` are answered `FORBIDDEN` and traced as `INVALID_PARAMS` (stage `authorize`); development still answers `INVALID_PARAMS` with the path. Non-object and oversized parameters are `INVALID_PARAMS` in both modes and are rejected before the channel lookup, untraced (`runtime/session.ts`, `V1_API.md` §7).
 - Refused handshakes are traced at most 10 per second after a burst of 100 (`HANDSHAKE_TRACE_RATE`, hand-copied; `V1_API.md` §10).

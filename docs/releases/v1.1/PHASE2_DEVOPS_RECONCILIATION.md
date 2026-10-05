@@ -13,7 +13,7 @@ The branch head is in #42; the PR will move as post-publish work lands. These ar
 | Commit | What | Kept after publish |
 | --- | --- | --- |
 | `56e8d77` | `scripts/check-release-pins.mjs`, run first in `images.yml` and `site.yml` | Yes |
-| `544075f` | TEMPORARY: `vendor/` tarballs, `file:` specs, root `overrides`, `COPY vendor vendor` in `deploy/Dockerfile`, lockfile | No: reverted in the pin commit |
+| `544075f` | TEMPORARY: `vendor/` tarballs, `file:` specs, root `overrides`, `COPY vendor vendor` in `deploy/Dockerfile`, lockfile | No: removed by the October 5 pin commit |
 | `7a32391` | `.github/workflows/release-pins.yml`: the same check on pull requests into `main`, using the base branch's copy of the script | Yes |
 
 Deploy-relevant files changed against #41:
@@ -23,7 +23,7 @@ Deploy-relevant files changed against #41:
 - `deploy/compose.lab.yaml` and `deploy/compose.local-lab.yaml`
 - `deploy/kafka/start.sh`
 - `deploy/make-secrets.sh`
-- `deploy/Dockerfile` (vendor lines only)
+- `deploy/Dockerfile` (vendor lines only, removed again by the pin commit, so it now matches #41)
 - `deploy/OPERATIONS.md`
 - `apps/site/public/_headers`
 - `.github/workflows/{images,site,browser,release-pins}.yml`
@@ -139,6 +139,7 @@ These were the only two authorizer denials on the real stack. `maxSourceRecordBy
   - `images.yml` and `site.yml` refuse to build;
   - `release-pins.yml` refuses a pull request into `main`, including one retargeted onto `main`;
   - so the vendored branch can be tested but not merged to `main`. That protects phase 1 rebuilds and the site's "re-run from the previous main commit" rollback.
+- 0.2.0-rc.1 was published to npm on October 5. The October 5 pin commit removed `vendor/`, and the guard now passes this branch.
 - The guard checks the package source (exact version, registry lockfile, no `vendor/`, no `file:` specs or overrides). It doesn't check which version. Two other things stop early use of the published packages:
   - The capability summary offers a scenario only for the exact packages and profile its real-Kafka run proved. A unit test fails until the suite is re-run on the registry install and the evidence re-recorded.
   - A test ties the site recordings' install label to the lockfile.

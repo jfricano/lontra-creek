@@ -1,8 +1,8 @@
 # Lontra Creek V1.1 — Source failure exercises
 
-October 4, 2026 · Owner: Jason Fricano · Slice W9b · Built on the phase 2 branch `feat/v1.1-source-failure-exercises` against a pre-publish pack of StreamOtter 0.2.0-rc.1
+October 4, 2026 · Owner: Jason Fricano · Slice W9b · Built on the phase 2 branch `feat/v1.1-source-failure-exercises` against StreamOtter 0.2.0-rc.1 from npm (a pre-publish pack until October 5)
 
-The Failure Lab's **Source failures** track: nine stories (LC11-S01–S09) in which a bad record reaches a leased bench and the visitor watches what StreamOtter 0.2.0-rc.1's opt-in failure handling does with it: hold it, save it as evidence, refuse to continue until the view can be trusted, evaluate it again, and reprocess it on approval. This page says what the exercises are, how to run them locally, why the hosted demo differs, what has been proven at which level, and how the temporary pre-publish packages come out.
+The Failure Lab's **Source failures** track: nine stories (LC11-S01–S09) in which a bad record reaches a leased bench and the visitor watches what StreamOtter 0.2.0-rc.1's opt-in failure handling does with it: hold it, save it as evidence, refuse to continue until the view can be trusted, evaluate it again, and reprocess it on approval. This page says what the exercises are, how to run them locally, why the hosted demo differs, what has been proven at which level, and how the temporary pre-publish packages gave way to the registry release.
 
 The interfaces are fixed elsewhere and not repeated here: the [Lab contract §12](../../contracts/lab-api.md#12-the-source-failures-track-v11) (routes, intents, projection, page), its private bench surface in §8b, the [companion plan](LONTRA_CREEK_V1_1_COMPANION_PLAN.md#4-scenario-catalog-and-release-coverage) (stories and labels), and the decisions listed at the end. [STATUS.md](STATUS.md) is the live tracker. Where this page and the [rollout plan](../0.2.0-rc.1/ROLLOUT_PLAN.md) differ about hosting, the rollout plan wins.
 
@@ -24,7 +24,7 @@ A visitor borrows a bench, opens the Source failures track, and presses **Start 
 
 A scenario is offered only when the capability summary (`GET /api/lab/capabilities`, contract §12.3) lists it as available. That needs all of:
 
-1. Recorded real-Kafka evidence matches what is running (`VERIFIED_WITH` in `apps/field-station/src/lab/capabilities.ts`, contract §12.3): the installed StreamOtter release, the exact packages it was proven against (the six `streamotter` and `@streamotter/*` lockfile `integrity` values), and, for that scenario, the failure-handling profile this deployment runs. A scenario is recorded only after its real-Kafka test passes on `npm run dev:lab` under that profile. Another build of the same version (the registry release replacing the pre-publish pack) matches nothing until the suite is run on it again.
+1. Recorded real-Kafka evidence matches what is running (`VERIFIED_WITH` in `apps/field-station/src/lab/capabilities.ts`, contract §12.3): the installed StreamOtter release, the exact packages it was proven against (the six `streamotter` and `@streamotter/*` lockfile `integrity` values), and, for that scenario, the failure-handling profile this deployment runs. A scenario is recorded only after its real-Kafka test passes on `npm run dev:lab` under that profile. Another build of the same version (as when the registry release replaced the pre-publish pack) matches nothing until the suite is run on it again.
 2. The deployment has Lab benches.
 3. The deployment's failure-handling profile (`LAB_FAILURE_HANDLING`: `off`, `retry`, or `quarantine`, set alike on the field station and every bench) provides what the scenario needs, and, for S07–S09, `LAB_LOCAL_EXERCISES=1` is set.
 
@@ -84,7 +84,7 @@ Even then the hosted exercises would differ from local ones, because the hosted 
 
 Results at the real-Kafka level are recorded here and in STATUS.md. A scenario not listed is not verified on real Kafka, whatever the lower levels show.
 
-Real Kafka, `npm run dev:lab`, October 4, 2026: StreamOtter 0.2.0-rc.1 (the pre-publish pack in `vendor/`, whose six lockfile integrity values `VERIFIED_WITH` records), profile `quarantine`, `KAFKA_AUTHORIZATION=acl`, `deploy/test/lab-source-failures.test.ts` 11 of 11, with no authorizer denials in the final run. Every new story is recorded in `VERIFIED_WITH` for 0.2.0-rc.1 under `quarantine`.
+Real Kafka, `npm run dev:lab` built from the registry lockfile, October 5, 2026: StreamOtter 0.2.0-rc.1 from npm (the six lockfile integrity values `VERIFIED_WITH` records), profile `quarantine`, `KAFKA_AUTHORIZATION=acl`, `deploy/test/lab-source-failures.test.ts` 11 of 11 in two runs, with no authorizer denials (`kafka-authorizer.log`) in the second. On the same stack, `deploy/test/sandbox.test.ts` passed 7 of 7 (with the hung-service test), `deploy/test/kafka-acls.test.ts` 6 of 6, and `deploy/test/lab.test.ts` 7 of 7 (the lease-expiry test skipped). Every new story is recorded in `VERIFIED_WITH` for 0.2.0-rc.1 under `quarantine`. The October 4 runs below used the pre-publish pack.
 
 | Scenario | What the real run checked |
 | --- | --- |
@@ -100,7 +100,7 @@ Real Kafka, `npm run dev:lab`, October 4, 2026: StreamOtter 0.2.0-rc.1 (the pre-
 | S09 | The quarantine copy is deleted; evaluation reports the evidence unavailable |
 | A32 | Nothing is left behind after resets; the journal directory is owner-only |
 
-The hosted default was rechecked on the same stack with `LAB_FAILURE_HANDLING=retry`, `LAB_LOCAL_EXERCISES=0` and `KAFKA_AUTHORIZATION=none`: only S06 is offered, the other seven report `deployment-restricted`, and S01, S06 and A32 pass. S06 is therefore also recorded under `retry`; no other story is, so under `retry` nothing else would be offered even if the profile could run it. That recheck ran on a developer machine, not under the shared host's container limits.
+The hosted default was rechecked on the same stack with `LAB_FAILURE_HANDLING=retry`, `LAB_LOCAL_EXERCISES=0` and `KAFKA_AUTHORIZATION=none` (October 4 on the pack, and again October 5 on the registry install): only S06 is offered, the other seven report `deployment-restricted`, and S01, S06 and A32 pass. S06 is therefore also recorded under `retry`; no other story is, so under `retry` nothing else would be offered even if the profile could run it. That recheck ran on a developer machine, not under the shared host's container limits.
 
 After the phase 2 review's fixes (one intent at a time, ordered projection reads, plan tokens bound to the incident revision, no study ID in the projection, and a suite that fails on any refusal it doesn't expect, asserts S04's `superseded`, and resets every bench twice in A32), both runs were repeated on October 4 with the same packages: `quarantine` with ACLs 11 of 11 with no authorizer denials, and `retry` with `KAFKA_AUTHORIZATION=none` S01, S06 and A32 passing with the other seven skipped as not offered.
 
@@ -108,15 +108,14 @@ One limit found on the real stack: a bench container that is recreated (a new ho
 
 ## Pre-publish packages, and their removal
 
-StreamOtter 0.2.0-rc.1 is not on npm yet. To build and test the exercises before it is, this branch installs six locally packed tarballs from [`vendor/`](../../../vendor/README.md): `jfricano/StreamOtter@4e67ef8` (the head of its #56), with every package version set to 0.2.0-rc.1. They arrived in one commit marked temporary (`chore(vendor): TEMPORARY pre-publish StreamOtter 0.2.0-rc.1 tarballs`).
+Until StreamOtter 0.2.0-rc.1 was on npm, this branch built and tested the exercises against six locally packed tarballs in `vendor/`: `jfricano/StreamOtter@4e67ef8` (the head of its #56), with every package version set to 0.2.0-rc.1. They arrived in one commit marked temporary (`chore(vendor): TEMPORARY pre-publish StreamOtter 0.2.0-rc.1 tarballs`). While they were here, `scripts/check-release-pins.mjs` kept the Images (`images.yml`) and Deploy static site (`site.yml`) workflows from building the branch, and the Release pins workflow (`release-pins.yml`) kept it out of `main`.
 
-Until 0.2.0-rc.1 is published:
+The switch, October 5, 2026:
 
-- The GitHub tag `v0.2.0-rc.1` and the npm pages the site links to answer 404, and `npm install streamotter@0.2.0-rc.1` fails. An unpinned `npm install streamotter` installs 0.1.0-rc.3.
-- `scripts/check-release-pins.mjs` runs first in the Images (`images.yml`) and Deploy static site (`site.yml`) workflows and refuses this branch: StreamOtter must come from the npm registry at an exact version. No release image or deployable site is built from the vendored packages (CI still builds the site to test it).
-- The Release pins workflow (`release-pins.yml`) runs the same check on every pull request into `main`, so this branch can't be merged there while it carries the pack ([vendor/README.md](../../../vendor/README.md)).
-- The site's recorded workbench screenshots and creek recording say they were captured from a pre-publish tarball. The label comes from the lockfile, so it can't say npm until the packages come from the registry; `scripts/test/capture-provenance.test.mjs` fails whenever a recording's label and the lockfile disagree.
-- The Lab's real-Kafka evidence (`VERIFIED_WITH`) names the pack's exact packages, so on any other build of 0.2.0-rc.1 the new stories read as not verified until the suite is run on it.
+- 0.2.0-rc.1 was published to npm at 03:27 UTC, with provenance, on the `latest` dist-tag, for all six packages: `streamotter`, `@streamotter/cli`, `@streamotter/client`, `@streamotter/contracts`, `@streamotter/gateway` and `@streamotter/workbench`. The GitHub tag `v0.2.0-rc.1` and the npm pages now exist.
+- This branch removed `vendor/`, the `file:` specs, the root `overrides` and the Dockerfile's `COPY vendor vendor` lines, pinned `streamotter@0.2.0-rc.1` exactly in both apps, and regenerated `package-lock.json` from the registry. `scripts/check-release-pins.mjs` now passes.
+- The published packages differ from the pack in one runtime file, `@streamotter/gateway`'s operator IPC (`dist/operator/ipc.js`): an answer to an oversized or overloaded request now lingers briefly so the caller reads it, and an over-long socket path is refused up front. The other differences are README text and dependency order.
+- Every lockfile integrity value changed, so the real-Kafka evidence (`VERIFIED_WITH`) and the site's recordings, both taken from the pack, were retaken on the registry install the same day (steps 4 and 5 below; results above). The workbench seam's version and integrity were unchanged in the published `workbench-host.json`.
 
 After 0.2.0-rc.1 is published and verified on npm (rollout plan, step 1), one commit does all of the following, and passes the checks below before it is pushed:
 

@@ -87,26 +87,26 @@ export interface Verification {
  * section 12.3). A scenario is recorded only after deploy/test/lab-source-failures.test.ts
  * passes for it on dev:lab, and only for the profiles that run used; until then it is
  * `not-integrated`. A different build of the same version (another tarball, as when the
- * pre-publish pack gives way to the registry release) matches nothing: the suite is run
+ * pre-publish pack gave way to the registry release on October 5) matches nothing: the suite is run
  * again on that install and the evidence re-recorded (test/lab-capabilities.test.ts fails
  * until then).
  */
 export const VERIFIED_WITH: ReadonlyMap<string, Verification> = new Map([['0.2.0-rc.1', {
-  // The pre-publish pack of jfricano/StreamOtter@4e67ef8 in vendor/ (package-lock.json).
+  // The registry release, as package-lock.json installs it (published October 5, 2026).
   packages: {
-    'node_modules/@streamotter/cli': 'sha512-pRpqTfw9PIda2SrQ3wVp/Y6XtyygEbi/A0y92upbSuLZWmxVmScCz1XDHxwa3dz7lR8kZ6Tm6AykkKYkqRCxQA==',
-    'node_modules/@streamotter/client': 'sha512-ytJgnj76rG8FT7sSBvQlqJedsiWXhs4MFTARLRgKKJy6Qjg1DwRCP8gygCJRVhBxYwxIpnxFQPnftDDL81wp2A==',
-    'node_modules/@streamotter/contracts': 'sha512-M3EE7u/m8I/fDMuC30HlewcuMbJ1YAD6XlKcA63tE6F8EdHwiSZp1D7rguDM6mucPDJlSZCt7K+v473hj6/qQw==',
-    'node_modules/@streamotter/gateway': 'sha512-msUfjnz2js2sW6XxJaUcIUg+qiMUsoataMoEUH3P+9HeYYoCmnMxWKR95mAbCn1HW5UQmFK447feT4ho6vWRpg==',
-    'node_modules/@streamotter/workbench': 'sha512-gOwboSh9u/xz3XOmfuIPWf4Ph53xaNJePj3fLY5OlLGViQd7VkawhpnZETMm1sgppct/7upP0aTVNPf0VINR7g==',
-    'node_modules/streamotter': 'sha512-++N3c95mTcojAMx0ucTeo7+KBJ7rpJFJyjg6Vw3kx9ps6udQ2OHgebtCe/58xTc13zSYwwiDnyn3r79DonDnDw=='
+    'node_modules/@streamotter/cli': 'sha512-y8It80MUcxh8d7XtnJdeO5Rpswy1AQ/wE8jvFO92mZPAeKV+CzNnab/TiaknIVssXAA12X4B7s5E3qiZo9ovQQ==',
+    'node_modules/@streamotter/client': 'sha512-SnsFBGSEKgOPEZOxgpD/viUw5BXwZLtEOYWj4R19RZxgQyXCTpPt/HAsbsPr7YgHKCBB+BMivSiq+N0fw5ECyw==',
+    'node_modules/@streamotter/contracts': 'sha512-7aCW7zBOenyS0b8j5Jjrr0tk5NW6XjBjtcjdRC1qyYtOka60Wt/5DlVYjVHSO0+sTE4BYKAp9KbdmTBQb9LRTQ==',
+    'node_modules/@streamotter/gateway': 'sha512-ep6W92ZYpsdH5eommxIv5vQaKyCujyO6vy1/MDbqUJ2n/EZipceGpZ1vEUectNRQcS9o0hdtHmICf5doJv4tFQ==',
+    'node_modules/@streamotter/workbench': 'sha512-Yn8gCDuho4JAayHVDzekx9DubhPAnn1PlrQ4rmTcEE0ljpIfz2X00A492Y+wCv2zs+l5Sj/17lidxJBjaTao9A==',
+    'node_modules/streamotter': 'sha512-Xw9sObzC1vmptYpEDDBOOeaQAkJxbV3oCh8FGpF5/UEGlmSuMbyC7IUSdgpcjTY8AQldhsL5Xe1u916G6K2xNA=='
   },
   scenarios: {
     'garbled-reading': ['quarantine'], 'bad-projection': ['quarantine'], 'inspect-old-reading': ['quarantine'], 'conflicting-readings': ['quarantine'],
     'calibration-blip': ['quarantine', 'retry'],
     'too-many-bad-readings': ['quarantine'], 'restart-recovery': ['quarantine'], 'unavailable-evidence': ['quarantine']
   },
-  evidence: 'deploy/test/lab-source-failures.test.ts on npm run dev:lab, October 4, 2026: all eight under quarantine with KAFKA_AUTHORIZATION=acl; calibration-blip also under retry with KAFKA_AUTHORIZATION=none (S01, S06 and A32 passed)'
+  evidence: 'deploy/test/lab-source-failures.test.ts on npm run dev:lab built from the registry lockfile, October 5, 2026: all eight under quarantine with KAFKA_AUTHORIZATION=acl (11/11); calibration-blip also under retry with KAFKA_AUTHORIZATION=none (S01, S06 and A32 passed); deploy/test/sandbox.test.ts 7/7 on the same stack'
 }]]);
 export const INTENTS = ['scenario.start', 'scenario.restore-calibration', 'scenario.prepare-coverage', 'incident.retry-current', 'incident.reassess', 'incident.evaluate', 'incident.approve-reprocess'] as const satisfies readonly LabIntent[];
 

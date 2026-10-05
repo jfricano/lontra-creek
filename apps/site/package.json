@@ -17,6 +17,6 @@
     "@lontra-creek/sim": "0.0.0",
     "astro": "7.3.5",
     "cookie": "2.0.1",
-    "streamotter": "file:../../vendor/streamotter-0.2.0-rc.1/streamotter-0.2.0-rc.1.tgz"
+    "streamotter": "0.2.0-rc.1"
   }
 }

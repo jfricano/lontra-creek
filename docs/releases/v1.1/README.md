@@ -1,6 +1,6 @@
 # Lontra Creek V1.1 site and demo plan
 
-**Owner amendment:** October 1, 2026; reconciled with main October 2. V1.1 replaces the former V1.5 milestone label. **State, October 4:** the sandbox and the new failure scenarios are built on the phase 2 branch against a pre-publish StreamOtter 0.2.0-rc.1 and run under `npm run dev:lab`; nothing is deployed. See the [release notes](#release-notes) and [STATUS.md](STATUS.md).
+**Owner amendment:** October 1, 2026; reconciled with main October 2. V1.1 replaces the former V1.5 milestone label. **State, October 5:** the sandbox and the new failure scenarios are built on the phase 2 branch, which pins StreamOtter 0.2.0-rc.1 from npm (published October 5), and run under `npm run dev:lab`; nothing is deployed. See the [release notes](#release-notes) and [STATUS.md](STATUS.md).
 
 Keep the eight existing routes and six-chapter walkthrough. Add Source failures inside `/lab/`. Replace the existing `/workbench/` screenshot/recorded tour with the actual published workbench UI in an isolated synthetic visitor sandbox. Do not add a page or navigation item. Preserve `/playground/` as the quick configuration validator.
 
@@ -21,14 +21,14 @@ V1.1 reaches the site in two phases ([rollout plan](../0.2.0-rc.1/ROLLOUT_PLAN.m
 - `npm run dev:lab` runs the real three-bench Lab locally; least-privilege Kafka ACLs locally and in CI (LC11-ADR-03).
 - The domain is streamotter.dev, with the demo backend at demo.streamotter.dev (#41).
 
-**Phase 2: the pin PR (not opened yet), on `streamotter@0.2.0-rc.1`.** Built from `feat/v1.1-source-failure-exercises` against a pre-publish pack of 0.2.0-rc.1:
+**Phase 2: the pin PR ([#42](https://github.com/jfricano/lontra-creek/pull/42), draft), on `streamotter@0.2.0-rc.1`.** Built from `feat/v1.1-source-failure-exercises`, which pins 0.2.0-rc.1 from npm:
 
 - The pages describe 0.2.0-rc.1, including its opt-in source-failure policies, and the playground gains failure-policy presets checked by the installed validator (LC11-A34).
 - `/workbench/` mounts the published `@streamotter/workbench` through WHC-1, served from the site's own origin with SRI, under the workbench's content security policy and a Pages `_headers` policy that forbids framing. A `sandbox` service (`deploy/compose.sandbox.yaml`, `SANDBOX_SERVICE_TOKEN`) gives each visitor an isolated synthetic slot ([sandbox contract](../../contracts/sandbox-api.md), LC11-ADR-04).
 - The source-failure exercises S01–S09 on `/lab/`: intents, operations and the incident projection (Lab contract §12). See [SOURCE_FAILURE_EXERCISES.md](SOURCE_FAILURE_EXERCISES.md).
 - A release-pin guard (`scripts/check-release-pins.mjs`) keeps the image and site workflows from building StreamOtter from anywhere but the npm registry.
 
-**Only after npm publication of 0.2.0-rc.1:** the pin PR can be built and merged; `npm install streamotter@0.2.0-rc.1` works; the GitHub tag `v0.2.0-rc.1` and the site's npm and tag links resolve; and the recordings can be recaptured from the registry install. Until then an unpinned `npm install streamotter` installs 0.1.0-rc.3.
+**Published October 5, 2026:** 0.2.0-rc.1 is on npm, so `npm install streamotter@0.2.0-rc.1` works, and the GitHub tag `v0.2.0-rc.1` and the npm pages the site links to exist. The pin PR now builds from the registry, and its real-Kafka evidence and recordings were retaken from the registry install the same day.
 
 **Only after deployment:** anything on https://streamotter.dev or demo.streamotter.dev. **Not in either hosted phase:** the Lab benches and the workbench sandbox. Both stay off and read as unavailable until Jason approves enabling them, each with its own acceptance; the hosted broker keeps `KAFKA_AUTHORIZATION` at `none` until the separate, owner-approved authorization migration.
 
@@ -47,7 +47,7 @@ V1.1 reaches the site in two phases ([rollout plan](../0.2.0-rc.1/ROLLOUT_PLAN.m
 - [Independent review of the combined slices](REVIEW_FINDINGS.md): findings and fixes, October 4, 2026.
 - [Release handoff](RELEASE_HANDOFF.md): StreamOtter version consumed, unfinished integrations, server changes, acceptance checks and rollback.
 - [Rollout plan](../0.2.0-rc.1/ROLLOUT_PLAN.md): the two phases on the shared host, acceptance and rollback. It wins where other documents disagree.
-- [Source failure exercises](SOURCE_FAILURE_EXERCISES.md): what they are, how to run them locally, the hosted profile, the evidence, and the pre-publish packages.
+- [Source failure exercises](SOURCE_FAILURE_EXERCISES.md): what they are, how to run them locally, the hosted profile, the evidence, and the switch from the pre-publish packages to npm.
 - [Requirements on published StreamOtter packages](UPSTREAM_REQUIREMENTS.md).
 - [Workbench sandbox API contract](../../contracts/sandbox-api.md) (draft 0.3).
 

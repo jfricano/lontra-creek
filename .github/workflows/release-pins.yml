@@ -8,7 +8,10 @@ name: Release pins
 # is included because retargeting a pull request onto main is an edit.
 #
 # The check runs the base branch's copy of the script when it has one, so a
-# pull request can't loosen the guard it is checked by.
+# pull request can't loosen the script. It does run the pull request's own copy
+# of this workflow, which can change or skip the step: the guard binds only while
+# "Release pins" is a required check and changes to .github/workflows/ and
+# scripts/check-release-pins.mjs need an owner's review.
 
 on:
   pull_request:

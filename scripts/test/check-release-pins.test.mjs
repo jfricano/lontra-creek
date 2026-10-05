@@ -38,6 +38,20 @@ test("vendored tarballs, file: specs, overrides and a non-registry lockfile are 
   assert.match(problems.join("\n"), /package-lock\.json resolves @streamotter\/gateway/);
 });
 
+test("an alias at or of a StreamOtter install path, and a versioned or nested StreamOtter override, are each refused", t => {
+  const problems = releasePinProblems(checkout(t, {
+    root: { overrides: { "streamotter@0.2.0-rc.1": "0.2.0-rc.1", "@lontra-creek/field-station": { "@streamotter/gateway@*": "npm:some-other-gateway@9.9.9" } } },
+    lock: { packages: { ...REGISTRY_LOCK.packages,
+      "node_modules/@streamotter/gateway": { name: "some-other-gateway", version: "9.9.9", resolved: "https://registry.npmjs.org/some-other-gateway/-/some-other-gateway-9.9.9.tgz" },
+      "node_modules/gateway": { name: "@streamotter/gateway", version: "0.2.0-rc.1", resolved: "https://registry.npmjs.org/@streamotter/gateway/-/gateway-0.2.0-rc.1.tgz" } } }
+  }));
+  assert.equal(problems.length, 4, problems.join("\n"));
+  assert.match(problems.join("\n"), /overrides streamotter@0\.2\.0-rc\.1/);
+  assert.match(problems.join("\n"), /overrides @lontra-creek\/field-station > @streamotter\/gateway@\*/);
+  assert.match(problems.join("\n"), /installs some-other-gateway as @streamotter\/gateway/);
+  assert.match(problems.join("\n"), /installs @streamotter\/gateway as gateway/);
+});
+
 test("a range is not an exact pin", t => {
   assert.match(releasePinProblems(checkout(t, { app: "^0.2.0-rc.1" })).join(""), /not an exact version/);
 });

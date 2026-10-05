@@ -10,8 +10,8 @@
 # its own. Reach it by hand: generate one value with the same method this script
 # uses, append it, and restart whichever service reads it, for example:
 #
-#   printf 'LAB_RELAY_TOKEN=%s\n' "$(openssl rand -hex 32)" >> <env-file>
-#   docker compose --env-file <env-file> up -d lab-1-kafka
+#   printf 'LAB_BENCH_1_RELAY_TOKEN=%s\n' "$(openssl rand -hex 32)" >> <env-file>
+#   docker compose --env-file <env-file> up -d lab-1-kafka lab-1
 set -euo pipefail
 
 [ $# -eq 1 ] || { echo "Usage: $0 <env-file>" >&2; exit 2; }

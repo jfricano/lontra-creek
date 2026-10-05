@@ -216,3 +216,17 @@ From jason's dev-ops workspace, over the pinned SSH config and host alias named 
 - Secret values are never read, pasted or logged; only names and timestamps.
 - On the host, use only the installed adapter through `lontra_operator.py`. Never run `deploy/test/shared-host/rehearse.sh` there (see the warning above).
 - Never stop or restart the shared backend as a test, never `down --volumes`, never use the standalone `/srv/lontra` scripts or the `Deploy demo` workflow, and never loosen cookies or CORS.
+
+## 2026-10-05 07:12 PDT (14:12 UTC): unplanned Images publish after the post-acceptance merges
+
+Merging #43, #45 and #46 to `main` queued three Images runs waiting on `registry` approval. jason approved one by mistake and cancelled it, but the cancel arrived after the push step had finished.
+
+| Run | Source | Result |
+| --- | --- | --- |
+| [37321558638](https://github.com/jfricano/lontra-creek/actions/runs/37321558638) (Images #11) | `11d3278` (#43 merge: `.claude/settings.json` only) | Approved; build-push succeeded 14:12:25Z from cache, then the run was marked cancelled. **Published** `ghcr.io/jfricano/lontra-creek:11d3278fe7b8c37962c85bc901460eef6eaca274`, index `sha256:0b864fc935b43a60b9581f0bd4d41bf2036f29e995e77df51a3cd4e50feb161b` (checked against the GHCR manifest). |
+| [37322069829](https://github.com/jfricano/lontra-creek/actions/runs/37322069829) (Images #12) | `fd27bab` (#45 merge) | Rejected by jason at 07:16 PDT; nothing published (GHCR 404). |
+| [37322304570](https://github.com/jfricano/lontra-creek/actions/runs/37322304570) (Images #13) | `02f7877` (#46 merge) | Rejected by jason at 07:16 PDT; nothing published (GHCR 404). |
+
+Impact: none. The workflow only pushes an immutable SHA tag (no `latest`, which is still 404); nothing pulls or deploys on push; the accepted phase-one manifest `a19d62b9…` pins `d6e426a` at index `sha256:a88855305be5…`, which is unchanged in GHCR. The `11d3278` image is not a release candidate: phase two will build from #42's merge SHA. Nothing to undo.
+
+Sweep at 07:20 PDT: no `site.yml` runs after 37318760521 (production, 06:42 PDT), so Pages production `3873885c` is unchanged; no StreamOtter workflow runs on `main` after 06:35 PDT (no package publish). The only artifact published after acceptance is the `11d3278` image above.

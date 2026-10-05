@@ -40,9 +40,33 @@ export function kafkaHandlerOptions(env: NodeJS.ProcessEnv = process.env): Kafka
   };
 }
 
+/**
+ * Handshakes one badge may open. The site asks for a fresh badge for every connection,
+ * so this only stops one badge from holding the gateway's whole connection limit.
+ */
+export const HANDSHAKES_PER_BADGE = 2;
+
 export function createKafkaHandlers(options: KafkaHandlerOptions): HandlerRegistry<AppChannels> {
   const request = options.fetch ?? fetch;
   const prefix = options.topicPrefix ?? "";
+  // Handshakes per badge (its sessionId), kept until the badge expires.
+  const handshakes = new Map<string, { count: number; expiresAt: number }>();
+  let sweptAt = 0;
+
+  function admit(token: string) {
+    const principal = verifyToken(token, options.secret);
+    if (principal === null) return null;
+    const now = Date.now();
+    if (now - sweptAt > 60_000) {
+      for (const [sid, entry] of handshakes) if (entry.expiresAt <= now) handshakes.delete(sid);
+      sweptAt = now;
+    }
+    const entry = handshakes.get(principal.sessionId) ?? { count: 0, expiresAt: Date.parse(principal.expiresAt) };
+    if (entry.count >= HANDSHAKES_PER_BADGE) return null;
+    entry.count += 1;
+    handshakes.set(principal.sessionId, entry);
+    return principal;
+  }
 
   function channel<K extends keyof AppChannels>(name: K): ChannelHandlers<AppChannels[K]> {
     type Contract = AppChannels[K];
@@ -75,7 +99,7 @@ export function createKafkaHandlers(options: KafkaHandlerOptions): HandlerRegist
   }
 
   return {
-    authenticate: ({ token }) => verifyToken(token, options.secret),
+    authenticate: ({ token }) => admit(token),
     channels: {
       creekOverview: channel("creekOverview"),
       station: channel("station"),

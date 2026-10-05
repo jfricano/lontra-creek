@@ -6,7 +6,7 @@ import { createWorld, currentEmissions, TOPICS, type ChannelName } from "@lontra
 import type { Json, Principal, SourceRecord } from "streamotter/contracts";
 import { mayRead } from "../src/access.ts";
 import { issueToken, type Badge } from "../src/identity.ts";
-import { createKafkaHandlers, kafkaHandlerOptions } from "../src/kafka-handlers.ts";
+import { createKafkaHandlers, HANDSHAKES_PER_BADGE, kafkaHandlerOptions } from "../src/kafka-handlers.ts";
 import { toRecord } from "../src/records.ts";
 
 const appDir = join(import.meta.dirname, "..");
@@ -75,6 +75,15 @@ describe("the Kafka handlers", () => {
     assert.equal((await handlers.authenticate({ ...context, token: signed, origin: "https://streamotter.dev" }))?.subject, "volunteer-abc");
     const forged = issueToken(badge, { secret: "f".repeat(32), ttlSeconds: 60 }).token;
     assert.equal(await handlers.authenticate({ ...context, token: forged, origin: "https://streamotter.dev" }), null);
+  });
+
+  test("one badge opens at most HANDSHAKES_PER_BADGE connections", async () => {
+    const badge: Badge = { subject: "volunteer-many", role: "volunteer", name: "Volunteer" };
+    const signed = issueToken(badge, { secret, ttlSeconds: 60 }).token;
+    for (let i = 0; i < HANDSHAKES_PER_BADGE; i++) assert.equal((await handlers.authenticate({ ...context, token: signed, origin: "https://streamotter.dev" }))?.subject, "volunteer-many");
+    assert.equal(await handlers.authenticate({ ...context, token: signed, origin: "https://streamotter.dev" }), null);
+    const fresh = issueToken(badge, { secret, ttlSeconds: 60 }).token;
+    assert.equal((await handlers.authenticate({ ...context, token: fresh, origin: "https://streamotter.dev" }))?.subject, "volunteer-many");
   });
 
   test("authorize follows the access rules", async () => {

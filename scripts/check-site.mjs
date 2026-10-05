@@ -57,8 +57,17 @@ for(const file of (await files(root)).filter(f=>f.endsWith('.html'))) {
     const css=await readFile(join(root,match[1]),'utf8').catch(()=>'');
     if(/url\(\s*["']?data:(?!image\/)/.test(css)) failures.push(`${route}: ${match[1]} inlines a data: URL the policy refuses`);
   }
-  const headers=await readFile(join(root,'_headers'),'utf8').catch(()=>'');
-  const block=headers.match(/^\/workbench\/\*\n((?:[ \t]+.+\n?)+)/m)?.[1]??'';
-  for(const header of ['X-Frame-Options: DENY',"Content-Security-Policy: frame-ancestors 'none'",'X-Content-Type-Options: nosniff']) if(!block.includes(header)) failures.push(`_headers: /workbench/* does not send ${header}`);
 }
-if(failures.length) {console.error(failures.join('\n'));process.exitCode=1;} else console.log(`Checked ${count} built local links and assets, and /workbench/'s policy.`);
+// Every page, /workbench/ included, is sent the framing and sniffing headers by the site-wide rule.
+// Pages joins a header set by two matching rules with ", " (`DENY, DENY` is invalid), so no other rule repeats one.
+{
+  const headers=await readFile(join(root,'_headers'),'utf8').catch(()=>'');
+  const rules=[...headers.matchAll(/^([^#\s]\S*)\n((?:[ \t]+.+\n?)+)/gm)].map(([,path,block])=>[path,block]);
+  const site=rules.find(([path])=>path==='/*')?.[1]??'';
+  for(const header of ['X-Frame-Options: DENY',"Content-Security-Policy: frame-ancestors 'none'",'X-Content-Type-Options: nosniff']) {
+    if(!site.includes(header)) failures.push(`_headers: /* does not send ${header}`);
+    const name=header.slice(0,header.indexOf(':'));
+    for(const [path,block] of rules) if(path!=='/*' && block.split('\n').some(line=>line.trim().toLowerCase().startsWith(name.toLowerCase()+':'))) failures.push(`_headers: ${path} sets ${name}, which only /* may set`);
+  }
+}
+if(failures.length) {console.error(failures.join('\n'));process.exitCode=1;} else console.log(`Checked ${count} built local links and assets, /workbench/'s policy, and the site-wide headers.`);

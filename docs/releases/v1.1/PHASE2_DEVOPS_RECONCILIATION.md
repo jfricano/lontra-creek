@@ -147,7 +147,7 @@ These were the only two authorizer denials on the real stack. `maxSourceRecordBy
 
 ## 7. Pages: headers and CSP acceptance
 
-`apps/site/public/_headers` sends three headers on `/workbench/*`:
+`apps/site/public/_headers` sends three headers on every path (`/*`), `/workbench/` included:
 - `X-Frame-Options: DENY`
 - `Content-Security-Policy: frame-ancestors 'none'`
 - `X-Content-Type-Options: nosniff`
@@ -161,7 +161,7 @@ The page's meta CSP is built from `PUBLIC_FIELD_STATION_ORIGIN` at build time, w
 - `/workbench/` reading "not enabled".
 
 Not verified anywhere yet:
-- `_headers` on Cloudflare Pages itself, and whether `/workbench/*` also matches `/workbench/`;
+- `_headers` on Cloudflare Pages itself;
 - the cross-origin `apiOrigin` path;
 - the production Caddyfile's 72 KB limit end to end;
 - Firefox and WebKit on the real stack.

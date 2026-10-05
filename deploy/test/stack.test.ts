@@ -3,10 +3,10 @@
  * (`streamotter start` from npm), the field station, and Kafka over TLS with SCRAM.
  * CI runs it against deploy/compose.yaml (.github/workflows/stack.yml):
  *
- *   NODE_EXTRA_CA_CERTS=<test origin CA> STACK_ORIGIN=https://demo.streamotter.app \
+ *   NODE_EXTRA_CA_CERTS=<test origin CA> STACK_ORIGIN=https://demo.streamotter.dev \
  *   STACK_RESTART_GATEWAY="docker compose … restart gateway" node --test deploy/test/stack.test.ts
  *
- * STACK_ORIGIN is where Caddy answers; SITE_ORIGIN (default https://streamotter.app)
+ * STACK_ORIGIN is where Caddy answers; SITE_ORIGIN (default https://streamotter.dev)
  * is the page origin the gateway allows. STACK_RESTART_GATEWAY and
  * STACK_RESTART_FIELD_STATION are shell commands; without them those tests skip.
  */
@@ -18,8 +18,8 @@ import { promisify } from "node:util";
 import { createClient, type Client, type StreamError, type StreamEvent, type Subscription, type SubscriptionState } from "streamotter/client";
 import type { AppChannels } from "../../apps/field-station/src/generated/streamotter.generated.ts";
 
-const STACK = process.env["STACK_ORIGIN"] ?? "https://demo.streamotter.app";
-const SITE = process.env["SITE_ORIGIN"] ?? "https://streamotter.app";
+const STACK = process.env["STACK_ORIGIN"] ?? "https://demo.streamotter.dev";
+const SITE = process.env["SITE_ORIGIN"] ?? "https://streamotter.dev";
 const RESTART_GATEWAY = process.env["STACK_RESTART_GATEWAY"];
 const RESTART_FIELD_STATION = process.env["STACK_RESTART_FIELD_STATION"];
 const run = promisify(exec);

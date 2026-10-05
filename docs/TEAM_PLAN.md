@@ -117,7 +117,7 @@ Stories name their lane and sprint. "AC" is acceptance criteria.
 - **E5.1 Server setup** (Sprint 1): `deploy/setup.sh`, idempotent: Docker, the host firewall for 443, `/srv/lontra`, root-only secrets, the Kafka CA and certificates, the origin certificate. Rehearsed in CI on a fresh `ubuntu-24.04-arm` runner: setup, Compose up, the stack test, then the rollback path.
 - **E5.2 `images.yml`** (Sprint 1): on `main`, build and push `ghcr.io/jfricano/lontra-creek:<sha>` for amd64 and arm64. Guarded: it doesn't publish until the owner decides GHCR (section 8).
 - **E5.3 `deploy.yml`** (Sprint 1): manual, a `production` environment with the owner as required reviewer, a restricted SSH deploy key, pin the tag, `compose up -d`, wait for health, roll back on failure. Guarded on its secrets.
-- **E5.4 `site.yml`** (Sprint 1): build with `PUBLIC_FIELD_STATION_ORIGIN=https://demo.streamotter.app` and deploy to Cloudflare with a scoped token, preview first. Guarded on its secrets.
+- **E5.4 `site.yml`** (Sprint 1): build with `PUBLIC_FIELD_STATION_ORIGIN=https://demo.streamotter.dev` and deploy to Cloudflare with a scoped token, preview first. Guarded on its secrets.
 - **E5.5 Monitoring and backups** (Sprint 2): OCI alarm definitions (memory under 25%, instance down), a nightly checkpoint backup with a restore drill, and a runbook (deploy, roll back, rotate secrets and SCRAM passwords).
 - **E5.6 Staging** (Sprint 3, needs HOSTING.md 1–3): deploy to the real host and verify there.
 

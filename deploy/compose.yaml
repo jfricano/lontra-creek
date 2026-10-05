@@ -74,8 +74,8 @@ services:
       FIELD_EPOCH: ${FIELD_EPOCH:?set FIELD_EPOCH to when the hosted study began}
       FIELD_TICK_MS: ${FIELD_TICK_MS:-2000}
       FIELD_GENERATION: ${FIELD_GENERATION:-1}
-      SITE_ORIGIN: ${SITE_ORIGIN:-https://streamotter.app}
-      GATEWAY_PUBLIC_ORIGIN: ${GATEWAY_PUBLIC_ORIGIN:-https://demo.streamotter.app}
+      SITE_ORIGIN: ${SITE_ORIGIN:-https://streamotter.dev}
+      GATEWAY_PUBLIC_ORIGIN: ${GATEWAY_PUBLIC_ORIGIN:-https://demo.streamotter.dev}
     volumes:
       - ${LONTRA_SECRETS:?}/kafka/ca.pem:/etc/lontra/kafka/ca.pem:ro
       - field-data:/var/lib/lontra
@@ -119,7 +119,7 @@ services:
     ports:
       - "443:443"
     environment:
-      DEMO_HOST: ${DEMO_HOST:-demo.streamotter.app}
+      DEMO_HOST: ${DEMO_HOST:-demo.streamotter.dev}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ${LONTRA_SECRETS:?}/origin:/etc/caddy/origin:ro

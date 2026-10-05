@@ -34,7 +34,7 @@ jobs:
           node --test deploy/test/operations.test.ts deploy/test/kafka-acl-guard.test.ts
       - name: Rehearse setup twice and preserve secrets
         run: |
-          deploy/make-certs.sh test-origin "$RUNNER_TEMP/origin" demo.streamotter.app
+          deploy/make-certs.sh test-origin "$RUNNER_TEMP/origin" demo.streamotter.dev
           ssh-keygen -t ed25519 -N '' -f "$RUNNER_TEMP/deploy"
           epoch=$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)
           sudo deploy/setup.sh "$RUNNER_TEMP/origin/cert.pem" "$RUNNER_TEMP/origin/key.pem" "$RUNNER_TEMP/deploy.pub" "$epoch"
@@ -43,7 +43,7 @@ jobs:
           sudo sha256sum --check "$RUNNER_TEMP/before"
           test "$(sudo stat -c '%a' /srv/lontra/stack.env)" = 600
           if sudo -u lontra-deploy cat /srv/lontra/stack.env; then exit 1; fi
-          echo '127.0.0.1 demo.streamotter.app' | sudo tee -a /etc/hosts
+          echo '127.0.0.1 demo.streamotter.dev' | sudo tee -a /etc/hosts
       - name: First deploy
         run: |
           sudo env LONTRA_REHEARSAL=1 /usr/local/sbin/lontra-deploy "$GITHUB_SHA"
@@ -52,7 +52,7 @@ jobs:
       - name: Verify external behavior
         env:
           NODE_EXTRA_CA_CERTS: ${{ runner.temp }}/origin/ca.pem
-          STACK_ORIGIN: https://demo.streamotter.app
+          STACK_ORIGIN: https://demo.streamotter.dev
           STACK_RESTART_GATEWAY: sudo docker compose -f ${{ env.RELEASE_CONFIG }}/compose.yaml --env-file /srv/lontra/current.env restart gateway
           STACK_RESTART_FIELD_STATION: sudo docker compose -f ${{ env.RELEASE_CONFIG }}/compose.yaml --env-file /srv/lontra/current.env restart field-station
         run: node --test --test-force-exit deploy/test/stack.test.ts
@@ -70,7 +70,7 @@ jobs:
           docker build -f "$RUNNER_TEMP/Dockerfile.bad" -t "ghcr.io/jfricano/lontra-creek:$bad" "$RUNNER_TEMP"
           if sudo env LONTRA_REHEARSAL=1 /usr/local/sbin/lontra-deploy "$bad"; then exit 1; fi
           test "$(sudo cat /srv/lontra/current.sha)" = "$GITHUB_SHA"
-          curl --fail --cacert "$RUNNER_TEMP/origin/ca.pem" https://demo.streamotter.app/api/status
+          curl --fail --cacert "$RUNNER_TEMP/origin/ca.pem" https://demo.streamotter.dev/api/status
       - name: Reject arbitrary SSH commands
         run: |
           for command in 'bash' 'deploy latest' 'deploy 0000000000000000000000000000000000000000; id'; do

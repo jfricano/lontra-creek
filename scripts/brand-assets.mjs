@@ -358,7 +358,7 @@ function socialCard() {
     <div class="card">
       <svg class="lockup" viewBox="0 0 ${lockup.width.toFixed(1)} ${lockup.height.toFixed(1)}">${lockup.body}</svg>
       <div class="copy"><h1>Live state from Kafka to the browser. <span>Never silently wrong.</span></h1>
-        <div class="install"><b>$</b> npm install streamotter</div><div class="url">streamotter.app</div></div>
+        <div class="install"><b>$</b> npm install streamotter</div><div class="url">streamotter.dev</div></div>
       <svg class="water" width="1200" height="64">${dashes}</svg>
     </div>`;
 }

@@ -7,12 +7,12 @@ test("/sitemap.xml is served", async ({ request }) => {
   expect(response.headers()["content-type"]).toContain("xml");
   const body = await response.text();
   expect(body).toContain("<urlset");
-  expect(body).toContain("<loc>https://streamotter.app/</loc>");
+  expect(body).toContain("<loc>https://streamotter.dev/</loc>");
 });
 
 test("/robots.txt is served", async ({ request }) => {
   const response = await request.get("/robots.txt");
   expect(response.ok()).toBeTruthy();
   const body = await response.text();
-  expect(body).toContain("Sitemap: https://streamotter.app/sitemap.xml");
+  expect(body).toContain("Sitemap: https://streamotter.dev/sitemap.xml");
 });

@@ -32,7 +32,7 @@
 	route {
 		@untrusted not remote_ip {$LONTRA_TRUSTED_EDGE_IP:10.203.43.2}
 		respond @untrusted 403
-		@wrongHost not host {$DEMO_HOST:demo.streamotter.app}
+		@wrongHost not host {$DEMO_HOST:demo.streamotter.dev}
 		respond @wrongHost 404
 		@labDisabled {
 			path /lab/*
@@ -47,7 +47,7 @@
 			}
 		}
 		handle /lab/1/socket.io/* {
-			@foreignOrigin1 not header Origin {$SITE_ORIGIN:https://streamotter.app}
+			@foreignOrigin1 not header Origin {$SITE_ORIGIN:https://streamotter.dev}
 			respond @foreignOrigin1 403
 			reverse_proxy {$LAB_1_UPSTREAM:lab-1:7400} {
 				import verified_headers
@@ -55,7 +55,7 @@
 			}
 		}
 		handle /lab/2/socket.io/* {
-			@foreignOrigin2 not header Origin {$SITE_ORIGIN:https://streamotter.app}
+			@foreignOrigin2 not header Origin {$SITE_ORIGIN:https://streamotter.dev}
 			respond @foreignOrigin2 403
 			reverse_proxy {$LAB_2_UPSTREAM:lab-2:7400} {
 				import verified_headers
@@ -63,7 +63,7 @@
 			}
 		}
 		handle /lab/3/socket.io/* {
-			@foreignOrigin3 not header Origin {$SITE_ORIGIN:https://streamotter.app}
+			@foreignOrigin3 not header Origin {$SITE_ORIGIN:https://streamotter.dev}
 			respond @foreignOrigin3 403
 			reverse_proxy {$LAB_3_UPSTREAM:lab-3:7400} {
 				import verified_headers

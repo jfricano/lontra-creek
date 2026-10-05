@@ -54,7 +54,7 @@ export interface SandboxConnection {
   leaseId: string;
   studyId: string;
   expiresAt: string;
-  /** Where the preview SDK connects, for example https://demo.streamotter.app */
+  /** Where the preview SDK connects, for example https://demo.streamotter.dev */
   gatewayOrigin: string;
   /** /sandbox/<slot>/socket.io */
   gatewayPath: string;

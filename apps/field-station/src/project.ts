@@ -22,7 +22,7 @@ export type Environment = "fixture" | "local-kafka" | "production";
 
 export const PROJECT_ID = "lontra-creek";
 export const CHANNEL_VERSION = 1 as const;
-export const SITE_ORIGIN = "https://streamotter.app";
+export const SITE_ORIGIN = "https://streamotter.dev";
 export const GATEWAY_PATH = "/streamotter/socket.io";
 const SITE_DEV_ORIGINS = ["http://localhost:4321", "http://127.0.0.1:4321"];
 

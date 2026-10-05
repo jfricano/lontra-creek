@@ -12,7 +12,7 @@ export function fixtureBase(slot: SlotId): ProjectConfig {
   const string = { type: 'string', minLength: 1, maxLength: 64 } as const;
   return {
     configVersion: 1, projectId: `lontra-creek-sandbox-${slot}`,
-    gateway: { host: '0.0.0.0', port: 7600 + slot * 10, path: `/sandbox/${slot}/socket.io`, allowedOrigins: ['https://streamotter.app'] },
+    gateway: { host: '0.0.0.0', port: 7600 + slot * 10, path: `/sandbox/${slot}/socket.io`, allowedOrigins: ['https://streamotter.dev'] },
     connections: {},
     sources: { creek: { kind: 'fixture', generation: 'creek-1', fixtureRef: 'creek' }, jobs: { kind: 'fixture', generation: 'jobs-1', fixtureRef: 'jobs' } },
     schemas: {

@@ -76,7 +76,7 @@ export interface LabToken {
   /** The lease's end. The bench closes the connection then, whatever the page does. */
   expiresAt: string;
   bench: BenchId;
-  /** Where the SDK connects, for example https://demo.streamotter.app */
+  /** Where the SDK connects, for example https://demo.streamotter.dev */
   gatewayOrigin: string;
   /** /lab/<bench>/socket.io */
   gatewayPath: string;

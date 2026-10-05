@@ -197,7 +197,7 @@ From jason's dev-ops workspace, over the pinned SSH config and host alias named 
 | 2 | Preview run ID / run SHA | [`37317070125`](https://github.com/jfricano/lontra-creek/actions/runs/37317070125) on `d6e426a`; **failed** at the wrangler upload. `npm ci`, typecheck, tests and the site build passed; nothing was uploaded. Cause: the `preview` `CLOUDFLARE_API_TOKEN` value contains a line break (wrangler: `"***\n***" is an invalid header value`). Fix: re-save the secret on one line (and the `production` one), then re-run. | 2026-10-05 13:28–13:29 | jason dispatched and approved |
 | 2 | Preview run ID / run SHA (retry) | `37317070125` attempt 2 on `d6e426a`, after jason rolled the token and re-saved it in `preview` and `production`; success. Wrangler 3.90.0 `pages deploy apps/site/dist --project-name=streamotter-site --branch=staging`: 67 files (25 new, 42 already uploaded). Its "uncommitted changes" warning comes from the action installing wrangler into the checkout, not from the site source. | 2026-10-05 13:35–13:36 | jason approved `preview` |
 | 2 | Preview deployment ID / URL | `da0f5524`: https://da0f5524.streamotter-site.pages.dev ; alias https://staging.streamotter-site.pages.dev | 2026-10-05 13:36:29 | from the run log |
-| 2 | Preview static checks | | | |
+| 2 | Preview static checks | Passed: pages load, Lab and sandbox read as unavailable, `/robots.txt` and `/sitemap.xml` name streamotter.dev (checked by jason in his browser; this session's network policy blocks pages.dev) | 2026-10-05 13:40 | jason |
 | 3 | Production run ID / run SHA | | | |
 | 3 | Production deployment ID | | | |
 | 4 | Six acceptance checks | | | |

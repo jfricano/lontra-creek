@@ -11,6 +11,23 @@ test("disabled Lab is honest and offers local instructions", async ({ page }) =>
   await expect(page.locator("[data-lab-action]").first()).toBeDisabled();
 });
 
+test("the status poll leaves the polite status region alone while the Lab stays unavailable", async ({ page }) => {
+  await page.route("**/api/lab/status", route => route.fulfill({ json: { enabled:false, now:now(), benches:[], queueLength:0, nextFreeAt:null } }));
+  await page.goto("/lab/");
+  const message = page.locator("[data-lab-message]");
+  await expect(message).toHaveAttribute("role", "status");
+  await expect(message).toHaveText("The Lab is unavailable.");
+  // The status poll runs about every 10 s: watch long enough to see it at least once.
+  const mutations = await message.evaluate(element => new Promise<number>(resolve => {
+    let count = 0;
+    const observer = new MutationObserver(records => { count += records.length; });
+    observer.observe(element, { subtree: true, childList: true, characterData: true });
+    setTimeout(() => { observer.disconnect(); resolve(count); }, 12_000);
+  }));
+  expect(mutations).toBe(0);
+  await expect(message).toHaveText("The Lab is unavailable.");
+});
+
 test("queue position and return use only the current session", async ({ page }) => {
   let returned = false;
   await page.route("**/api/lab/**", async route => {

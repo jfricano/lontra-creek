@@ -91,7 +91,24 @@ export class RateLimiter {
 
 export function clientAddress(request: IncomingMessage): string {
   const header = request.headers["x-client-ip"];
-  return (typeof header === "string" && header !== "" ? header : request.socket.remoteAddress) ?? "unknown";
+  return addressKey((typeof header === "string" && header !== "" ? header : request.socket.remoteAddress) ?? "unknown");
+}
+
+/**
+ * The key a client's budgets and caps are counted under: an IPv4 address as it is,
+ * an IPv6 address by its /64. One host or home connection is usually given a whole
+ * /64, so counting each IPv6 address apart would hand it endless fresh budgets.
+ */
+export function addressKey(address: string): string {
+  const bare = address.split("%")[0]!.toLowerCase();
+  if (!bare.includes(":")) return bare;
+  if (bare.includes(".")) return bare.slice(bare.lastIndexOf(":") + 1); // IPv4-mapped (::ffff:192.0.2.1)
+  const [head = "", tail] = bare.split("::");
+  const front = head === "" ? [] : head.split(":");
+  const back = tail === undefined || tail === "" ? [] : tail.split(":");
+  const groups = tail === undefined ? front : [...front, ...Array<string>(Math.max(0, 8 - front.length - back.length)).fill("0"), ...back];
+  if (groups.length !== 8 || !groups.every(group => /^[0-9a-f]{1,4}$/.test(group))) return bare;
+  return `${groups.slice(0, 4).map(group => group.replace(/^0+(?=.)/, "")).join(":")}::/64`;
 }
 
 export function publicApi(options: { config: ServerConfig; station: FieldStation; notebooks: Notebooks; lab?: LeasePool; sandbox?: SandboxPool; limiter?: RateLimiter; log?: (message: string) => void }): Server {
@@ -203,7 +220,7 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
         const sighting = parseSighting(await readJson(request));
         if (sighting === null) return send(response, 400, { error: "Choose an otter, a reach, and an activity from the lists." }, cors);
         try {
-          const result = notebooks.add(session.subject, session.exp, sighting, stamp(station.tick));
+          const result = notebooks.add(session.subject, session.exp, sighting, stamp(station.tick), clientAddress(request));
           void notebooks.flush();
           return send(response, 200, { observerId: session.subject, ...result }, cors);
         } catch (error) {

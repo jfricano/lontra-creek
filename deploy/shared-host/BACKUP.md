@@ -34,7 +34,7 @@ Required files are `compose.yaml`, `compose.shared.yaml`, `Caddyfile.shared`,
 shared Lab in that order.
 The Compose project is `lontra-creek`; its running `field-station` must use the
 specified image and a named volume mounted at `/var/lib/lontra`.
-Shared activation/deployment must acquire `/srv/apps/lontra/deploy.lock` too.
+Shared activation/deployment must acquire `/srv/apps/lontra/deploy.lock` too, created root:root 0600: the hooks refuse a lock file group or others can read (a plain `exec 9>…` under umask 022 makes it 0644).
 Existing standalone operator scripts do not satisfy this activation contract.
 
 Snapshot runs the simulation's validation in the actual running station image.

@@ -5,7 +5,7 @@ import otterMark from "../assets/brand/otter-swim.png";
 import fieldConfig from "../../../field-station/streamotter.json";
 import LiveCreek from "../components/LiveCreek.astro";
 import Base from "../layouts/Base.astro";
-import { LINKS, LISTED_PAGES, RELEASE } from "../site.ts";
+import { INSTALL_COMMAND, LINKS, LISTED_PAGES, RELEASE } from "../site.ts";
 import { excerpt } from "../snippets/excerpt.ts";
 import handlersSource from "../snippets/handlers.ts?raw";
 import subscribeSource from "../snippets/subscribe.ts?raw";
@@ -13,13 +13,13 @@ import subscribeSource from "../snippets/subscribe.ts?raw";
 const channelJson = JSON.stringify({ station: fieldConfig.channels.station }, null, 2);
 const quickstart = [
   "npm init -y",
-  "npm install streamotter",
+  INSTALL_COMMAND,
   "npx streamotter init .",
   "npx streamotter dev \\",
   "  --config streamotter.json --handlers server/handlers.mjs"
 ].join("\n");
 
-/** The V1.1 panel: planned behavior from StreamOtter's approved specification, never presented as running here. */
+/** The V1.1 panel: behavior from a newer StreamOtter release than this site runs, never presented as running here. */
 const v11Points = [
   { title: "Preserve the record", text: "A policy can save the original record to a quarantine topic. Only a write Kafka acknowledged counts as saved; until then the source holds." },
   { title: "Continue only under control", text: "Moving past the record needs your application's recovery guard to vouch for its snapshots. Otherwise the source stays held. There is no skip or ignore option." },
@@ -53,8 +53,8 @@ const states = [
     </p>
     <div class="cta">
       <a class="button button-primary" href="#live">Try the live demo</a>
-      <button class="install" type="button" data-copy="npm install streamotter" aria-label="Copy npm install streamotter">
-        <code>npm install streamotter</code><span data-copy-label>Copy</span>
+      <button class="install" type="button" data-copy={INSTALL_COMMAND} aria-label={`Copy ${INSTALL_COMMAND}`}>
+        <code>{INSTALL_COMMAND}</code><span data-copy-label>Copy</span>
       </button>
       <a class="button button-quiet" href={LINKS.gettingStarted}>Getting started guide ↗</a>
     </div>
@@ -159,11 +159,12 @@ const states = [
   <section class="section" id="next-release" aria-labelledby="next-release-title" data-v11-panel>
     <div class="wrap">
       <div class="section-head">
-        <p class="eyebrow">Planned for StreamOtter V1.1 · not in <span class="version">{RELEASE}</span></p>
+        <p class="eyebrow">StreamOtter V1.1 · in 0.2.0-rc.1, not in <span class="version">{RELEASE}</span></p>
         <h2 id="next-release-title">Next: give a bad record a visible fate</h2>
         <p class="lede">
-          StreamOtter V1.1 is specified, not released. It plans failure policies that keep a bad Kafka record as evidence
-          and let the stream move on only when your application can show its snapshots cover what that record would have changed.
+          StreamOtter V1.1 is published as 0.2.0-rc.1, which this site doesn't use yet: it runs {RELEASE}. V1.1 adds failure policies
+          that keep a bad Kafka record as evidence and let the stream move on only when your application can show its snapshots cover
+          what that record would have changed.
         </p>
       </div>
       <ul class="v11-points">
@@ -175,7 +176,7 @@ const states = [
         <p>
           <strong>What runs today.</strong> In <code>streamotter@{RELEASE}</code>, which this site runs, a bad record pauses its
           source: it is never committed or skipped, views go stale, and <code>resumeSource()</code> retries the same record after a fix.
-          The Failure Lab's Fouled sensor shows that on a real bench. Its other source-failure exercises are listed with the reason each
+          The Failure Lab's Fouled sensor shows that on a leased bench, where the Lab is on. Its other source-failure exercises are listed with the reason each
           one can't run yet.
         </p>
         <p class="v11-links">

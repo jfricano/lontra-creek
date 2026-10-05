@@ -92,7 +92,7 @@ test("the walkthrough keeps six chapters and offers an optional next step into S
   await expect(page.locator("[data-chapter-link]")).toHaveCount(6);
   const next = page.locator("[data-walk-next]");
   await expect(next).toContainText("never breaks the shared creek");
-  await expect(next).toContainText(`This demo runs streamotter@${release}. Quarantine and guarded continuation are planned for StreamOtter V1.1 and aren't in this release.`);
+  await expect(next).toContainText(`This demo runs streamotter@${release}. Quarantine and guarded continuation are in StreamOtter V1.1, published as 0.2.0-rc.1, which this demo doesn't use yet.`);
   const link = next.getByRole("link", { name: "Next: handle a bad reading" });
   await expect(link).toHaveAttribute("href", "/lab/?scenario=fouled-sensor#source-failures");
   await link.click();
@@ -129,9 +129,10 @@ test("releases keep the site release, library package, demo availability, and ve
   await expect(page.locator("[data-release-site]")).toContainText("Pre-launch.");
   await expect(page.locator("[data-release-site]")).toContainText("V1.1, in development.");
   await expect(page.locator("[data-release-library]")).toContainText(`install streamotter@${release}, pinned exactly`);
-  await expect(page.locator("[data-release-library]")).toContainText("StreamOtter V1.1 is planned, not installed.");
+  await expect(page.locator("[data-release-library]")).toContainText("StreamOtter V1.1 is published as 0.2.0-rc.1, which this deployment doesn't use yet.");
   const rows = page.locator("[data-release-demo] tbody tr");
   await expect(rows).toHaveCount(5);
+  await expect(rows.filter({ hasText: "Connections and clients" }).locator("td").first()).toHaveText("Runs where the Lab is on");
   await expect(rows.filter({ hasText: "Source failures" })).toContainText("Fouled sensor, on the same benches. The other 8 stories");
   const service = page.locator("[data-release-service]");
   await expect(service).toHaveAttribute("data-service", "answered", { timeout: 15_000 });

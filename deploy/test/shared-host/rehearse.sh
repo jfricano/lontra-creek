@@ -3,6 +3,13 @@
 set -euo pipefail
 [ "${CI:-}" = true ] || { echo 'Disposable CI host required.' >&2; exit 2; }
 [ "$(docker info --format '{{.CgroupDriver}}')" = systemd ] || { echo 'systemd Docker cgroups required.' >&2; exit 2; }
+# It uses the production project and network names and removes them (with their volumes) on exit,
+# so refuse any host that already has a Lontra install: CI=true alone is no proof of a disposable runner.
+if docker network inspect edge-lontra >/dev/null 2>&1 || [ -e /etc/apps/lontra ] || [ -e /srv/apps/lontra ] \
+  || [ -n "$(docker volume ls -q --filter label=com.docker.compose.project=lontra-creek)" ]; then
+  echo 'This host already has a Lontra install (edge-lontra, /etc/apps/lontra, /srv/apps/lontra or lontra-creek volumes); refusing.' >&2
+  exit 2
+fi
 root=$(pwd)
 stack="$RUNNER_TEMP/lontra-shared"
 mkdir -p "$stack"
@@ -28,11 +35,11 @@ cleanup() {
   docker network rm edge-lontra >/dev/null 2>&1 || true
   sudo systemctl stop lontra.slice || true
 }
+docker network create --subnet 10.203.43.0/24 --ip-range 10.203.43.128/25 edge-lontra
 trap cleanup EXIT
 sudo install -m 644 deploy/systemd/lontra.slice /run/systemd/system/lontra.slice
 sudo systemctl daemon-reload
 sudo systemctl start lontra.slice
-docker network create --subnet 10.203.43.0/24 --ip-range 10.203.43.128/25 edge-lontra
 "${base[@]}" config --format json > "$stack/base.json"
 node deploy/test/shared-host/config.mjs "$stack/base.json"
 "${full[@]}" config --format json > "$stack/full.json"

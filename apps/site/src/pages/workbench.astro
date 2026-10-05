@@ -1,6 +1,6 @@
 ---
 import ReferencePage from "../layouts/ReferencePage.astro";
-import {LINKS} from "../site.ts";
+import {INSTALL_COMMAND,LINKS} from "../site.ts";
 import {IN_YOUR_APP,JOB_SEED,STATION_SEED} from "../data/workbench-seed.ts";
 // The recording's own provenance, not the site's build: a later pin must not relabel an older capture.
 import capture from "../../public/recordings/workbench/capture.json" with { type: "json" };
@@ -70,7 +70,7 @@ const panels=[
 <p class="notice" data-recording-provenance><strong>Fallback: screenshots, not a sandbox session.</strong> Captured locally on {capturedOn} with <code>streamotter@{capture.version}</code> and Node.js {node}. Capture source: {capture.source}. These are real product captures of that version, not the hosted field station or a sandbox. That workbench and its management API exist only in development mode and listen on loopback.</p>
 <p><a href="/recordings/workbench/capture.json">Capture provenance</a> · <a href={LINKS.gettingStarted}>Run these steps yourself ↗</a></p></section>
 {panels.map(panel=><section><h2>{panel.title}</h2><p>{panel.description}</p><figure><a href={`/recordings/workbench/${panel.key}.png`} aria-label={`Open full-size ${panel.title} screenshot`}><img src={`/recordings/workbench/${panel.key}.png`} alt={`Recorded ${panel.title} panel in StreamOtter ${capture.version}: ${panel.description}`} loading="lazy" width="1280" /></a><figcaption>{panel.title} · recorded with streamotter@{capture.version} · local fixture capture · {capturedOn}</figcaption></figure></section>)}
-<section><h2>Run it locally</h2><pre tabindex="0"><code>{`npm install streamotter
+<section><h2>Run it locally</h2><pre tabindex="0"><code>{`${INSTALL_COMMAND}
 npx streamotter init .
 npx streamotter dev --config streamotter.json \\
   --handlers server/handlers.mjs`}</code></pre><p>Open the printed workbench URL and enter its per-run token. The token stays in memory, so reloading asks for it again. Never expose the development workbench publicly.</p></section>

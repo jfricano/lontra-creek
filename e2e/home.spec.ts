@@ -28,6 +28,25 @@ test.describe("home page live panel", () => {
     await expectAllCards(page, "live", 30_000);
   });
 
+  test("when the field station doesn't answer at first, the panel keeps asking and goes live once it does", async ({ page }) => {
+    let refused = 0;
+    await page.route("**/api/config", route => {
+      if (refused >= 2) return route.continue();
+      refused += 1;
+      return route.abort("connectionrefused");
+    });
+    await page.goto("/");
+    const panel = page.locator("[data-live-creek]");
+    await expect(panel).toHaveAttribute("data-status", "unavailable");
+    await expect(page.locator("[data-clock]")).toHaveText("Still trying to reach the field station");
+    // Asked again after 1 s and 2 s: the third request is answered.
+    await expectAllCards(page, "live", 30_000);
+    await expect(panel).not.toHaveAttribute("data-status", "unavailable");
+    await expect(page.locator("[data-source]")).not.toHaveText("Field station unavailable");
+    await expect(page.locator("[data-drop]")).toBeEnabled();
+    expect(refused).toBe(2);
+  });
+
   test("dropping the connection makes the cards stale, and restoring returns them to live with a revisions note", async ({ page }) => {
     await page.goto("/");
     await expectAllCards(page, "live", 30_000);
@@ -75,13 +94,15 @@ test.describe("home page live panel", () => {
 test.describe("home page V1.1 panel (LC11-A01, A02, A40)", () => {
   const release = (JSON.parse(readFileSync(new URL("../apps/site/package.json", import.meta.url), "utf8")) as { dependencies: { streamotter: string } }).dependencies.streamotter;
 
-  test("labels V1.1 as planned, says what runs today, and links to the Source failures track without borrowing a bench", async ({ page }) => {
+  test("says V1.1 is published but not run here, says what runs today, and links to the Source failures track without borrowing a bench", async ({ page }) => {
     const lab: string[] = [];
     page.on("request", request => { const { pathname } = new URL(request.url()); if (pathname.startsWith("/api/lab/") && request.method() !== "GET") lab.push(pathname); });
     await page.goto("/");
     const panel = page.locator("[data-v11-panel]");
-    await expect(panel.locator(".eyebrow")).toHaveText(`Planned for StreamOtter V1.1 · not in ${release}`);
-    await expect(panel).toContainText("specified, not released");
+    await expect(panel.locator(".eyebrow")).toHaveText(`StreamOtter V1.1 · in 0.2.0-rc.1, not in ${release}`);
+    await expect(panel).toContainText(`StreamOtter V1.1 is published as 0.2.0-rc.1, which this site doesn't use yet: it runs ${release}.`);
+    await expect(panel).not.toContainText("specified, not released");
+    await expect(panel).toContainText("The Failure Lab's Fouled sensor shows that on a leased bench, where the Lab is on.");
     await expect(panel).toContainText(`In streamotter@${release}, which this site runs, a bad record pauses its source`);
     await expect(panel.getByRole("heading", { level: 3 })).toHaveText(["Preserve the record", "Continue only under control", "See each outcome"]);
     // The live hero is unchanged: the panel sits below it and doesn't replace it.
@@ -100,4 +121,12 @@ test.describe("home page V1.1 panel (LC11-A01, A02, A40)", () => {
     await expect(card).toContainText("The Source failures track also lists the quarantine exercises that wait for StreamOtter V1.1.");
     await expect(page.locator("main")).not.toContainText(/four controlled failures/i);
   });
+});
+
+test("install commands name the pinned release, not npm's latest tag", async ({ page }) => {
+  const release = (JSON.parse(readFileSync(new URL("../apps/site/package.json", import.meta.url), "utf8")) as { dependencies: { streamotter: string } }).dependencies.streamotter;
+  await page.goto("/");
+  await expect(page.locator("button[data-copy]")).toHaveAttribute("data-copy", `npm install streamotter@${release}`);
+  await expect(page.locator("#start pre")).toContainText(`npm install streamotter@${release}`);
+  await expect(page.locator("main")).not.toContainText(/npm install streamotter(?!@)/);
 });

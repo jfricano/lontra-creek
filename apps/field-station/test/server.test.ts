@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,7 +7,7 @@ import { after, before, describe, test } from "node:test";
 import { advanceTo, createWorld, currentEmissions, seedFrom } from "@lontra-creek/sim";
 import { verifyToken } from "../src/identity.ts";
 import { readConfig, type ServerConfig } from "../src/server/config.ts";
-import { internalApi, publicApi, RateLimiter } from "../src/server/http.ts";
+import { addressKey, internalApi, publicApi, RateLimiter } from "../src/server/http.ts";
 import { Notebooks } from "../src/server/notebooks.ts";
 import { PublishQueue, type OutgoingRecord, type Publisher } from "../src/server/queue.ts";
 import { FieldStation, SEED } from "../src/server/station.ts";
@@ -226,6 +226,22 @@ describe("the field station's runner", () => {
     assert.match(logs[0]!, /epoch 2026-09-01T00:00:00.000Z, not 2026-09-02/);
   });
 
+  test("a failing checkpoint still publishes every tick", async () => {
+    const dir = await dataDir();
+    const publisher = new FakePublisher();
+    const time = clock(0);
+    const field = await station({ dir, publisher, now: time.now });
+    await field.flush();
+    const before = publisher.batches.length;
+    await mkdir(join(dir, "world.json.tmp")); // the volume refuses checkpoint writes
+    for (let tick = 1801; tick < 1811; tick++) { // over an hour later, so each tick tries to checkpoint
+      time.to(tick);
+      await assert.rejects(field.advance());
+    }
+    assert.equal(publisher.batches.length - before, 10, "a batch per tick");
+    assert.equal(field.pendingCount, 0);
+  });
+
   test("without a configured epoch, a restart keeps the checkpoint's", async () => {
     const dir = await dataDir();
     const time = clock(50);
@@ -338,6 +354,8 @@ describe("the field station's HTTP APIs", () => {
     assert.match(cookie, /^lc_session=[^;]+; Path=\/api; HttpOnly; SameSite=Strict; Max-Age=1800$/);
     const firstBody = await first.json() as { token: string; badge: { subject: string } };
     assert.equal(verifyToken(firstBody.token, config.secret)?.subject, firstBody.badge.subject);
+    // The subject owns a notebook, so it carries a full random UUID: two sessions must never share one.
+    assert.match(firstBody.badge.subject, /^volunteer-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 
     const again = await fetch(`${apiOrigin}/api/badge`, { method: "POST", headers: { cookie: cookie.split(";")[0]!, "x-client-ip": "198.51.100.7" }, body: JSON.stringify({ role: "volunteer" }) });
     assert.equal(((await again.json()) as { badge: { subject: string } }).badge.subject, firstBody.badge.subject);
@@ -365,6 +383,11 @@ describe("the field station's HTTP APIs", () => {
     for (let i = 0; i < 7; i++) statuses.push((await fetch(`${apiOrigin}/api/status`, { headers: { "x-client-ip": "203.0.113.9" } })).status);
     assert.deepEqual(statuses, [200, 200, 200, 200, 200, 429, 429]);
     assert.equal((await fetch(`${apiOrigin}/api/status`, { headers: { "x-client-ip": "203.0.113.10" } })).status, 200);
+    // One IPv6 /64 is one client: a host can't get fresh budgets by changing its interface ID.
+    const sixes: number[] = [];
+    for (let i = 0; i < 7; i++) sixes.push((await fetch(`${apiOrigin}/api/status`, { headers: { "x-client-ip": `2001:db8:7:9::${i + 1}` } })).status);
+    assert.deepEqual(sixes, [200, 200, 200, 200, 200, 429, 429]);
+    assert.equal((await fetch(`${apiOrigin}/api/status`, { headers: { "x-client-ip": "2001:db8:7:a::1" } })).status, 200);
   });
 
   test("a visitor logs sightings in their own notebook, and only there", async () => {
@@ -409,6 +432,17 @@ describe("the field station's HTTP APIs", () => {
     const status = await (await fetch(`${apiOrigin}/api/status`, { headers: { "x-client-ip": "203.0.113.11" } })).json() as Record<string, unknown>;
     assert.deepEqual(status, { mode: "kafka", tick: 10, studyDay: 1, studyTime: "05:50", generation: 1, kafka: "connected", pending: 0 });
   });
+});
+
+test("client addresses are counted by IPv4 address or IPv6 /64", () => {
+  assert.equal(addressKey("203.0.113.9"), "203.0.113.9");
+  assert.equal(addressKey("::ffff:203.0.113.9"), "203.0.113.9");
+  assert.equal(addressKey("2001:db8:7:9::1"), "2001:db8:7:9::/64");
+  assert.equal(addressKey("2001:0DB8:0007:0009:aaaa:bbbb:cccc:dddd"), "2001:db8:7:9::/64");
+  assert.equal(addressKey("2001:db8::1"), "2001:db8:0:0::/64");
+  assert.equal(addressKey("::1"), "0:0:0:0::/64");
+  assert.equal(addressKey("fe80::1%eth0"), "fe80:0:0:0::/64");
+  assert.equal(addressKey("unknown"), "unknown");
 });
 
 describe("configuration from the environment", () => {

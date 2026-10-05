@@ -20,7 +20,7 @@ const rejected = INSTALLED_VALIDATOR_ON_FAILURE_HANDLING.issues[0];
   <section aria-labelledby="library-package" data-release-library>
     <h2 id="library-package">Library package</h2>
     <p>This site and its field station install <code>streamotter@{RELEASE_VERSION}</code>, pinned exactly: no version range, the same version in both workspaces and the lockfile.</p>
-    <p><strong>StreamOtter V1.1 is planned, not installed.</strong> Its <a href={V11_SOURCES.spec}>approved specification ↗</a> adds source-failure policies, quarantine, a recovery guard, local operator commands, and an embeddable workbench. {RELEASE_VERSION} has none of them: its validator rejects a <code>failureHandling</code> section{rejected && <> with <code>{rejected.code}</code></>}. <a href="/when-it-breaks/#source-failure-policies">What V1.1 plans for bad records</a></p>
+    <p><strong>StreamOtter V1.1 is published as 0.2.0-rc.1, which this deployment doesn't use yet.</strong> Its <a href={V11_SOURCES.spec}>approved specification ↗</a> adds source-failure policies, quarantine, a recovery guard, local operator commands, and an embeddable workbench. {RELEASE_VERSION}, which this site runs, has none of them: its validator rejects a <code>failureHandling</code> section{rejected && <> with <code>{rejected.code}</code></>}. <a href="/when-it-breaks/#source-failure-policies">What V1.1 plans for bad records</a></p>
   </section>
   <section aria-labelledby="demo-availability" data-release-demo>
     <h2 id="demo-availability">Demo availability</h2>

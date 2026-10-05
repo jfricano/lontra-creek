@@ -30,10 +30,12 @@ export const SITE_RELEASE = {
   versioning: `The site's milestones are its own. Site ${SITE.milestone.name} is a different milestone from StreamOtter V1.1, and neither one is npm version 1.1.0. Each ships on its own schedule.`
 } as const;
 
-export type SurfaceState = "runs" | "partial" | "recorded" | "unavailable";
+export type SurfaceState = "runs" | "lab" | "partial" | "recorded" | "unavailable";
 
 export const SURFACE_LABELS: Record<SurfaceState, string> = {
   runs: "Runs",
+  // The Lab is turned on per deployment; this build can't know whether its backend has benches.
+  lab: "Runs where the Lab is on",
   partial: "Partly",
   recorded: "Recorded",
   unavailable: "Not yet"
@@ -56,8 +58,8 @@ export const SURFACES: readonly Surface[] = [
     needs: "The field station. npm run dev replays fixture data without Kafka; the production stack runs real Kafka."
   },
   {
-    name: "Failure Lab: Connections and clients", href: "/lab/#connections", state: "runs",
-    runs: "Cut the relay, stall a laptop, restart the gateway, or foul a sensor on a leased, isolated bench.",
+    name: "Failure Lab: Connections and clients", href: "/lab/#connections", state: "lab",
+    runs: "Cut the relay, stall a laptop, restart the gateway, or foul a sensor on a leased, isolated bench. The report below says whether this backend has benches.",
     needs: "The Lab stack: real Kafka and three benches (see the repository's local Lab instructions). npm run dev has no benches."
   },
   {

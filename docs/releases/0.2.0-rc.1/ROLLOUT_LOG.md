@@ -1,5 +1,7 @@
 # Rollout log: phase one (Lontra Creek V1.1 on StreamOtter 0.1.0-rc.3)
 
+**Phase one was accepted on 2026-10-05 at 13:59 UTC.**
+
 This log records what has actually happened in phase one of the [rollout plan](ROLLOUT_PLAN.md): sources, digests, manifest hashes, run and deployment IDs, the activation incident, and every re-verification, with the time it was made. The plan says what should happen; this file says what did. Phase two (#42, StreamOtter 0.2.0-rc.1) gets its own section once phase one is accepted.
 
 Execution moved from devops (Codex) to Claude on 2026-10-05 at jason's request, following the devops handoff of 2026-10-04 (Pacific). Times are UTC unless marked.
@@ -12,10 +14,10 @@ Execution moved from devops (Codex) to Claude on 2026-10-05 at jason's request, 
 | Lontra main | `d6e426a122b81cc3fc576b28bb98f79add45a3de` (#40 with #41) | merged 03:32 |
 | Backend image | Published and verified | 03:45 |
 | Backend activation | Candidate running and healthy; first attempt failed and was recovered (see Incident) | 05:13 |
-| Adapter journal | `awaiting-public-acceptance`; accepted pointer is still the previous release | 05:13 |
+| Adapter journal | Cleared by `accept`; `status` before it showed `awaiting-public-acceptance` | 2026-10-05 13:59 |
 | Pages (streamotter.dev) | Production `3873885c` from `d6e426a` (run `37318760521`); preview `da0f5524` passed first | 2026-10-05 13:42 |
-| Browser proof on streamotter.dev | **Outstanding** | |
-| Adapter `accept` | **Not run.** Phase one is not accepted. | |
+| Browser proof on streamotter.dev | All six checks observed by jason | 2026-10-05 13:54 |
+| Adapter `accept` | **Phase one accepted.** `accept` returned "Candidate accepted; previous manifest retained for rollback"; `status` now records current manifest `a19d62b9…` (source `d6e426a`), previous `4caadff` retained for rollback | 2026-10-05 13:59 |
 | #42 (phase two) | Draft, unmerged, all 12 checks green on `61184c1` | 04:31 |
 
 ## Source records
@@ -202,8 +204,8 @@ From jason's dev-ops workspace, over the pinned SSH config and host alias named 
 | 3 | Production deployment ID | `3873885c` (https://3873885c.streamotter-site.pages.dev), Pages branch `main`, replacing `01aa1aed` | 2026-10-05 13:42:23 | from the run log |
 | 4 | Six acceptance checks | jason in his browser on streamotter.dev: credentialed session and live revisions confirmed; Drop my connection froze one tab while the other advanced, and Restore brought fresh data; Lab and sandbox read as unavailable. Privacy: the otter card's "withheld" reach alternates with place names as an otter enters and leaves its den, which is expected; Field Station chapter 4 as a volunteer: `failed · FORBIDDEN. No holt data was delivered.`; after the chapter 5 switch to the field biologist (old subscriptions closed with UNAUTHENTICATED, as designed): `Researcher access: Holt A · LC 4417 2203`, and the map shows `Holt A at beaver-flats: LC 4417 2203 (researcher only).` Privacy passes (screenshots 13:51–13:52). Origin denial from jason's Mac at 13:54: `Origin: https://streamotter.dev` gets `access-control-allow-origin: https://streamotter.dev`; `https://streamotter.app` and `https://example.com` get no allow header. All six checks observed. | 2026-10-05 13:48 | jason |
 | 4 | Redirects, canonical, robots, sitemap | www → apex 301 keeps path and query: confirmed | 2026-10-05 13:48 | jason |
-| 4 | Evidence bundle SHA256 | | | |
-| 6 | `accept` result; accepted source after | | | |
+| 4 | Evidence bundle SHA256 | `2111f455b161515ca98d80155699b5d60ab97b6b6043dcdbd301f3e71663eb4b`, the tar of jason's local `.local-secrets/lontra-phase1/public-acceptance-20261005/`. **Gap:** the tar holds only `origin-checks.txt`. The screenshot step did not run, because zsh does not treat `#` as a comment when pasted, so `open` failed and no screenshots were added before hashing. The screenshots of the other five checks are in the project thread (13:48–13:54) and on jason's Mac. Keep that `.tar` unchanged, since its hash is the one recorded on the host; add the screenshots beside it as a supplement. | 2026-10-05 13:59 | jason |
+| 6 | `accept` result; accepted source after | Before: `status`: "Pending transaction: awaiting-public-acceptance". Record staged as root 0600 at `/srv/apps/lontra/manifests/phase1-public-acceptance.json`. `accept`: "Candidate accepted; previous manifest retained for rollback". After: "Recorded current manifest: a19d62b9a5ef45808808fdf60713cee76c9a9cfce8923ed7a4692208855572ca" (`d6e426a`). Local operator wrapper and SSH config matched `origin/main` before the run. | 2026-10-05 13:59 | jason, from his Mac |
 
 ## Ground rules for this phase
 

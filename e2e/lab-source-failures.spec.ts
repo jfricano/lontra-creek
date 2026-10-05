@@ -651,7 +651,7 @@ test("refusals are shown, not retried: the action budget, a stale revision, and 
 });
 
 test("a deployment-restricted exercise says why and its Start sends nothing, even on a borrowed bench (fixture)", async ({ page }) => {
-  const restricted = "This deployment's Kafka authorization isn't verified for quarantine, so it doesn't run this exercise.";
+  const restricted = "This deployment's failure handling (retry) doesn't provide what this exercise needs, so it doesn't run it.";
   const lab = await exercise(page, [], { capabilities: rc1({ "garbled-reading": restricted, "too-many-bad-readings": "This exercise runs only on a local or CI stack." }) });
   await borrow(page);
   const card = page.locator('[data-lab-scenario="garbled-reading"]');

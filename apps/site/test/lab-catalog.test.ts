@@ -71,7 +71,7 @@ function offered(scenarios: Partial<Record<LabScenarioId, LabCapabilities["scena
 
 test("this page runs every new exercise, each only where the backend reports it, its intents, and its projection available", () => {
   assert.deepEqual([...PAGE_RUNS].sort(), [...NEW].sort());
-  const restricted = { code: "deployment-restricted" as const, text: "This deployment's Kafka authorization isn't verified for quarantine, so it doesn't run this exercise." };
+  const restricted = { code: "deployment-restricted" as const, text: "This deployment's failure handling (retry) doesn't provide what this exercise needs, so it doesn't run it." };
   const answer = offered({ "calibration-blip": null, "garbled-reading": restricted });
   assert.deepEqual(scenarioAvailability("calibration-blip", answer), { state: "available", text: "Available on a leased bench." });
   assert.deepEqual(scenarioAvailability("garbled-reading", answer), { state: "unavailable", text: restricted.text });

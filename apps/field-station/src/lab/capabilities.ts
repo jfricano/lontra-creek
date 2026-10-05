@@ -146,7 +146,7 @@ function newScenario(id: NewScenario, options: { labEnabled: boolean; version: s
   if (VERIFIED_WITHOUT_FAILURE_HANDLING.has(options.version) || !verified || !profiles?.length) return lacking(NEEDS[id], options.version);
   if (!samePackages(verified.packages, options.integrity)) return unavailable('not-integrated', `This backend's Lab was verified against another build of StreamOtter ${options.version}, not the one installed here, so it doesn't run this exercise.`);
   if (!options.labEnabled) return LAB_DISABLED;
-  if (!runsUnder(id).includes(options.profile)) return unavailable('deployment-restricted', "This deployment's Kafka authorization isn't verified for this exercise, so its failure handling doesn't run it.");
+  if (!runsUnder(id).includes(options.profile)) return unavailable('deployment-restricted', `This deployment's failure handling (${options.profile}) doesn't provide what this exercise needs, so it doesn't run it.`);
   if (!profiles.includes(options.profile)) return unavailable('not-integrated', `This backend's Lab hasn't been verified with this deployment's failure handling (${options.profile}) for this exercise, so it doesn't run it.`);
   if (LOCAL_EXERCISES.has(id) && !options.localExercises) return unavailable('deployment-restricted', 'This exercise runs only on a local Lab and in CI.');
   return AVAILABLE;

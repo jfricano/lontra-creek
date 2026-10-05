@@ -153,7 +153,8 @@ describe('the capability matrix with an injected verified set (section 12.3)', (
       assert.equal(s.available, RETRY_ONLY.includes(id), id);
       if (!s.available) assert.equal(s.reason!.code, 'deployment-restricted', id);
     }
-    assert.match(scenario(hosted, 'bad-projection').reason!.text, /Kafka authorization/);
+    // The profile is the cause, so the reason names it; the field station doesn't check Kafka authorization.
+    assert.equal(scenario(hosted, 'bad-projection').reason!.text, "This deployment's failure handling (retry) doesn't provide what this exercise needs, so it doesn't run it.");
     assert.equal(hosted.features.intents.available, true); assert.equal(hosted.features.incidentProjection.available, true);
     for (const id of EXISTING) assert.equal(scenario(hosted, id).available, true);
   });

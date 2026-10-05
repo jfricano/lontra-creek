@@ -166,7 +166,7 @@ export type LabUnavailableCode =
   | "lab-disabled"              // this deployment has no benches
   | "library-lacks-capability"  // the installed StreamOtter release is known not to provide what the scenario needs
   | "not-integrated"            // the installed release isn't one this backend's Lab has been verified against for the scenario
-  | "deployment-restricted";    // this deployment's Kafka authorization or failure-handling profile isn't verified for it (LC11-ADR-03), or it is a local and CI exercise
+  | "deployment-restricted";    // this deployment's failure-handling profile (LAB_FAILURE_HANDLING) doesn't run it, or it is a local and CI exercise
 
 export interface LabAvailability {
   available: boolean;

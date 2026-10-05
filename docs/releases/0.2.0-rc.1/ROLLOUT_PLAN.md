@@ -2,6 +2,8 @@
 
 Prepared 2026-10-04 for the devops team and reconciled the same day with devops's own rollout notes (`dev-ops/domain-rollout.md` and its review handoff, private). Devops's notes are the detailed operational procedure; this file is the shared upstream plan. Checked against `jfricano/StreamOtter` (#55, #20, #56 at `4e67ef8`, and #57) and `jfricano/lontra-creek` (#40 and #41). Nothing here has been run against production, and the live hosts were not reachable from where this was written.
 
+What has actually been run since (sources, digests, run and deployment IDs, the phase-one activation incident) is recorded in the [rollout log](ROLLOUT_LOG.md).
+
 ## Ground rules
 
 - **jason's preview hold.** Every merge, npm publication and deployment below waits for jason's explicit go. Nothing in this plan authorizes one.

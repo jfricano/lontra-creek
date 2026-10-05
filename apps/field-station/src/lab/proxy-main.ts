@@ -3,7 +3,7 @@
  *
  *   LAB_BENCH=1 node src/lab/proxy-main.ts
  *
- * Environment: LAB_BENCH (the bench's number), LAB_RELAY_TOKEN (the control API's
+ * Environment: LAB_BENCH (the bench's number), LAB_BENCH_<N>_RELAY_TOKEN (the control API's
  * own bearer token — not FIELD_STATION_SERVICE_TOKEN, which can also read every
  * notebook through the field station's internal API), and optionally PROXY_LISTEN
  * (default 0.0.0.0:<the bench's proxy port>), PROXY_TARGET (default

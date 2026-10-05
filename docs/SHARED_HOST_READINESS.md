@@ -124,7 +124,8 @@ Operator env names, without secret values:
 
 - Image/state/origins: `LONTRA_IMAGE`, `LONTRA_SECRETS`, `FIELD_EPOCH`,
   `FIELD_GENERATION`, `FIELD_TICK_MS`, `SITE_ORIGIN`, `GATEWAY_PUBLIC_ORIGIN`,
-  `DEMO_HOST`, `KAFKA_HEAP_OPTS`. `LONTRA_CGROUP_PARENT=lontra.slice` requires the installed shared slice.
+  `DEMO_HOST`. `LONTRA_CGROUP_PARENT=lontra.slice` requires the installed shared slice.
+  The Kafka heap is set in `compose.shared.yaml`, not from `KAFKA_HEAP_OPTS`; change it there.
   `LONTRA_CONFIG_DIR` is written by the root deploy
   script, not supplied by SSH callers. `PUBLIC_FIELD_STATION_ORIGIN` is a static
   site build-time value, not a secret.
@@ -158,7 +159,7 @@ gateway, bench, and edge configuration; never broaden to wildcard Origin.
 | Kafka streams/notebooks | `lontra-creek_kafka-data` → `/var/lib/kafka/data` | Preserve during deploy/rollback; world streams six-hour retention, notebooks compact/delete two-hour retention; not a durable user database |
 | Deterministic world checkpoint | `lontra-creek_field-data` → `/var/lib/lontra` | Shared snapshot/disposable-verify hooks write orchestrator staging; no shared timer active. Legacy standalone copies use `/srv/lontra/backups`. |
 | Router state | No shared-router state mount | TLS/account material belongs to shared edge owner |
-| Shared secrets and Kafka CA | `/etc/apps/lontra/lontra.env`, directory named by `LONTRA_SECRETS` | Root-only operator files; separately encrypted recovery export |
+| Shared secrets and Kafka CA | `/etc/apps/lontra/lontra.env`, directory named by `LONTRA_SECRETS` | `lontra.env` root 0600. Create the Kafka material with `deploy/make-certs.sh kafka "$LONTRA_SECRETS/kafka"`: Kafka and the node services run as uid 1000 and read `ca.pem` and `broker-keystore.pem` (0644, as the script writes them) through bind mounts, so `$LONTRA_SECRETS` and its `kafka/` directory are 0755 under a root-only 0700 ancestor; `ca-key.pem` stays 0600 or off-host. Separately encrypted recovery export |
 | Shared release configs | `/srv/apps/lontra/releases/<sha>` and `/srv/apps/lontra/current.env` | Root-owned immutable configuration; current env selects image and `LONTRA_CONFIG_DIR`; retain previous matching image/config |
 
 The shared deployment owner must install root-owned configuration snapshots and

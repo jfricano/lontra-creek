@@ -8,7 +8,7 @@ import { labCapabilities } from "../../field-station/src/lab/capabilities.ts";
 import lockfile from "../../../package-lock.json" with { type: "json" };
 import capture from "../public/recordings/workbench/capture.json" with { type: "json" };
 import sitePackage from "../package.json" with { type: "json" };
-import { RECORDING, SITE_RELEASE, SURFACES, WAITING_EXERCISES } from "../src/demo-availability.ts";
+import { RECORDING, SITE_RELEASE, SURFACE_LABELS, SURFACES, WAITING_EXERCISES } from "../src/demo-availability.ts";
 import { TRACKS } from "../src/lab-catalog.ts";
 import {
   CIRCUIT, DISPOSITION_LIFECYCLE, INSTALLED_VALIDATOR_ON_FAILURE_HANDLING, NOT_OFFERED, OPERATOR_ACTIONS, POLICIES, POLICY_MATRIX,
@@ -94,6 +94,13 @@ test("demo availability reads its facts from their sources", () => {
   assert.match(SITE_RELEASE.milestone, /^V1\.1, in development\.$/);
   assert.equal(SITE.launched, false);
   assert.match(SITE_RELEASE.launch, /^Pre-launch\./);
+});
+
+test("static copy never says the Lab runs: whether it does depends on the deployment", () => {
+  for (const surface of SURFACES.filter(surface => surface.href.startsWith("/lab/"))) assert.notEqual(surface.state, "runs", surface.name);
+  assert.equal(SURFACES.find(surface => surface.href === "/lab/#connections")?.state, "lab");
+  assert.equal(SURFACE_LABELS.lab, "Runs where the Lab is on");
+  assert.doesNotMatch(readFileSync(join(SRC, "pages/index.astro"), "utf8"), /on a real bench/);
 });
 
 test("the route set is unchanged and no summary claims a fixed number of Lab failures", () => {

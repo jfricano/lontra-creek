@@ -102,6 +102,7 @@ test.describe("home page V1.1 panel (LC11-A01, A02, A40)", () => {
     await expect(panel.locator(".eyebrow")).toHaveText(`StreamOtter V1.1 · in 0.2.0-rc.1, not in ${release}`);
     await expect(panel).toContainText(`StreamOtter V1.1 is published as 0.2.0-rc.1, which this site doesn't use yet: it runs ${release}.`);
     await expect(panel).not.toContainText("specified, not released");
+    await expect(panel).toContainText("The Failure Lab's Fouled sensor shows that on a leased bench, where the Lab is on.");
     await expect(panel).toContainText(`In streamotter@${release}, which this site runs, a bad record pauses its source`);
     await expect(panel.getByRole("heading", { level: 3 })).toHaveText(["Preserve the record", "Continue only under control", "See each outcome"]);
     // The live hero is unchanged: the panel sits below it and doesn't replace it.

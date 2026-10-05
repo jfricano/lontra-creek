@@ -132,6 +132,7 @@ test("releases keep the site release, library package, demo availability, and ve
   await expect(page.locator("[data-release-library]")).toContainText("StreamOtter V1.1 is published as 0.2.0-rc.1, which this deployment doesn't use yet.");
   const rows = page.locator("[data-release-demo] tbody tr");
   await expect(rows).toHaveCount(5);
+  await expect(rows.filter({ hasText: "Connections and clients" }).locator("td").first()).toHaveText("Runs where the Lab is on");
   await expect(rows.filter({ hasText: "Source failures" })).toContainText("Fouled sensor, on the same benches. The other 8 stories");
   const service = page.locator("[data-release-service]");
   await expect(service).toHaveAttribute("data-service", "answered", { timeout: 15_000 });

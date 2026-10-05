@@ -53,7 +53,7 @@ Configuration defaults, not measured capacity. The real values are recorded on t
 | Reset deadline | 60 s | A bench not ready by then is unavailable; the field station retries every 30 s |
 | Bench poll grace | 15 s | A bench reports `failed` only after its background polls of its own gateway have failed for this long; one slow or failed poll changes nothing |
 | Queue | 50 places | Then `queue-full` |
-| Places per client address | 2 | Leases plus places in line, keyed by `X-Client-IP`, counted across the Lab and the workbench sandbox together ([sandbox contract](sandbox-api.md) §8) |
+| Places per client address | 2 | Leases plus places in line, keyed by `X-Client-IP` (an IPv6 address by its /64), counted across the Lab and the workbench sandbox together ([sandbox contract](sandbox-api.md) §8) |
 | Lab request budget | 20 at once, 3 a second | Per client address, for `/api/lab/*` and `/api/sandbox/*` together, instead of the general `/api` budget (30 at once, 1 a second), which a polling page would exhaust |
 | Page polling | lease every 2 s; feed every 1 s while active; status every 10 s | Also on `visibilitychange` to visible |
 | Feed | 500 items kept per lease; at most 100 per response | Older items fall off; the page is told (`gap`) |

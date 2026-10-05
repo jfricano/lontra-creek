@@ -12,7 +12,7 @@ class StubWebSocket {
 }
 (globalThis as unknown as { window: { WebSocket: typeof StubWebSocket } }).window = { WebSocket: StubWebSocket };
 
-const { PageFieldClient, UNREACHABLE_AFTER_MS } = await import("../src/scripts/field-client.ts");
+const { FieldStationUnavailableError, PageFieldClient, UNREACHABLE_AFTER_MS, openFieldClientUntilAnswered } = await import("../src/scripts/field-client.ts");
 const { SIGN_IN_RETRY_BASE_MS, SIGN_IN_RETRY_CAP_MS, isTransientFailure, HttpStatusError } = await import("../src/scripts/sign-in-retry.ts");
 
 /** Stands in for the SDK's subscription: just enough for field-views.ts's observe() to wrap it. */
@@ -258,5 +258,39 @@ describe("field client sign-in recovery (review finding S1)", () => {
     assert.equal(isTransientFailure(new DOMException("signal timed out", "TimeoutError")), true);
     for (const status of [429, 500, 502, 503]) assert.equal(isTransientFailure(new HttpStatusError("x", status)), true, String(status));
     for (const status of [400, 401, 403, 404, 409]) assert.equal(isTransientFailure(new HttpStatusError("x", status)), false, String(status));
+  });
+});
+
+describe("opening the field client while the site API doesn't answer", () => {
+  /** Lets the awaited attempt and its catch run; mocked timers don't cover setImmediate. */
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+
+  test("asks again after 1 s, doubling to 30 s, until the site API answers", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const { field } = setup();
+    let attempts = 0;
+    const reported: string[] = [];
+    const opened = openFieldClientUntilAnswered(error => reported.push(error.message), async () => {
+      attempts += 1;
+      if (attempts <= 7) throw new FieldStationUnavailableError();
+      return field;
+    });
+    await settle();
+    assert.equal(attempts, 1);
+    for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000]) {
+      const before: number = attempts;
+      t.mock.timers.tick(delay - 1);
+      await settle();
+      assert.equal(attempts, before, `no attempt before ${delay} ms`);
+      t.mock.timers.tick(1);
+      await settle();
+      assert.equal(attempts, before + 1, `an attempt at ${delay} ms`);
+    }
+    assert.equal(await opened, field);
+    assert.equal(reported.length, 7);
+  });
+
+  test("any other error stops it", async () => {
+    await assert.rejects(openFieldClientUntilAnswered(() => assert.fail("not a missing answer"), () => Promise.reject(new TypeError("bug"))), TypeError);
   });
 });

@@ -107,6 +107,8 @@ Done read-only from a Claude cloud session between 05:22 and 05:30. Nothing was 
 
 Every step below waits for jason. Steps 1 to 5 need his go and his GitHub environment approvals; step 6 needs his Mac. Fill in the evidence table as each step completes.
 
+> **Never run `deploy/test/shared-host/rehearse.sh` on the shared host**, even though the plan's phase-one gate 1a.1 points at its CI recipe. Its only guard is `CI=true`. On the host, `docker network create edge-lontra` (line 35) fails because the network already exists, and the cleanup trap set on line 31 then runs `docker compose -p lontra-creek … down --volumes` under the production project name: that deletes the live Kafka and field-data volumes. Line 77 would also overwrite `/etc/apps/lontra/lontra.env`. Every host step below uses only the installed adapter through `lontra_operator.py`. (Found in review of `d6e426a` on 2026-10-05; a guard is being added on a separate branch.)
+
 > **Keep `main` at `d6e426a` until production Pages is deployed.** `site.yml` builds whatever `main` is when it is dispatched, and the candidate manifest is bound to `d6e426a`. Do not merge #43, #42 or this log's PR before step 3 is done. A merge to `main` also starts an Images build that asks for `registry` approval; decline it.
 
 **1. Before the preview (jason, about 5 minutes)**
@@ -202,4 +204,5 @@ From jason's dev-ops workspace, over the pinned SSH config and host alias named 
 - #42 stays a draft and unmerged until phase one is accepted. The Lab and the workbench sandbox stay off; no sandbox token, no Kafka ACL change.
 - No 1.0.0 version bump and no npm republish during this rollout.
 - Secret values are never read, pasted or logged; only names and timestamps.
+- On the host, use only the installed adapter through `lontra_operator.py`. Never run `deploy/test/shared-host/rehearse.sh` there (see the warning above).
 - Never stop or restart the shared backend as a test, never `down --volumes`, never use the standalone `/srv/lontra` scripts or the `Deploy demo` workflow, and never loosen cookies or CORS.

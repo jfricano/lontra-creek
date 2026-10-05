@@ -3,7 +3,7 @@
  * Refuses a release build that doesn't install StreamOtter from the npm registry.
  *
  * A branch may carry locally packed StreamOtter tarballs (vendor/, `file:` specs,
- * root overrides) to test an unpublished release. The image and site deploy
+ * overrides, a shrinkwrap) to test an unpublished release. The image and site deploy
  * workflows run this first, so such a branch can be tested but never built for
  * deployment. Usage: node scripts/check-release-pins.mjs [root]
  */
@@ -13,6 +13,8 @@ import { fileURLToPath } from "node:url";
 
 const MANIFESTS = ["package.json", "apps/field-station/package.json", "apps/site/package.json"];
 const REGISTRY = "https://registry.npmjs.org/";
+/** A lockfile `resolved` that isn't a registry tarball: a local file or link, or git. */
+const UNPUBLISHED = /^(?:file:|link:|git[+:]|github:)/;
 const isStreamOtter = name => name === "streamotter" || name.startsWith("@streamotter/");
 /** The package an override key names, without its `@range`. */
 const overridden = key => key.slice(0, key.indexOf("@", 1) === -1 ? key.length : key.indexOf("@", 1));
@@ -35,15 +37,18 @@ export function releasePinProblems(root) {
     }
     for (const key of streamOtterOverrides(manifest.overrides)) problems.push(`${path} overrides ${key}`);
   }
+  // npm ci prefers a shrinkwrap to package-lock.json.
+  if (existsSync(join(root, "npm-shrinkwrap.json"))) problems.push("npm-shrinkwrap.json would be installed instead of package-lock.json");
   const lock = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8"));
   for (const [path, entry] of Object.entries(lock.packages ?? {})) {
-    if (!path.includes("node_modules/")) continue;
+    const resolved = String(entry.resolved ?? "");
     // npm writes `name` only for an alias: one package installed under another's name.
-    const installed = path.slice(path.lastIndexOf("node_modules/") + "node_modules/".length);
+    const installed = path.includes("node_modules/") ? path.slice(path.lastIndexOf("node_modules/") + "node_modules/".length) : null;
     const name = entry.name ?? installed;
-    if (!isStreamOtter(installed) && !isStreamOtter(name)) continue;
-    if (name !== installed) problems.push(`package-lock.json installs ${name} as ${installed} (${path})`);
-    else if (!String(entry.resolved ?? "").startsWith(REGISTRY)) problems.push(`package-lock.json resolves ${name} from ${entry.resolved ?? "nowhere"}`);
+    if (installed !== null && (isStreamOtter(installed) || isStreamOtter(name))) {
+      if (name !== installed) problems.push(`package-lock.json installs ${name} as ${installed} (${path})`);
+      else if (resolved !== `${REGISTRY}${name}/-/${name.slice(name.lastIndexOf("/") + 1)}-${entry.version}.tgz`) problems.push(`package-lock.json resolves ${name} from ${entry.resolved ?? "nowhere"}`);
+    } else if (UNPUBLISHED.test(resolved)) problems.push(`package-lock.json resolves ${path} from ${resolved}`);
   }
   return problems;
 }

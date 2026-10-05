@@ -6,7 +6,11 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { releasePinProblems } from "../check-release-pins.mjs";
 
-const REGISTRY_LOCK = { packages: { "node_modules/streamotter": { version: "0.2.0-rc.1", resolved: "https://registry.npmjs.org/streamotter/-/streamotter-0.2.0-rc.1.tgz" } } };
+const REGISTRY_LOCK = { packages: {
+  "node_modules/streamotter": { version: "0.2.0-rc.1", resolved: "https://registry.npmjs.org/streamotter/-/streamotter-0.2.0-rc.1.tgz" },
+  "node_modules/@streamotter/gateway": { version: "0.2.0-rc.1", resolved: "https://registry.npmjs.org/@streamotter/gateway/-/gateway-0.2.0-rc.1.tgz" },
+  "node_modules/@lontra-creek/site": { resolved: "apps/site", link: true }
+} };
 
 function checkout(t, { root = {}, app = "0.2.0-rc.1", lock = REGISTRY_LOCK, vendor = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "pins-"));
@@ -50,6 +54,21 @@ test("an alias at or of a StreamOtter install path, and a versioned or nested St
   assert.match(problems.join("\n"), /overrides @lontra-creek\/field-station > @streamotter\/gateway@\*/);
   assert.match(problems.join("\n"), /installs some-other-gateway as @streamotter\/gateway/);
   assert.match(problems.join("\n"), /installs @streamotter\/gateway as gateway/);
+});
+
+test("a shrinkwrap, another tarball for a StreamOtter entry, and a local or git package anywhere in the lockfile are each refused", t => {
+  const dir = checkout(t, { lock: { packages: { ...REGISTRY_LOCK.packages,
+    "node_modules/streamotter": { version: "0.2.0-rc.1", resolved: "https://registry.npmjs.org/streamotter-fork/-/streamotter-fork-0.2.0-rc.1.tgz" },
+    "node_modules/left-pad": { version: "1.3.0", resolved: "file:third_party/left-pad-1.3.0.tgz" },
+    "node_modules/right-pad": { version: "1.0.0", resolved: "link:../right-pad" },
+    "node_modules/center-pad": { version: "1.0.0", resolved: "git+ssh://git@github.com/example/center-pad.git#0123abc" }
+  } } });
+  writeFileSync(join(dir, "npm-shrinkwrap.json"), JSON.stringify(REGISTRY_LOCK));
+  const problems = releasePinProblems(dir);
+  assert.equal(problems.length, 5, problems.join("\n"));
+  assert.match(problems.join("\n"), /npm-shrinkwrap\.json/);
+  assert.match(problems.join("\n"), /resolves streamotter from https:\/\/registry\.npmjs\.org\/streamotter-fork\//);
+  for (const name of ["left-pad", "right-pad", "center-pad"]) assert.match(problems.join("\n"), new RegExp(`resolves node_modules/${name} from`));
 });
 
 test("a range is not an exact pin", t => {

@@ -36,6 +36,8 @@ function explain(error: unknown): string {
 }
 async function mount(root: HTMLElement): Promise<void> {
   function el<T extends HTMLElement = HTMLElement>(selector: string): T { const element = root.querySelector<T>(selector); if (!element) throw new Error(`Missing ${selector}`); return element; }
+  /** Polls repeat the same message every few seconds; only a real change touches the DOM, so the live region announces changes only. */
+  function text(element: HTMLElement, value: string): void { if (element.textContent !== value) element.textContent = value; }
   let client: Client<AppChannels> | undefined;
   let signIn: SignInRetry | undefined;
   let lease: LabLease | undefined;
@@ -146,13 +148,13 @@ async function mount(root: HTMLElement): Promise<void> {
     incident.explain(capabilities, next.status === "ready" || next.status === "active");
     returns.disabled = next.status === "none" || next.status === "ended";
     joins.disabled = !returns.disabled;
-    if (next.status === "queued") { message.textContent = `All benches are busy. Your place in line: ${next.position} of ${next.queueLength}.`; await disconnect(); resetPanel(); }
+    if (next.status === "queued") { text(message, `All benches are busy. Your place in line: ${next.position} of ${next.queueLength}.`); await disconnect(); resetPanel(); }
     else if (next.status === "ready" || next.status === "active") {
-      message.textContent = `Your isolated bench: ${next.bench}.`; benchState(next.benchState); nextActionAt = Date.parse(next.nextActionAt);
+      text(message, `Your isolated bench: ${next.bench}.`); benchState(next.benchState); nextActionAt = Date.parse(next.nextActionAt);
       if (leaseId !== next.leaseId && connectingLeaseId !== next.leaseId) await connect(next);
     } else {
       // A background tab's timers can be slowed past the 30 s idle limit; the visibility poll then shows why the lease ended.
-      message.textContent = next.status !== "ended" ? "Choose Borrow a bench to begin." : next.reason === "idle" ? "Your lease ended because this page stopped checking in, which can happen when a browser slows a tab left in the background. You can join again." : `Your lease ended: ${next.reason}. You can join again.`;
+      text(message, next.status !== "ended" ? "Choose Borrow a bench to begin." : next.reason === "idle" ? "Your lease ended because this page stopped checking in, which can happen when a browser slows a tab left in the background. You can join again." : `Your lease ended: ${next.reason}. You can join again.`);
       await disconnect(); resetPanel(); el("[data-lab-clock]").textContent = "";
     }
     // The pool changes whenever this visitor's place does: show it now, not at the next 10 s poll.
@@ -165,9 +167,9 @@ async function mount(root: HTMLElement): Promise<void> {
       poolAvailable = working;
       el("[data-lab-unavailable]").hidden = working;
       el("[data-lab-pool]").textContent = result.enabled ? result.benches.map(b => `Bench ${b.bench}: ${b.state}`).join(" · ") : "Lab not enabled on this deployment.";
-      if (!working) { joins.disabled = true; await disconnect(); message.textContent = "The Lab is unavailable."; }
-      else if (!lease || lease.status === "none" || lease.status === "ended") { joins.disabled = false; if (lease?.status !== "ended") message.textContent = "Choose Borrow a bench to begin."; }
-    } catch { poolAvailable = false; el("[data-lab-unavailable]").hidden = false; message.textContent = "The Lab is unavailable."; joins.disabled = true; await disconnect(); }
+      if (!working) { joins.disabled = true; await disconnect(); text(message, "The Lab is unavailable."); }
+      else if (!lease || lease.status === "none" || lease.status === "ended") { joins.disabled = false; if (lease?.status !== "ended") text(message, "Choose Borrow a bench to begin."); }
+    } catch { poolAvailable = false; el("[data-lab-unavailable]").hidden = false; text(message, "The Lab is unavailable."); joins.disabled = true; await disconnect(); }
   }
   async function leasePoll(): Promise<void> {
     if (lease && lease.status !== "none" && lease.status !== "ended") {
@@ -181,7 +183,7 @@ async function mount(root: HTMLElement): Promise<void> {
       const at = new Date(Date.now() + offset).toISOString();
       await renderLease({ status: "ended", now: at, reason: "session-ended", endedAt: at, bench: null });
     }
-    message.textContent = explain(error);
+    text(message, explain(error));
   }
   function renderFeed(): void {
     const list = el("[data-lab-feed]");

@@ -9,7 +9,7 @@ cert=$(realpath "$1"); key=$(realpath "$2"); pub=$(realpath "$3"); epoch=$4
 . /etc/os-release
 [ "$ID" = ubuntu ] && [ "$VERSION_ID" = 24.04 ] || { echo 'Requires Ubuntu 24.04.' >&2; exit 2; }
 openssl x509 -in "$cert" -noout -checkend 86400 >/dev/null
-openssl x509 -in "$cert" -noout -checkhost demo.streamotter.app >/dev/null
+openssl x509 -in "$cert" -noout -checkhost demo.streamotter.dev >/dev/null
 cmp <(openssl x509 -in "$cert" -pubkey -noout) <(openssl pkey -in "$key" -pubout) || { echo 'Certificate/key mismatch.' >&2; exit 2; }
 public_key=$(cat "$pub")
 [[ "$public_key" != *$'\n'* && "$public_key" != *$'\r'* ]] || { echo 'Public key must be one line.' >&2; exit 2; }

@@ -11,7 +11,10 @@
 import type { Server } from "node:http";
 import { TENANT_ID } from "@lontra-creek/sim";
 import { configuredLab } from "../lab/leases.ts";
+import { AddressCap } from "../places.ts";
+import { configuredSandbox, SANDBOX_SWEEP_MS } from "../sandbox/leases.ts";
 import { benches } from "../lab/benches.ts";
+import { LabStudies } from "../lab/studies.ts";
 import { NOTEBOOK_TOPIC } from "../records.ts";
 import { readConfig } from "./config.ts";
 import { internalApi, publicApi } from "./http.ts";
@@ -41,15 +44,24 @@ function listen(server: Server, port: number, name: string): Promise<void> {
 }
 
 // Listen first so the health check can say "catching up" instead of timing out.
-const lab = configuredLab(process.env, config.gatewayOrigin);
-const api = publicApi({ config, station, notebooks, log, lab: lab.pool });
-const internal = internalApi({ serviceToken: config.serviceToken, station, notebooks, labTokens: lab.tokens });
+// One per-address cap across the Lab and the workbench sandbox (LC11-ADR-04).
+const places = new AddressCap();
+// Each bench study's publisher gate, coverage ledger, and served state (lab/studies.ts).
+// Scenario runs publish through it with kafka.scenario once W9b's scenarios exist.
+const studies = new LabStudies({ dataDir: config.dataDir, world: station, log });
+const lab = configuredLab(process.env, config.gatewayOrigin, places, studies);
+const sandbox = configuredSandbox(process.env, config.gatewayOrigin, places);
+const api = publicApi({ config, station, notebooks, log, lab: lab.pool, ...(sandbox ? { sandbox } : {}) });
+const internal = internalApi({ serviceToken: config.serviceToken, station, notebooks, labTokens: lab.tokens, studies });
 await listen(api, config.port, "Site API");
 await listen(internal, config.internalPort, "Internal API");
 
 await station.start();
 await lab.pool.initialize();
 const labTimer = setInterval(() => { void lab.pool.run(() => lab.pool.sweep()).catch(() => log("Lab maintenance failed; retrying.")); }, 5000);
+await sandbox?.initialize();
+// Every second, so the 1 s poll while a slot or study resets runs without visitor traffic.
+const sandboxTimer = sandbox && setInterval(() => { void sandbox.run(() => sandbox.sweep()).catch(() => log("Sandbox maintenance failed; retrying.")); }, SANDBOX_SWEEP_MS);
 log(`Field station running: generation ${config.generation}, epoch ${station.epoch}, a tick every ${config.tickMs} ms.`);
 
 let stopping = false;
@@ -102,6 +114,7 @@ async function stop(signal: string): Promise<void> {
   if (stopping) return;
   stopping = true;
   clearInterval(labTimer);
+  clearInterval(sandboxTimer);
   log(`${signal}: stopping.`);
   for (const timer of timers) clearTimeout(timer);
   await Promise.all([api, internal].map(server => new Promise<void>(resolve => {

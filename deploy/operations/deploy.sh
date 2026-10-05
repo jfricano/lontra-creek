@@ -6,6 +6,19 @@ umask 077
 root=/srv/lontra
 exec 9>"$root/deploy.lock"
 flock -n 9 || { echo 'Another deploy is running.' >&2; exit 1; }
+# Each candidate's env comes from stack.env alone, so a KAFKA_AUTHORIZATION set only
+# in current.env would fall back to compose.yaml's "none". Refuse to lower it
+# (acl > migrate > none) unless a root operator rolls it back deliberately.
+authorization() {
+  case "$(sed -n 's/^KAFKA_AUTHORIZATION=//p' "$1" | tail -n 1 | tr -d "\"'[:space:]")" in
+    acl) echo 2 ;; migrate) echo 1 ;; *) echo 0 ;;
+  esac
+}
+if [ -f "$root/current.env" ] && [ "${LONTRA_ALLOW_AUTHORIZATION_DOWNGRADE:-0}" != 1 ] \
+  && [ "$(authorization "$root/stack.env")" -lt "$(authorization "$root/current.env")" ]; then
+  echo "Refusing to deploy: stack.env would lower KAFKA_AUTHORIZATION below the running release's (acl > migrate > none; unset is none). Set it in $root/stack.env; for a deliberate rollback, rerun as root with LONTRA_ALLOW_AUTHORIZATION_DOWNGRADE=1 (deploy/OPERATIONS.md, Kafka authorization)." >&2
+  exit 1
+fi
 image="ghcr.io/jfricano/lontra-creek:$1"
 # This root-only override is used by the isolated CI rehearsal, never the SSH entrypoint.
 if [ "${LONTRA_REHEARSAL:-0}" != 1 ]; then docker pull "$image"; fi

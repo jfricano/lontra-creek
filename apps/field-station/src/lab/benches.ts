@@ -23,6 +23,11 @@ export interface Bench {
   readonly topicPrefix: string;
   /** The bench's copy of the creek topics. */
   readonly topics: readonly string[];
+  /**
+   * Every consumer group the bench uses starts with this: the broker's ACLs let
+   * bench N's user read and delete only groups with its prefix (deploy/kafka/start.sh).
+   */
+  readonly consumerGroupPrefix: string;
   readonly consumerGroup: string;
   /** The proxy's host name: the address the broker advertises to this bench. */
   readonly proxyHost: string;
@@ -44,7 +49,8 @@ export function bench(number: number): Bench {
     projectId: `lontra-creek-lab-${number}`,
     topicPrefix,
     topics: CREEK_TOPICS.map(topic => `${topicPrefix}${topic}`),
-    consumerGroup: `lontra-creek-lab-${number}-field`,
+    consumerGroupPrefix: `streamotter-lab-${number}-`,
+    consumerGroup: `streamotter-lab-${number}-field`,
     proxyHost: `lab-${number}-kafka`,
     proxyPort: 9100 + number,
     gatewayPath: `/lab/${number}/socket.io`

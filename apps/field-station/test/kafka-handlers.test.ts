@@ -72,9 +72,9 @@ describe("the Kafka handlers", () => {
   test("authenticate accepts a signed badge and refuses anything else", async () => {
     const badge: Badge = { subject: "volunteer-abc", role: "volunteer", name: "Volunteer" };
     const signed = issueToken(badge, { secret, ttlSeconds: 60 }).token;
-    assert.equal((await handlers.authenticate({ ...context, token: signed, origin: "https://streamotter.app" }))?.subject, "volunteer-abc");
+    assert.equal((await handlers.authenticate({ ...context, token: signed, origin: "https://streamotter.dev" }))?.subject, "volunteer-abc");
     const forged = issueToken(badge, { secret: "f".repeat(32), ttlSeconds: 60 }).token;
-    assert.equal(await handlers.authenticate({ ...context, token: forged, origin: "https://streamotter.app" }), null);
+    assert.equal(await handlers.authenticate({ ...context, token: forged, origin: "https://streamotter.dev" }), null);
   });
 
   test("authorize follows the access rules", async () => {

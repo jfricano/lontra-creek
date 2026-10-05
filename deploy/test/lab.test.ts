@@ -8,7 +8,7 @@ import https from 'node:https';
 import type { LabAction, LabActionResult, LabFeedPage, LabLease, LabToken } from '../../apps/field-station/src/lab/contract.ts';
 import type { LabChannels } from '../../apps/field-station/src/lab/bench.ts';
 const API = process.env['LAB_API_ORIGIN'];
-const SITE = process.env['LAB_SITE_ORIGIN'] ?? 'https://streamotter.app';
+const SITE = process.env['LAB_SITE_ORIGIN'] ?? 'https://streamotter.dev';
 // The Node SDK transport does not send a browser Origin automatically.
 for (const transport of [http, https]) {
   const original = transport.request;

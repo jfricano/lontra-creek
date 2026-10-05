@@ -3,7 +3,7 @@
 #
 #   docker compose -f deploy/compose.yaml -f deploy/compose.lab-spike.yaml --env-file <env> up -d --wait
 #
-# The env file also needs KAFKA_LAB_PASSWORD (the benches' SCRAM user) and
+# The env file also needs KAFKA_LAB_PASSWORD (bench 1's SCRAM user, lab-1) and
 # LAB_RELAY_TOKEN (the proxy's own control token — separate from
 # FIELD_STATION_SERVICE_TOKEN so the relay control can't also read every notebook
 # through the field station's internal API), and the broker's certificate for the
@@ -22,8 +22,9 @@ services:
   kafka:
     environment:
       KAFKA_BENCH_LISTENERS: lab-1-kafka:9101
-      KAFKA_LAB_USERNAME: lab
-      KAFKA_LAB_PASSWORD: ${KAFKA_LAB_PASSWORD:?}
+      # Bench 1's own user, so the broker's ACLs (KAFKA_AUTHORIZATION=acl) scope it to lab-1.*.
+      KAFKA_LAB_1_USERNAME: lab-1
+      KAFKA_LAB_1_PASSWORD: ${KAFKA_LAB_PASSWORD:?}
 
   field-station:
     environment:
@@ -61,14 +62,16 @@ services:
     environment:
       NODE_ENV: production
       LAB_BENCH: "1"
-      KAFKA_LAB_USERNAME: lab
+      KAFKA_LAB_USERNAME: lab-1
       KAFKA_LAB_PASSWORD: ${KAFKA_LAB_PASSWORD:?}
       LAB_BENCH_1_SERVICE_TOKEN: ${LAB_BENCH_1_SERVICE_TOKEN:?}
       LAB_BENCH_1_RELAY_TOKEN: ${LAB_BENCH_1_RELAY_TOKEN:?}
       LAB_SNAPSHOT_ORIGIN: http://field-station:7410
-      SITE_ORIGIN: ${SITE_ORIGIN:-https://streamotter.app}
+      SITE_ORIGIN: ${SITE_ORIGIN:-https://streamotter.dev}
+      LAB_STATE_DIR: /var/lib/lontra
     volumes:
       - ${LONTRA_SECRETS:?}/kafka/ca.pem:/etc/lontra/kafka/ca.pem:ro
+      - lab-1-state:/var/lib/lontra
     ports:
       - "127.0.0.1:7500:7400"
     depends_on:
@@ -84,3 +87,6 @@ services:
     logging:
       driver: json-file
       options: { max-size: 10m, max-file: "3" }
+
+volumes:
+  lab-1-state:

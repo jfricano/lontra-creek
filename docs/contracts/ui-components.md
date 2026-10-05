@@ -58,7 +58,7 @@ The SDK log (`.lc-log` in `LiveCreek.astro`, `field-log.ts` in #13) is the sixth
 
 **Today.** Fiction: the footer's "Lontra Creek, its field station, and its otters are fictional. The data pipeline is real." (`Base.astro`, `.fiction`) and the note under the home page's live panel (`.panel-note`). Recordings: none yet; E4.6 adds the first.
 
-**Becomes.** `components/FictionNote.astro` (a short line and a longer variant) and `components/RecordingLabel.astro`, whose props are all required: `recordedAt` (a date), `where` (for example "a local run" or "staging, demo.streamotter.app"), and `what` (for example "the live panel's SDK events, replayed through the same UI"). Every recording player renders one, so a recording without its date and place fails the typecheck.
+**Becomes.** `components/FictionNote.astro` (a short line and a longer variant) and `components/RecordingLabel.astro`, whose props are all required: `recordedAt` (a date), `where` (for example "a local run" or "staging, demo.streamotter.dev"), and `what` (for example "the live panel's SDK events, replayed through the same UI"). Every recording player renders one, so a recording without its date and place fails the typecheck.
 
 **Owner.** `fe-content` (E4.6, and the recordings on `/playground`, `/workbench`, and `/lab`).
 
@@ -106,6 +106,10 @@ The SDK log (`.lc-log` in `LiveCreek.astro`, `field-log.ts` in #13) is the sixth
 ## 6. Test hooks
 
 These `data-*` attributes are the contract between the pages and the browser tests (F.5 and later); changing one needs `qa`'s agreement. On the live panel: `data-live-creek`, `data-status`, `data-connection`, `data-network`, `data-overview`, `data-card`, `data-state`, `data-v`, `data-rev`, `data-age`, `data-log`, `data-announce`, `data-note`, `data-drop`, `data-restore`, `data-clock`, and `data-source`; on the home page, `data-copy`. New shared components add their own `data-*` hooks rather than relying on classes, and every hook a test uses is listed here by the pull request that adds it.
+
+On `/lab/` ([lab-api.md section 12](lab-api.md#12-the-source-failures-track-v11), V1.1 W4): `data-lab-tracks`, `data-lab-track-link`, `data-lab-track`, `data-lab-scenario`, `data-lab-scenario-link`, `data-lab-selected-mark`, `data-lab-availability` (with `data-state`: `existing`, `pending`, `available`, `unavailable`), `data-lab-availability-text`, `data-lab-start`, `data-lab-capability`, and the incident panel's `data-lab-incident`, `data-lab-incident-empty`, `data-lab-incident-reason`, `data-lab-incident-body`, `data-lab-incident-evidence`, `data-lab-incident-source`, `data-lab-incident-recovery`, `data-lab-incident-evaluation`, `data-lab-incident-next`, `data-lab-incident-detail`, and `data-lab-incident-steps`. Unavailable scenario actions use `aria-disabled="true"` with `aria-describedby` on the visible reason, so they stay focusable and explained.
+
+V1.1 site content (W8): on the home page, `data-v11-panel` (the planned-V1.1 panel and its **Try source failures** link to `/lab/#source-failures`); on `/field-station/`, `data-walk-next` (the optional "Next: handle a bad reading" link to `/lab/?scenario=fouled-sensor#source-failures`); on `/when-it-breaks/`, `data-planned-policies` (the planned policy matrix and record-disposition lifecycle); on `/releases/`, `data-release-site`, `data-release-library`, `data-release-demo`, and `data-release-service` (with `data-service`: `checking`, `answered`, `unreachable`), whose `data-release-service-status` and `data-release-service-lines` report only what the field station answered. Planned StreamOtter behavior is always labeled as planned and names the installed version it is not in.
 
 The SDK log's lines (`field-log.ts`) are a time since the page started, a highlighted subject (a view's label, `connection`, `network`), and what the SDK reported. The Lab's trace feed uses the same line shape, with the trace's stage and outcome as the subject.
 

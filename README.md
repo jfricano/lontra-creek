@@ -42,6 +42,14 @@ npm run typecheck
 npm run dev        # field station + site at http://127.0.0.1:4321
 ```
 
+There are three local modes, and only the last runs the Failure Lab:
+
+| Command | Runs | Kafka | Failure Lab |
+| --- | --- | --- | --- |
+| `npm run dev` | Fixture walkthrough: the simulation replayed through a development gateway, the site, and the workbench | No | No |
+| `npm run dev:kafka` | The walkthrough on your own native Kafka install, with persistent notebooks | Yes (local, plaintext) | No |
+| `npm run dev:lab` | The production container stack plus three Lab benches, behind HTTPS at `https://localhost:8443` | Yes (Docker, TLS/SCRAM) | Yes |
+
 `npm run dev` runs the field station without Kafka, replaying the simulation through a StreamOtter gateway in development mode, one study tick every two seconds, with the workbench at http://127.0.0.1:7401 (its one-time token is printed at startup).
 
 Browser checks run with `npm run test:browser`. To verify connection loss and recovery against built production bundles using the same fixture backend:
@@ -72,6 +80,17 @@ KAFKA_HOME=/path/to/kafka JAVA_HOME=/path/to/jdk npm run dev:kafka
 ```
 
 This command downloads nothing. It starts a loopback-only development broker, the field station, gateway, and site. It preserves Kafka logs and simulation checkpoints under `.local/kafka-dev` across normal stops/restarts. Set `LONTRA_KAFKA_DATA_DIR` to choose another directory. Besides the site/gateway/API ports above, it uses `LONTRA_INTERNAL_PORT` (7410), `LONTRA_KAFKA_PORT` (19092), and `LONTRA_KAFKA_CONTROLLER_PORT` (19093). This mode has no Failure Lab or workbench; it uses plaintext loopback Kafka and is not a production deployment. Stop with Ctrl-C; a stale `running.lock` may be removed only after confirming the prior stack has stopped.
+
+To run the real Failure Lab locally (three benches on Kafka over TLS, the production gateway, field station, and Caddy, in Docker), with Docker and Docker Compose 2.24.4 or later:
+
+```bash
+npm run dev:lab                    # build from source and start at https://localhost:8443/lab/
+npm run dev:lab -- status          # containers, plus site, health, and Lab status checks
+npm run dev:lab -- stop            # stop; keeps the study, Kafka data, and secrets
+npm run dev:lab -- discard         # delete the local study (asks you to confirm)
+```
+
+It keeps everything under the git-ignored `.local/lab/`, publishes only `127.0.0.1:8443`, uses a throwaway test certificate it never adds to any trust store, and deploys nothing. Stopping never deletes data; only a confirmed `discard` does. See [docs/LOCAL_LAB.md](docs/LOCAL_LAB.md) for the certificate, proxied networks, and the manual recipe.
 
 In production the field station runs the simulation on the wall clock and publishes to Kafka (`apps/field-station/src/server/main.ts`), and the gateway is `streamotter start` with compiled handlers (`npm run build -w @lontra-creek/field-station`). [`deploy/compose.yaml`](deploy/compose.yaml) runs them with Kafka 4.1.2 and Caddy; [`.github/workflows/stack.yml`](.github/workflows/stack.yml) shows how to bring the stack up with throwaway secrets and test it from outside.
 

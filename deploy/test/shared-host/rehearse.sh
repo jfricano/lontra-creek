@@ -8,12 +8,14 @@ stack="$RUNNER_TEMP/lontra-shared"
 mkdir -p "$stack"
 deploy/make-secrets.sh "$stack/.env"
 deploy/make-certs.sh kafka "$stack/secrets/kafka" lab-1-kafka lab-2-kafka lab-3-kafka
-deploy/make-certs.sh test-origin "$stack/secrets/origin" demo.streamotter.app
+deploy/make-certs.sh test-origin "$stack/secrets/origin" demo.streamotter.dev
 {
   echo 'LONTRA_IMAGE=lontra-creek:shared-ci'
   echo "LONTRA_SECRETS=$stack/secrets"
   echo "FIELD_EPOCH=$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)"
   echo 'LONTRA_CGROUP_PARENT=lontra.slice'
+  # Least-privilege Kafka ACLs, bootstrapped within the shared host's Kafka limits.
+  echo 'KAFKA_AUTHORIZATION=acl'
 } >> "$stack/.env"
 base=(docker compose -p lontra-creek -f deploy/compose.yaml -f deploy/compose.shared.yaml --env-file "$stack/.env")
 full=(docker compose -p lontra-creek -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.shared.yaml -f deploy/compose.shared.lab.yaml --env-file "$stack/.env")
@@ -36,7 +38,8 @@ node deploy/test/shared-host/config.mjs "$stack/base.json"
 "${full[@]}" config --format json > "$stack/full.json"
 node deploy/test/shared-host/config.mjs "$stack/full.json"
 # Lab overlay is used only by this synthetic-data rehearsal; public Lab stays gated.
-"${full[@]}" up -d --wait --wait-timeout 420
+# A new Kafka volume's ACL bootstrap takes about 4 minutes at the shared limit.
+"${full[@]}" up -d --wait --wait-timeout 720
 "${full[@]}" ps -q | xargs docker inspect > "$stack/containers.json"
 sudo node deploy/test/shared-host/config.mjs "$stack/full.json" "$stack/containers.json"
 (
@@ -46,22 +49,23 @@ metrics=$!
 docker run -d --name lontra-shared-edge --network edge-lontra --ip 10.203.43.2 \
   -p 127.0.0.1:443:443 -v "$root/deploy/test/shared-host/Caddyfile.edge:/etc/caddy/Caddyfile:ro" \
   -v "$stack/secrets/origin:/etc/caddy/origin:ro" caddy:2.11.4-alpine
-printf '127.0.0.1 demo.streamotter.app\n' | sudo tee -a /etc/hosts >/dev/null
-for i in $(seq 1 30); do curl -sSf --cacert "$stack/secrets/origin/ca.pem" https://demo.streamotter.app/api/config >/dev/null && break; sleep 1; done
+printf '127.0.0.1 demo.streamotter.dev\n' | sudo tee -a /etc/hosts >/dev/null
+for i in $(seq 1 30); do curl -sSf --cacert "$stack/secrets/origin/ca.pem" https://demo.streamotter.dev/api/config >/dev/null && break; sleep 1; done
 peer() {
-  docker run --rm --network edge-lontra --ip "$1" --add-host demo.streamotter.app:10.203.43.2 \
+  docker run --rm --network edge-lontra --ip "$1" --add-host demo.streamotter.dev:10.203.43.2 \
     -e NODE_EXTRA_CA_CERTS=/ca.pem -v "$stack/secrets/origin/ca.pem:/ca.pem:ro" \
     -v "$root/deploy/test/shared-host/peer.mjs:/peer.mjs:ro" lontra-creek:shared-ci node /peer.mjs "$2"
 }
 peer 10.203.43.4 attacker
 peer 10.203.43.5 other
 export NODE_EXTRA_CA_CERTS="$stack/secrets/origin/ca.pem"
-export STACK_ORIGIN=https://demo.streamotter.app
-export LAB_API_ORIGIN=https://demo.streamotter.app
-export LAB_SITE_ORIGIN=https://streamotter.app
+export STACK_ORIGIN=https://demo.streamotter.dev
+export LAB_API_ORIGIN=https://demo.streamotter.dev
+export LAB_SITE_ORIGIN=https://streamotter.dev
 node --test --test-force-exit deploy/test/stack.test.ts
 node --test --test-force-exit deploy/test/lab.test.ts
 for bench in 1 2 3; do "${full[@]}" exec -T "lab-$bench" node --input-type=module - bench < deploy/test/lab-private-checks.mjs; done
+STACK_KAFKA_EXEC="${full[*]} exec -T" STACK_KAFKA_BENCHES="1 2 3" node --test --test-force-exit deploy/test/kafka-acls.test.ts
 "${full[@]}" exec -T field-station node --input-type=module - field < deploy/test/lab-private-checks.mjs
 # Install shared activation metadata only on this disposable runner.
 release="/srv/apps/lontra/releases/$GITHUB_SHA"
@@ -82,7 +86,7 @@ sudo /usr/local/lib/app-backup-hooks/lontra-snapshot "$stage"
 sudo /usr/local/lib/app-backup-hooks/lontra-verify "$stage"
 sudo test -s "$stage/lontra-verified.json"
 [ "$(world_hash)" = "$before" ]
-curl -sSf --cacert "$stack/secrets/origin/ca.pem" https://demo.streamotter.app/api/status >/dev/null
+curl -sSf --cacert "$stack/secrets/origin/ca.pem" https://demo.streamotter.dev/api/status >/dev/null
 # Corruption must fail closed without a live-volume write or leaked resources.
 sudo rm "$stage/lontra-verified.json"
 printf 'broken' | sudo tee "$stage/lontra-world.json" >/dev/null
@@ -93,7 +97,7 @@ sudo test ! -e "$stage/lontra-verified.json"
 [ -z "$(docker ps -aq --filter name=lontra-backup-verify-)" ]
 # Default shared router denies Lab traffic even if an old bench still exists.
 "${base[@]}" up -d --no-deps --wait caddy
-[ "$(curl -s -o /dev/null -w '%{http_code}' --cacert "$stack/secrets/origin/ca.pem" -H 'Origin: https://streamotter.app' 'https://demo.streamotter.app/lab/1/socket.io/?EIO=4&transport=websocket')" = 404 ]
+[ "$(curl -s -o /dev/null -w '%{http_code}' --cacert "$stack/secrets/origin/ca.pem" -H 'Origin: https://streamotter.dev' 'https://demo.streamotter.dev/lab/1/socket.io/?EIO=4&transport=websocket')" = 404 ]
 "${full[@]}" up -d --no-deps --wait caddy
 "${full[@]}" ps -q | xargs docker inspect > "$stack/containers-final.json"
 sudo node deploy/test/shared-host/config.mjs "$stack/full.json" "$stack/containers-final.json"

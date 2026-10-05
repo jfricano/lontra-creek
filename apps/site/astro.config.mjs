@@ -19,7 +19,7 @@ const SITE_PORT = parsePort("LONTRA_SITE_PORT", 4321);
 const API_PORT = parsePort("LONTRA_API_PORT", 7402);
 
 export default defineConfig({
-  site: "https://streamotter.app",
+  site: "https://streamotter.dev",
   server: { host: "127.0.0.1", port: SITE_PORT },
   vite: {
     // In development the field station's small site API runs beside the gateway.

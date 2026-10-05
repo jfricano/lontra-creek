@@ -8,7 +8,9 @@
  *
  * Internal, on the compose network only: GET /internal/views/:channel/:id, the
  * current view or notebook the gateway's snapshot handler asks for, with the
- * service token.
+ * service token. Under /lab-internal/N/, with bench N's own token only: that
+ * bench's snapshots (Lab contract section 8) and its study and recovery routes
+ * (section 8a).
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
@@ -21,7 +23,11 @@ import type { FieldStation } from "./station.ts";
 
 import { LeasePool } from '../lab/leases.ts';
 import { LabError, ACTIONS } from '../lab/errors.ts';
-import type { LabAction } from '../lab/contract.ts';
+import type { BenchId, LabAction, RecoveryAssessRequest } from '../lab/contract.ts';
+import { StudyClosedError, type LabStudies } from '../lab/studies.ts';
+import type { SandboxPool } from '../sandbox/leases.ts';
+import { sandboxRoute } from '../sandbox/routes.ts';
+import { labCapabilities, refuseIntent } from '../lab/capabilities.ts';
 
 type Headers = Record<string, string>;
 
@@ -88,7 +94,7 @@ export function clientAddress(request: IncomingMessage): string {
   return (typeof header === "string" && header !== "" ? header : request.socket.remoteAddress) ?? "unknown";
 }
 
-export function publicApi(options: { config: ServerConfig; station: FieldStation; notebooks: Notebooks; lab?: LeasePool; limiter?: RateLimiter; log?: (message: string) => void }): Server {
+export function publicApi(options: { config: ServerConfig; station: FieldStation; notebooks: Notebooks; lab?: LeasePool; sandbox?: SandboxPool; limiter?: RateLimiter; log?: (message: string) => void }): Server {
   const { config, station, notebooks } = options;
   const limiter = options.limiter ?? new RateLimiter({ burst: 30, perSecond: 1 });
   const labLimiter = new RateLimiter({ burst: 20, perSecond: 3 });
@@ -96,6 +102,8 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
 
   return createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://field-station.invalid");
+    // Set once the request is under /api/, so an error answer still carries CORS and the page can read it.
+    let cors: Headers = {};
     try {
       if (url.pathname === "/healthz") {
         const healthy = station.ready && station.kafkaHealthy && notebooks.ready;
@@ -110,19 +118,21 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
       if (!url.pathname.startsWith("/api/")) return send(response, 404, { error: "Not found." });
 
       const origin = request.headers.origin;
-      const cors: Headers = { vary: "Origin" };
+      cors = { vary: "Origin" };
       if (origin !== undefined && config.siteOrigins.includes(origin)) {
         cors["access-control-allow-origin"] = origin;
         cors["access-control-allow-credentials"] = "true";
       }
       if (request.method === "OPTIONS") {
         if (cors["access-control-allow-origin"] === undefined) return send(response, 403, { error: "Origin not allowed." }, cors);
-        response.writeHead(204, { ...cors, "access-control-allow-methods": "GET, POST", "access-control-allow-headers": "content-type", "access-control-max-age": "600" });
+        response.writeHead(204, { ...cors, "access-control-allow-methods": "GET, POST", "access-control-allow-headers": url.pathname.startsWith("/api/sandbox/wb/") ? "content-type, x-streamotter-workbench" : "content-type", "access-control-max-age": "600" });
         return response.end();
       }
 
-      const isLab = url.pathname.startsWith('/api/lab/');
+      // The workbench sandbox shares the Lab request budget (sandbox contract §2).
+      const isLab = url.pathname.startsWith('/api/lab/') || url.pathname.startsWith('/api/sandbox/');
       const wait = (isLab ? labLimiter : limiter).take(clientAddress(request));
+      if (url.pathname.startsWith('/api/sandbox/')) return sandboxRoute(request, response, url, { pool: options.sandbox, siteOrigins: config.siteOrigins, secret: config.secret, secure: config.production, cors, address: clientAddress(request), wait });
       if (wait > 0) return send(response, 429, { error: "Too many requests.", ...(isLab ? { code: "too-many-requests" } : {}) }, { ...cors, "retry-after": String(wait) });
 
       if (isLab) {
@@ -130,16 +140,21 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
           if (request.method === 'POST' && origin !== undefined && !config.siteOrigins.includes(origin)) throw new LabError('origin-not-allowed', 403);
           const lab = options.lab;
           const route = `${request.method} ${url.pathname}`;
-          if (!['GET /api/lab/status', 'POST /api/lab/lease', 'GET /api/lab/lease', 'POST /api/lab/lease/return', 'POST /api/lab/lease/token', 'POST /api/lab/actions', 'GET /api/lab/trace'].includes(route)) return send(response, 404, { error: 'Not found.' }, cors);
+          if (!['GET /api/lab/status', 'POST /api/lab/lease', 'GET /api/lab/lease', 'POST /api/lab/lease/return', 'POST /api/lab/lease/token', 'POST /api/lab/actions', 'GET /api/lab/trace', 'GET /api/lab/capabilities'].includes(route)) return send(response, 404, { error: 'Not found.' }, cors);
           let session = readSession(request.headers.cookie, config.secret);
           if (!session && route === 'POST /api/lab/lease') {
             const badge = badgeFor({ cookieHeader: undefined, role: 'volunteer', secret: config.secret, secure: config.production });
             cors['set-cookie'] = badge.setCookie!; session = readSession(badge.setCookie!, config.secret);
           }
-          if (route !== 'GET /api/lab/status' && !session) throw new LabError('no-session', 401);
+          if (route !== 'GET /api/lab/status' && route !== 'GET /api/lab/capabilities' && !session) throw new LabError('no-session', 401);
           const body = request.method === 'POST' ? await readJson(request) : {};
           const keys = Object.keys(body);
-          if (keys.some(key => route !== 'POST /api/lab/actions' || key !== 'action') || [...url.searchParams.keys()].some(key => route !== 'GET /api/lab/trace' || key !== 'after')) throw new LabError('invalid-request', 400);
+          // A proposed intent (contract section 12) has its own shape; it is validated, then refused.
+          const intent = route === 'POST /api/lab/actions' && 'intent' in body;
+          if (!intent && keys.some(key => route !== 'POST /api/lab/actions' || key !== 'action') || [...url.searchParams.keys()].some(key => route !== 'GET /api/lab/trace' || key !== 'after')) throw new LabError('invalid-request', 400);
+          // Neither touches the pool: the summary is static per process, and no installed release supports an intent.
+          if (route === 'GET /api/lab/capabilities') return send(response, 200, labCapabilities({ labEnabled: lab?.enabled ?? false, now: Date.now() }), cors);
+          if (intent) refuseIntent(body);
           if (!lab) {
             if (route === 'GET /api/lab/status') return send(response, 200, { enabled: false, now: new Date().toISOString(), benches: [], queueLength: 0, nextFreeAt: null }, cors);
             throw new LabError('lab-unavailable', 503);
@@ -199,29 +214,83 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
       send(response, 404, { error: "Not found." }, cors);
     } catch (error) {
       log(`Request failed: ${error instanceof Error ? error.message : String(error)}`);
-      if (!response.headersSent) send(response, 400, { error: "Bad request." });
+      if (!response.headersSent) send(response, 400, { error: "Bad request." }, cors);
     }
   });
 }
 
-export function internalApi(options: { serviceToken: string; station: FieldStation; notebooks: Notebooks; labTokens?: readonly string[] }): Server {
+/** Reads a bench's small JSON body: an object of at most 4 KB, or null. */
+async function benchBody(request: IncomingMessage): Promise<Record<string, unknown> | null> {
+  try {
+    let text = "";
+    for await (const chunk of request) { text += chunk; if (Buffer.byteLength(text) > 4_096) return null; }
+    const value: unknown = text === "" ? {} : JSON.parse(text);
+    return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  } catch { return null; }
+}
+
+/** A recovery request as the contract types it, or null. Coordinates only; a record's bytes are never accepted. */
+function assessRequest(body: Record<string, unknown>): RecoveryAssessRequest | null {
+  const { studyId, sourceId, record } = body;
+  if (typeof studyId !== "string" || typeof sourceId !== "string" || Object.keys(body).some(key => !["studyId", "sourceId", "record"].includes(key))) return null;
+  if (record === undefined) return { studyId, sourceId };
+  const r = record as Record<string, unknown>;
+  if (typeof r !== "object" || r === null || Object.keys(r).length !== 3 || typeof r["topic"] !== "string" || !Number.isSafeInteger(r["partition"]) || typeof r["offset"] !== "string" || !/^\d{1,20}$/.test(r["offset"])) return null;
+  return { studyId, sourceId, record: { topic: r["topic"], partition: r["partition"] as number, offset: r["offset"] } };
+}
+
+export function internalApi(options: { serviceToken: string; station: FieldStation; notebooks: Notebooks; labTokens?: readonly string[]; studies?: LabStudies }): Server {
   const expected = Buffer.from(`Bearer ${options.serviceToken}`);
   const authorized = (request: IncomingMessage): boolean => {
     const provided = Buffer.from(request.headers.authorization ?? "");
     return provided.length === expected.length && timingSafeEqual(provided, expected);
   };
 
-  return createServer((request, response) => {
+  const benchAuthorized = (bench: number, request: IncomingMessage): boolean => {
+    const token = options.labTokens?.[bench - 1];
+    const expectedLab = Buffer.from(`Bearer ${token ?? ''}`);
+    const provided = Buffer.from(request.headers.authorization ?? '');
+    return token !== undefined && provided.length === expectedLab.length && timingSafeEqual(provided, expectedLab);
+  };
+
+  return createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://field-station.invalid");
+    // The private study and recovery surface (Lab contract section 8a): bench N's own token, POST only.
+    const study = /^\/lab-internal\/([123])\/(?:studies\/([A-Za-z0-9_-]{16})\/(close|discard)|recovery\/(assess))$/.exec(url.pathname);
+    if (study) {
+      const bench = Number(study[1]) as BenchId;
+      if (!benchAuthorized(bench, request)) return send(response, 401, { error: 'Unauthorized.' });
+      const studies = options.studies;
+      if (request.method !== 'POST' || !studies) return send(response, 404, { error: 'Not found.' });
+      try {
+        if (study[3] === 'close') return send(response, 200, await studies.close(bench, study[2]!));
+        if (study[3] === 'discard') return send(response, 200, await studies.discard(bench, study[2]!));
+        const body = await benchBody(request); const input = body && assessRequest(body);
+        if (!input) return send(response, 400, { error: 'Invalid request.' });
+        return send(response, 200, await studies.assess(bench, input));
+      } catch (error) {
+        if (error instanceof StudyClosedError) return send(response, 409, { error: 'The study is not open.', code: 'study-closed' });
+        if (error instanceof RangeError) return send(response, 400, { error: 'Invalid request.' });
+        return send(response, 500, { error: 'Study operation failed.' });
+      }
+    }
     const restricted = /^\/lab-internal\/([123])\/views\/(station|otter|reach|creekOverview)\/([^/]+)$/.exec(url.pathname);
     if (restricted) {
-      const token = options.labTokens?.[Number(restricted[1]) - 1];
-      const expectedLab = Buffer.from(`Bearer ${token ?? ''}`);
-      const provided = Buffer.from(request.headers.authorization ?? '');
-      if (!token || provided.length !== expectedLab.length || !timingSafeEqual(provided, expectedLab)) return send(response, 401, { error: 'Unauthorized.' });
+      const bench = Number(restricted[1]) as BenchId;
+      if (!benchAuthorized(bench, request)) return send(response, 401, { error: 'Unauthorized.' });
       if (request.method !== 'GET') return send(response, 404, { error: 'Not found.' });
       if (!options.station.ready) return send(response, 503, { error: 'Catching up.' });
       let id: string; try { id = decodeURIComponent(restricted[3]!); } catch { return send(response, 400, { error: 'Invalid request.' }); }
+      // With studies, the bench's served state: the shared creek or its open study's own
+      // writes, and a boundary acknowledgment only when one is asked for (section 8a).
+      if (options.studies) {
+        const boundary = url.searchParams.get('boundary');
+        if (boundary !== null && boundary.length > 96) return send(response, 400, { error: 'Invalid request.' });
+        try {
+          const snapshot = await options.studies.snapshot(bench, `${restricted[2]}:${id}`, boundary);
+          return snapshot ? send(response, 200, snapshot) : send(response, 404, { error: 'Not found.' });
+        } catch { return send(response, 500, { error: 'Snapshot failed.' }); }
+      }
       const view = options.station.view(`${restricted[2]}:${id}`);
       return view ? send(response, 200, { revision: view.revision, data: view.data }) : send(response, 404, { error: 'Not found.' });
     }

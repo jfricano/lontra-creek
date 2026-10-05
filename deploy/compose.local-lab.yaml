@@ -1,6 +1,10 @@
 # Local-only overlay, applied after compose.yaml and compose.lab.yaml.
 # Compose 2.24.4+ is required for !override. Build the site before starting.
 services:
+  kafka:
+    environment:
+      # Least-privilege Kafka ACLs (deploy/kafka/start.sh); set KAFKA_AUTHORIZATION=none to compare.
+      KAFKA_AUTHORIZATION: ${KAFKA_AUTHORIZATION:-acl}
   gateway:
     volumes:
       - ${LOCAL_LAB_DIR:?}/streamotter.production.json:/app/apps/field-station/streamotter.production.json:ro

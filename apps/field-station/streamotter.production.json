@@ -89,7 +89,7 @@
   },
   "gateway": {
     "allowedOrigins": [
-      "https://streamotter.app"
+      "https://streamotter.dev"
     ],
     "host": "0.0.0.0",
     "path": "/streamotter/socket.io",

@@ -82,6 +82,33 @@ test('rollback failure is explicit and keeps the last release record', () => {
   } finally { f.close(); }
 });
 
+test('deploy refuses a stack.env that would lower Kafka authorization, unless a root operator rolls it back', () => {
+  const f = fixture();
+  const stack = (line: string) => writeFileSync(join(f.dir, 'stack.env'), `FIELD_STATION_SECRET=fixture-only\n${line}`);
+  const authorization = () => /^KAFKA_AUTHORIZATION=(.*)$/m.exec(readFileSync(join(f.dir, 'current.env'), 'utf8'))?.[1];
+  try {
+    stack('KAFKA_AUTHORIZATION=migrate\n');
+    assert.equal(f.run(sha).status, 0);
+    stack('KAFKA_AUTHORIZATION=acl\n');
+    assert.equal(f.run(sha).status, 0);
+    assert.equal(authorization(), 'acl');
+    const ups = () => f.calls().filter(args => args.includes('up')).length;
+    const before = ups();
+    // An edit made only in current.env, or a typo, must not reopen the broker.
+    for (const line of ['', 'KAFKA_AUTHORIZATION=none\n', 'KAFKA_AUTHORIZATION=migrate\n', 'KAFKA_AUTHORIZATION=ACL\n']) {
+      stack(line);
+      const refused = f.run(sha);
+      assert.equal(refused.status, 1, line);
+      assert.match(refused.stderr, /Refusing to deploy: stack\.env would lower KAFKA_AUTHORIZATION/);
+      assert.equal(authorization(), 'acl');
+    }
+    assert.equal(ups(), before);
+    stack('KAFKA_AUTHORIZATION=migrate\n');
+    assert.equal(f.run(sha, { LONTRA_ALLOW_AUTHORIZATION_DOWNGRADE: '1' }).status, 0);
+    assert.equal(authorization(), 'migrate');
+  } finally { f.close(); }
+});
+
 test('deployment and SSH entrypoints refuse tags and command injection before Docker or sudo', () => {
   const f = fixture();
   try {

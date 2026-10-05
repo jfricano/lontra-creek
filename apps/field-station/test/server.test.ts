@@ -257,7 +257,7 @@ describe("the field station's HTTP APIs", () => {
   }
 
   before(async () => {
-    config = { ...readConfig({ FIELD_STATION_SERVICE_TOKEN: token }), siteOrigins: ["https://streamotter.app"], gatewayOrigin: "https://demo.streamotter.app" };
+    config = { ...readConfig({ FIELD_STATION_SERVICE_TOKEN: token }), siteOrigins: ["https://streamotter.dev"], gatewayOrigin: "https://demo.streamotter.dev" };
     const queue = new PublishQueue(publisher, () => undefined);
     field = new FieldStation({ queue, dataDir: await dataDir(), epoch: EPOCH, tickMs: TICK_MS, generation: 1, now: time.now, log: () => undefined });
     notebooks = new Notebooks({ queue, tenantId: "lontra-creek", now: time.now, log: () => undefined });
@@ -302,12 +302,12 @@ describe("the field station's HTTP APIs", () => {
   });
 
   test("the site API answers the site's origin with credentials, and nobody else's", async () => {
-    const allowed = await fetch(`${apiOrigin}/api/config`, { headers: { origin: "https://streamotter.app" } });
-    assert.equal(allowed.headers.get("access-control-allow-origin"), "https://streamotter.app");
+    const allowed = await fetch(`${apiOrigin}/api/config`, { headers: { origin: "https://streamotter.dev" } });
+    assert.equal(allowed.headers.get("access-control-allow-origin"), "https://streamotter.dev");
     assert.equal(allowed.headers.get("access-control-allow-credentials"), "true");
-    assert.deepEqual(await allowed.json(), { gatewayOrigin: "https://demo.streamotter.app", gatewayPath: "/streamotter/socket.io", mode: "kafka", tickMs: TICK_MS });
+    assert.deepEqual(await allowed.json(), { gatewayOrigin: "https://demo.streamotter.dev", gatewayPath: "/streamotter/socket.io", mode: "kafka", tickMs: TICK_MS });
 
-    const preflight = await fetch(`${apiOrigin}/api/badge`, { method: "OPTIONS", headers: { origin: "https://streamotter.app", "access-control-request-method": "POST" } });
+    const preflight = await fetch(`${apiOrigin}/api/badge`, { method: "OPTIONS", headers: { origin: "https://streamotter.dev", "access-control-request-method": "POST" } });
     assert.equal(preflight.status, 204);
     assert.equal(preflight.headers.get("access-control-allow-headers"), "content-type");
 
@@ -317,8 +317,22 @@ describe("the field station's HTTP APIs", () => {
     assert.equal(forged.status, 403);
   });
 
+  test("a malformed request from the site's origin gets a 400 the page can read", async () => {
+    const badge = await fetch(`${apiOrigin}/api/badge`, { method: "POST", headers: { origin: "https://streamotter.dev", "content-type": "application/json", "x-client-ip": "198.51.100.39" }, body: "{}" });
+    const cookie = badge.headers.get("set-cookie")!.split(";")[0]!;
+    for (const path of ["/api/badge", "/api/notebook/sightings"]) {
+      const response = await fetch(`${apiOrigin}${path}`, { method: "POST", headers: { origin: "https://streamotter.dev", cookie, "content-type": "application/json", "x-client-ip": "198.51.100.40" }, body: "{not json" });
+      assert.equal(response.status, 400, path);
+      assert.equal(response.headers.get("access-control-allow-origin"), "https://streamotter.dev", path);
+      assert.equal(response.headers.get("access-control-allow-credentials"), "true");
+    }
+    const tooLarge = await fetch(`${apiOrigin}/api/badge`, { method: "POST", headers: { origin: "https://streamotter.dev", "content-type": "application/json", "x-client-ip": "198.51.100.41" }, body: JSON.stringify({ role: "x".repeat(5_000) }) });
+    assert.equal(tooLarge.status, 400);
+    assert.equal(tooLarge.headers.get("access-control-allow-origin"), "https://streamotter.dev");
+  });
+
   test("a badge keeps its subject for the same role and changes it for another", async () => {
-    const first = await fetch(`${apiOrigin}/api/badge`, { method: "POST", headers: { origin: "https://streamotter.app", "content-type": "application/json", "x-client-ip": "198.51.100.7" }, body: JSON.stringify({ role: "volunteer" }) });
+    const first = await fetch(`${apiOrigin}/api/badge`, { method: "POST", headers: { origin: "https://streamotter.dev", "content-type": "application/json", "x-client-ip": "198.51.100.7" }, body: JSON.stringify({ role: "volunteer" }) });
     assert.equal(first.status, 200);
     const cookie = first.headers.get("set-cookie")!;
     assert.match(cookie, /^lc_session=[^;]+; Path=\/api; HttpOnly; SameSite=Strict; Max-Age=1800$/);
@@ -355,7 +369,7 @@ describe("the field station's HTTP APIs", () => {
 
   test("a visitor logs sightings in their own notebook, and only there", async () => {
     const headers = (ip: string, cookie?: string): Record<string, string> => ({
-      origin: "https://streamotter.app", "content-type": "application/json", "x-client-ip": ip, ...(cookie === undefined ? {} : { cookie })
+      origin: "https://streamotter.dev", "content-type": "application/json", "x-client-ip": ip, ...(cookie === undefined ? {} : { cookie })
     });
     const sighting = JSON.stringify({ otterId: "LO-07", reachId: "kestrel-bend", activity: "foraging" });
     assert.equal((await fetch(`${apiOrigin}/api/notebook/sightings`, { method: "POST", headers: headers("192.0.2.1"), body: sighting })).status, 401);
@@ -403,8 +417,8 @@ describe("configuration from the environment", () => {
     FIELD_STATION_SECRET: "s".repeat(32),
     FIELD_STATION_SERVICE_TOKEN: "t".repeat(32),
     FIELD_EPOCH: "2026-10-01T00:00:00Z",
-    SITE_ORIGIN: "https://streamotter.app",
-    GATEWAY_PUBLIC_ORIGIN: "https://demo.streamotter.app",
+    SITE_ORIGIN: "https://streamotter.dev",
+    GATEWAY_PUBLIC_ORIGIN: "https://demo.streamotter.dev",
     KAFKA_BROKERS: "kafka:9094",
     KAFKA_CA_FILE: "/etc/lontra/kafka/ca.pem",
     KAFKA_FIELD_STATION_USERNAME: "field-station",
@@ -415,7 +429,7 @@ describe("configuration from the environment", () => {
     const config = readConfig(production);
     assert.equal(config.epoch, "2026-10-01T00:00:00.000Z");
     assert.deepEqual(config.kafka, { brokers: ["kafka:9094"], caFile: "/etc/lontra/kafka/ca.pem", sasl: { username: "field-station", password: "p" } });
-    assert.deepEqual(config.siteOrigins, ["https://streamotter.app"]);
+    assert.deepEqual(config.siteOrigins, ["https://streamotter.dev"]);
   });
 
   test("production refuses to run without its epoch, TLS, SCRAM, or origins", () => {

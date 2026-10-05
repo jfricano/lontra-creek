@@ -41,7 +41,7 @@ public preview URL remain prerequisites. No claim about present free-tier
 capacity is made here.
 
 **Preview limitation:** a `pages.dev` preview is suitable for static review.
-The production demo accepts only the `streamotter.app` origin and its session
+The production demo accepts only the `streamotter.dev` origin and its session
 cookie is SameSite=Strict. Cross-site previews therefore cannot complete the
 live walkthrough. Full staging needs an explicitly approved same-site staging
 host and matching server/gateway origin configuration, or testing at the final
@@ -101,7 +101,9 @@ On health failure, the script reapplies the last successful env file and waits
 for health again. It returns failure even when rollback succeeds. If the first
 deployment fails, it stops the new stack **without deleting data volumes**.
 `ROLLBACK FAILED` means an operator must intervene; it does not report success.
-A pull failure leaves the running stack untouched. An interrupted SSH/session
+A pull failure leaves the running stack untouched. A deploy also refuses,
+before pulling, a `stack.env` that would lower `KAFKA_AUTHORIZATION` (Kafka
+authorization, below). An interrupted SSH/session
 or host power loss requires inspecting actual container health and rerunning
 an approved deploy; the on-disk last-success record alone is not health proof.
 
@@ -187,12 +189,147 @@ before enabling benches; formatting is only for new volumes. Reissue the
 broker certificate using the existing CA with `lab-1-kafka lab-2-kafka
 lab-3-kafka` SANs (setup does this) and restart Kafka under a maintenance plan.
 
-**Unresolved R2 release risk:** unique SCRAM identities do not enforce Kafka
-topic/group ACL confinement. A compromised bench that possesses its Kafka
-credential could access another bench's or production topics. The PM retained
-this contract residual risk for the preparation increment on September 27;
-public bench deployment remains gated on owner disposition or a subsequent
-ACL hardening change. Do not describe this as Kafka least privilege.
+**R2 (Kafka authorization) is closed for local and CI stacks only.** With
+`KAFKA_AUTHORIZATION=acl`, `kafka/start.sh` enforces least-privilege ACLs per
+Kafka user (Lab contract 10.9). The hosted broker still runs without an
+authorizer (`compose.yaml` defaults to `none`), so on the host a compromised
+bench that possesses its Kafka credential could still access another bench's
+or production topics. Public bench deployment and any hosted quarantine
+exercise stay gated on the owner approving and running the migration below. Do
+not describe the hosted broker as Kafka least privilege until it has.
+
+## Kafka authorization (LC11-ADR-03)
+
+**Requires the owner's explicit approval before it is run on the hosted
+broker.** It is a deployment-plan amendment: nothing in setup or deployment
+applies it on its own, and `make-secrets.sh` never adds the setting.
+
+What it changes: `KAFKA_AUTHORIZATION` in `/srv/lontra/stack.env` selects how
+`kafka/start.sh` configures the broker. `none` (the default in `compose.yaml`)
+is today's broker with no authorizer. `acl` enables KRaft's
+`StandardAuthorizer` with `allow.everyone.if.no.acl.found=false`, makes the
+loopback listeners' `User:ANONYMOUS` the only super user, and on every start
+grants the gateway, the field station, and each `lab-N` bench user exactly the
+ACLs in Lab contract 10.9, creates each bench's `lab-N.quarantine` topic, and
+only then reports healthy. `migrate` is `acl` with
+`allow.everyone.if.no.acl.found=true`, which Kafka applies per resource, not
+per operation. On every topic or group that has any grant (every `field.`,
+`creek.`, `lab-N.`, `streamotter-lab-N-`, `streamotter-lontra-creek-` and
+`lontra-field-station-read-` name), `migrate` enforces exactly as `acl` does:
+an operation nobody is granted there, such as reading `field.gauges`' configs,
+is denied and fails at once. Only resources nobody is granted stay open: the
+cluster itself (and with it creating and deleting any topic, which Kafka allows
+to a user with `Create` or `Delete` on the cluster, and reading broker
+configs), and topics and groups outside every granted prefix. Kafka logs those
+allowed operations at DEBUG only, below the authorizer log's default INFO, so
+they leave no trace unless step 3 raises it. CI (`Stack`, `Lab spike`, `Shared host adapter`) and the
+local Lab (`compose.local-lab.yaml`) run `acl`; a new volume there gets its
+ACLs on first start.
+
+A KRaft broker stores ACLs in its metadata log and accepts them only once an
+authorizer is configured, so "ACLs before enforcement" means the `migrate`
+step below. Each step restarts Kafka: run it in a maintenance window with
+recovery copies of `/srv/lontra/stack.env` and the last world checkpoint (the
+checkpoint section below). `$compose` is the deployed release's command, for
+example `sudo docker compose -f <release config>/compose.yaml [-f
+<release config>/compose.lab.yaml] --env-file /srv/lontra/current.env`, where
+`<release config>` is `current.env`'s `LONTRA_CONFIG_DIR`. Each deploy makes a
+new release directory, so set `$compose` again after steps 2 and 4.
+
+Set the mode only in `/srv/lontra/stack.env` and apply it with a deploy.
+Every deploy builds its candidate env from `stack.env` alone and then replaces
+`current.env` with it, so a line written only into `current.env` is dropped by
+the next routine deploy and Kafka silently returns to `none`. `lontra-deploy`
+refuses a `stack.env` that would lower `KAFKA_AUTHORIZATION` below the running
+release's (`acl` > `migrate` > `none`, and unset is `none`); only the rollback
+below overrides that. Redeploying the running release applies the change:
+
+```sh
+sudo /usr/local/sbin/lontra-deploy "$(sudo cat /srv/lontra/current.sha)"
+```
+
+1. **Preflight.** The deployed release must include this `kafka/start.sh` and
+   `compose.yaml` (`KAFKA_AUTHORIZATION` in the kafka service, and the health
+   check that waits for `/tmp/lontra-kafka.ready`). Confirm the SCRAM users
+   exist: `$compose exec kafka /opt/kafka/bin/kafka-configs.sh
+   --bootstrap-server 127.0.0.1:9092 --describe --entity-type users` lists
+   `gateway`, `field-station`, and, with the Lab, `lab-1` to `lab-3`. Prefix
+   every Kafka tool call in this section with `env
+   KAFKA_HEAP_OPTS=-Xmx256m` after `exec kafka`, or it starts with the
+   broker's 3 GB pre-touched heap.
+2. **Install the ACLs without enforcing them.** Stop the clients so none
+   reconnects while the grants are being added: `$compose stop caddy gateway
+   field-station` (and `lab-1 lab-2 lab-3 lab-1-kafka lab-2-kafka
+   lab-3-kafka` with the Lab). Append `KAFKA_AUTHORIZATION=migrate` to
+   `/srv/lontra/stack.env` and redeploy the running release (above). Kafka is
+   recreated, reports healthy only after the bootstrap, and the clients start
+   after it. If the release is not healthy within the deploy's 300 seconds,
+   the deploy restores the previous env without the line: remove it from
+   `stack.env` too before investigating.
+3. **Verify under `migrate`.**
+   - `$compose logs kafka | grep 'Kafka authorization'` reports `migrate`,
+     13 grants with three benches (4 without the Lab), and the quarantine
+     topics.
+   - `$compose exec kafka grep -E '^(authorizer|allow|super)'
+     /tmp/lontra-kafka.properties` shows the authorizer, `true`, and
+     `User:ANONYMOUS`.
+   - `$compose exec kafka /opt/kafka/bin/kafka-acls.sh --bootstrap-server
+     127.0.0.1:9092 --list` matches Lab contract 10.9's grants, nothing more.
+   - `lontra-health`, the site, a live view, a notebook sighting, and (with
+     the Lab) a lease and a reset all work.
+   - Make the operations `migrate` lets through visible: `$compose exec kafka
+     env KAFKA_HEAP_OPTS=-Xmx256m /opt/kafka/bin/kafka-configs.sh
+     --bootstrap-server 127.0.0.1:9092 --alter --entity-type broker-loggers
+     --entity-name 1 --add-config kafka.authorizer.logger=DEBUG`. At DEBUG the
+     authorizer logs every allowed request, so watch the disk and keep the
+     window to the hour below.
+   - After at least one hour of normal traffic, including a Lab reset, search
+     the authorizer logs, which roll hourly: `$compose exec kafka sh -c "grep
+     -h -E 'is Denied|DefaultAllow' /opt/kafka/logs/kafka-authorizer.log*"`.
+     An `is Denied` line for `User:gateway`, `User:field-station`, or a
+     bench's own `lab-N.*` topics and `streamotter-lab-N-` groups is a missing
+     grant on a granted resource, already failing: stop and roll back. A
+     `based on rule DefaultAllow` line for one of those users is an operation
+     on a resource nobody is granted, which `acl` will deny: stop and roll
+     back, except `IdempotentWrite` or `Create` on
+     `Cluster:LITERAL:kafka-cluster`, which Kafka checks again on the topic,
+     where the grants cover it (KIP-679 and topic `Create`).
+   - Return the logger to INFO: the same `kafka-configs.sh` command with
+     `--add-config kafka.authorizer.logger=INFO`. (Step 4's restart also
+     resets it.)
+4. **Enforce.** Change the line in `/srv/lontra/stack.env` to
+   `KAFKA_AUTHORIZATION=acl` and redeploy the running release; Kafka restarts
+   and the clients reconnect after it.
+   Repeat step 3's checks with `acl` and `false` expected. For the probe
+   matrix, run `deploy/test/kafka-acls.test.ts` against the host with
+   `STACK_KAFKA_EXEC="$compose exec -T"` and `STACK_KAFKA_BENCHES="1 2 3"` (or
+   empty without the Lab). Its probes write only to the bench quarantine
+   topics and leave empty groups named `*-acl-probe-*`, which expire. They
+   also try writes that must be denied, so the test and the probe script
+   refuse to probe a broker that does not deny what no ACL allows (`none` or
+   `migrate`): run it only after this step.
+5. **Confirm the setting will survive the next deploy:** `sudo grep -H
+   '^KAFKA_AUTHORIZATION=' /srv/lontra/stack.env /srv/lontra/current.env`
+   prints `acl` for both files, and nothing else. **Record the evidence**
+   (commands, output, date) in the deployment record
+   and the Lab contract's R2 entry before the Lab's hosted quarantine
+   exercises are enabled.
+
+**Rollback.** Set `KAFKA_AUTHORIZATION=none` (or back to `migrate` from
+`acl`) in `/srv/lontra/stack.env` and redeploy the running release with the
+downgrade allowed, as root: `sudo LONTRA_ALLOW_AUTHORIZATION_DOWNGRADE=1
+/usr/local/sbin/lontra-deploy "$(sudo cat /srv/lontra/current.sha)"`. The SSH
+deploy credential cannot pass that override. With `none`, the broker has no
+authorizer: the stored ACLs and quarantine topics remain but are not enforced,
+so returning to `acl` later needs no new bootstrap. To remove the ACLs
+entirely, run `kafka-acls.sh --remove --force` with the same resources while
+an authorizer is configured. Neither direction touches topic data, SCRAM
+users, or the world checkpoint.
+
+**Changing a grant later** (a new bench, renamed groups): the bootstrap only
+adds. Update `kafka/start.sh` and Lab contract 10.9 together, deploy, and
+remove obsolete ACLs by hand with `kafka-acls.sh --remove`; the probe test
+fails while the listing has anything extra.
 
 ## Checkpoints, monitoring, and rotation (E5.5)
 

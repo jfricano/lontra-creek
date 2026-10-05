@@ -34,7 +34,7 @@ services:
     memswap_limit: 128m
     pids_limit: 128
     environment:
-      SITE_ORIGIN: ${SITE_ORIGIN:-https://streamotter.app}
+      SITE_ORIGIN: ${SITE_ORIGIN:-https://streamotter.dev}
       LONTRA_LAB_ENABLED: "0"
       LONTRA_TRUSTED_EDGE_IP: ${LONTRA_TRUSTED_EDGE_IP-10.203.43.2}
     volumes: !override

@@ -1,11 +1,56 @@
 ---
 import ReferencePage from "../layouts/ReferencePage.astro";
 import {RELEASE_VERSION, NPM_RELEASE_PAGE, SUPPORT_MATRIX,KAFKA_MODES,DEFAULT_LIMIT_VALUES,LIMIT_FACTS} from "../release-facts.ts";
+import {SITE_RELEASE, SURFACES, SURFACE_LABELS} from "../demo-availability.ts";
+import {INSTALLED_VALIDATOR_ON_FAILURE_HANDLING, V11_SOURCES} from "../planned-failure-handling.ts";
 import {LINKS} from "../site.ts";
+const rejected = INSTALLED_VALIDATOR_ON_FAILURE_HANDLING.issues[0];
 ---
-<ReferencePage title={`Release ${RELEASE_VERSION}`} description="The exact published package this site installs, its verified environments, and its limits.">
-  <p class="notice"><strong>Release candidate.</strong> The API may change before 0.1.0. <a href={NPM_RELEASE_PAGE}>View this release on npm</a> · <a href={LINKS.changelog}>Changelog</a></p>
-  <section><h2>V1 boundaries</h2><ul><li>Run one gateway per project. V1 has no distributed coordination between gateways.</li><li>Channels deliver full state, not an event log. Reconnecting gets a fresh snapshot; missed intermediate revisions are not replayed.</li><li>Production mode exposes no management API, workbench, or production health endpoint.</li><li>Public readers of one channel instance share its public state. Use separate channels for separate audiences.</li></ul><p><a href={LINKS.status}>Read the library’s limitations and verification record ↗</a></p></section>
+<ReferencePage title="Releases and availability" description="The site release, the exact StreamOtter package it installs, what the demo can run today, and the verified operating boundary, each stated separately.">
+  <p class="notice"><strong>Release candidate.</strong> StreamOtter {RELEASE_VERSION}'s API may change before 0.1.0. <a href={NPM_RELEASE_PAGE}>View this release on npm</a> · <a href={LINKS.changelog}>Changelog</a></p>
+  <section aria-labelledby="site-release" data-release-site>
+    <h2 id="site-release">Site release</h2>
+    <dl class="facts-list">
+      <dt>Site</dt><dd>{SITE_RELEASE.name}. <a href={LINKS.demoRepo}>Source ↗</a></dd>
+      <dt>Status</dt><dd>{SITE_RELEASE.launch}</dd>
+      <dt>Milestone</dt><dd>{SITE_RELEASE.milestone} Features that need StreamOtter capabilities no installed release provides are shown as unavailable, with the reason.</dd>
+      <dt>Versioning</dt><dd>{SITE_RELEASE.versioning}</dd>
+    </dl>
+  </section>
+  <section aria-labelledby="library-package" data-release-library>
+    <h2 id="library-package">Library package</h2>
+    <p>This site and its field station install <code>streamotter@{RELEASE_VERSION}</code>, pinned exactly: no version range, the same version in both workspaces and the lockfile.</p>
+    <p><strong>StreamOtter V1.1 is planned, not installed.</strong> Its <a href={V11_SOURCES.spec}>approved specification ↗</a> adds source-failure policies, quarantine, a recovery guard, local operator commands, and an embeddable workbench. {RELEASE_VERSION} has none of them: its validator rejects a <code>failureHandling</code> section{rejected && <> with <code>{rejected.code}</code></>}. <a href="/when-it-breaks/#source-failure-policies">What V1.1 plans for bad records</a></p>
+  </section>
+  <section aria-labelledby="demo-availability" data-release-demo>
+    <h2 id="demo-availability">Demo availability</h2>
+    <p>What each part of the demo does with this build, and what it needs.</p>
+    <div class="table-scroll" tabindex="0" role="region" aria-labelledby="demo-availability"><table><thead><tr><th scope="col">Demo</th><th scope="col">Today</th><th scope="col">What it does</th><th scope="col">What it needs</th></tr></thead><tbody>{SURFACES.map(surface=><tr data-surface-state={surface.state}><th scope="row"><a href={surface.href}>{surface.name}</a></th><td>{SURFACE_LABELS[surface.state]}</td><td>{surface.runs}</td><td>{surface.needs}</td></tr>)}</tbody></table></div>
+    <div class="reference-card" data-release-service data-service="checking">
+      <h3>What this field station reports</h3>
+      <p role="status" data-release-service-status>Asking the field station…</p>
+      <ul data-release-service-lines></ul>
+      <noscript><p>Checking the field station needs JavaScript. The table above describes this build.</p></noscript>
+    </div>
+  </section>
+  <section aria-labelledby="verified-boundary">
+    <h2 id="verified-boundary">Verified operating boundary</h2>
+    <p>The library's own boundary and verification record for {RELEASE_VERSION}. They aren't measurements of this demo's deployment, its capacity, or its browser coverage.</p>
+    <h3>V1 boundaries</h3><ul><li>Run one gateway per project. V1 has no distributed coordination between gateways.</li><li>Channels deliver full state, not an event log. Reconnecting gets a fresh snapshot; missed intermediate revisions are not replayed.</li><li>Production mode exposes no management API, workbench, or production health endpoint.</li><li>Public readers of one channel instance share its public state. Use separate channels for separate audiences.</li><li>A bad record pauses its source. It is never committed or skipped, and <code>resumeSource()</code> retries it after a fix.</li></ul><p><a href={LINKS.status}>Read the library’s limitations and verification record ↗</a></p>
+  </section>
   <section><h2>Verified support matrix</h2><p>These are the package’s verification results, not a claim about the capacity or browser coverage of this demo deployment.</p><div class="table-scroll" tabindex="0" aria-label="Support matrix"><table><thead><tr><th scope="col">Component</th><th scope="col">Environment</th><th scope="col">Verification</th></tr></thead><tbody>{[...SUPPORT_MATRIX,...KAFKA_MODES].map(f=><tr><th scope="row">{f.component}</th><td>{f.detail}<p>{f.note}</p></td><td><a href={f.sources[0]}>{f.status.replaceAll("-"," ")}</a></td></tr>)}</tbody></table></div></section>
   <section><h2>Default package limits</h2><p>Imported from the installed package. These are defaults, not measured capacity. The demo’s operating limits are separate.</p><div class="table-scroll" tabindex="0" aria-label="Default limits"><table><thead><tr><th scope="col">Limit</th><th scope="col">Default</th><th scope="col">Meaning</th></tr></thead><tbody>{Object.entries(DEFAULT_LIMIT_VALUES).map(([key,value])=><tr><th scope="row"><code>{key}</code></th><td>{value}</td><td>{LIMIT_FACTS[key as keyof typeof LIMIT_FACTS].description}</td></tr>)}</tbody></table></div></section>
 </ReferencePage>
+<script>
+import { mountReleaseService } from "../scripts/release-service.ts";
+import { RELEASE } from "../site.ts";
+const root = document.querySelector<HTMLElement>("[data-release-service]");
+if (root) void mountReleaseService(root, RELEASE);
+</script>
+<style>
+.facts-list { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:10px 20px; }
+.facts-list dt { font-weight:700; }
+.facts-list dd { margin:0; }
+[data-release-service] { margin-top:20px; }
+@media (max-width:560px) { .facts-list { grid-template-columns:minmax(0,1fr); } .facts-list dd { margin-bottom:8px; } }
+</style>

@@ -3,7 +3,7 @@
  * field station. Every state, revision, and log line comes from the SDK.
  */
 // First: it installs the tablet network before anything can load the SDK.
-import { FieldStationUnavailableError, openFieldClient, type FieldClient } from "./field-client.ts";
+import { openFieldClientUntilAnswered } from "./field-client.ts";
 import { $, bindCard, tickAges, type Card } from "./field-cards.ts";
 import { createSdkLog, logConnection, logView } from "./field-log.ts";
 import { shortRevision, type ChannelName, type ChannelParams } from "./field-views.ts";
@@ -56,15 +56,9 @@ export async function mountLiveCreek(root: HTMLElement): Promise<void> {
     log.write([{ tone: "w", text: why }], "The live demo is unavailable right now.");
   }
 
-  let field: FieldClient;
-  try {
-    field = await openFieldClient();
-  } catch (error) {
-    if (!(error instanceof FieldStationUnavailableError)) throw error;
-    unavailable(error.message);
-    return;
-  }
-  source.textContent = field.sourceLabel;
+  // Keeps asking while the site API doesn't answer; connecting clears "unavailable" below.
+  const field = await openFieldClientUntilAnswered(error => unavailable(error.message));
+  if (root.dataset["status"] !== "unavailable") source.textContent = field.sourceLabel;
 
   logConnection(log, field.client);
   field.client.on("state", ({ state }) => {

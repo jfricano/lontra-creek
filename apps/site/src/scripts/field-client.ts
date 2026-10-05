@@ -12,7 +12,7 @@ import type { Client, Unlisten, WaitOptions } from "streamotter/client";
 import { channelVersions, type AppChannels } from "../generated/streamotter.generated.ts";
 import { fetchConfig, requestBadge, type BadgeResponse, type FieldConfig, type Role } from "./field-api.ts";
 import { observe, type ChannelName, type ChannelParams, type View } from "./field-views.ts";
-import { SignInRetry } from "./sign-in-retry.ts";
+import { SIGN_IN_RETRY_BASE_MS, SIGN_IN_RETRY_CAP_MS, SignInRetry } from "./sign-in-retry.ts";
 import { installTabletNetwork, isOnline, onNetworkChange, setOnline } from "./tablet-network.ts";
 
 // Reuse the head bootstrap; also supports isolated tests without Base.astro.
@@ -213,4 +213,24 @@ export async function openFieldClient(options: { role?: Role; signal?: AbortSign
   }
   const { createClient } = await import("streamotter/client");
   return new PageFieldClient(config, createClient, options.role ?? "volunteer");
+}
+
+/**
+ * openFieldClient, asked again for as long as the site API doesn't answer: after 1 s,
+ * doubling to 30 s, the same backoff as a failed sign-in. A page that says it is still
+ * trying needs this, because openFieldClient alone gives up after one failed request.
+ * `onUnavailable` runs after each unanswered attempt; any other error rejects.
+ */
+export async function openFieldClientUntilAnswered(onUnavailable: (error: FieldStationUnavailableError) => void, open: () => Promise<FieldClient> = () => openFieldClient()): Promise<FieldClient> {
+  let delay = SIGN_IN_RETRY_BASE_MS;
+  for (;;) {
+    try {
+      return await open();
+    } catch (error) {
+      if (!(error instanceof FieldStationUnavailableError)) throw error;
+      onUnavailable(error);
+    }
+    await new Promise(resolve => setTimeout(resolve, delay));
+    delay = Math.min(SIGN_IN_RETRY_CAP_MS, delay * 2);
+  }
 }

@@ -28,6 +28,25 @@ test.describe("home page live panel", () => {
     await expectAllCards(page, "live", 30_000);
   });
 
+  test("when the field station doesn't answer at first, the panel keeps asking and goes live once it does", async ({ page }) => {
+    let refused = 0;
+    await page.route("**/api/config", route => {
+      if (refused >= 2) return route.continue();
+      refused += 1;
+      return route.abort("connectionrefused");
+    });
+    await page.goto("/");
+    const panel = page.locator("[data-live-creek]");
+    await expect(panel).toHaveAttribute("data-status", "unavailable");
+    await expect(page.locator("[data-clock]")).toHaveText("Still trying to reach the field station");
+    // Asked again after 1 s and 2 s: the third request is answered.
+    await expectAllCards(page, "live", 30_000);
+    await expect(panel).not.toHaveAttribute("data-status", "unavailable");
+    await expect(page.locator("[data-source]")).not.toHaveText("Field station unavailable");
+    await expect(page.locator("[data-drop]")).toBeEnabled();
+    expect(refused).toBe(2);
+  });
+
   test("dropping the connection makes the cards stale, and restoring returns them to live with a revisions note", async ({ page }) => {
     await page.goto("/");
     await expectAllCards(page, "live", 30_000);

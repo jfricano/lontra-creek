@@ -169,8 +169,12 @@ export class FieldStation {
     const world = this.#world;
     if (world === null) throw new Error("The station has not started.");
     for (const emission of advanceTo(world, this.targetTick())) this.#write(emission);
-    if (this.#now() - this.#lastCheckpointAt >= CHECKPOINT_EVERY_MS) await this.checkpoint();
-    await this.flush();
+    // A failing checkpoint (a full or unwritable volume) must not stop the creek: publish regardless.
+    try {
+      if (this.#now() - this.#lastCheckpointAt >= CHECKPOINT_EVERY_MS) await this.checkpoint();
+    } finally {
+      await this.flush();
+    }
   }
 
   /** Serves a view, then queues it: write, then publish. */

@@ -206,3 +206,19 @@ test('A44: every call to the sandbox service opens its own connection, so a call
     assert.deepEqual(seen, ['close', 'close']);
   } finally { server.closeAllConnections(); server.close(); }
 });
+
+test('A44: a role switch on the creek tablet (POST /api/badge) ends the place held under the old session at once, and the new one sees why', async () => {
+  const h = await harness({ slots: 1 });
+  await serving(api(h.pool), async origin => {
+    const join = await fetch(`${origin}/api/sandbox/session`, { method: 'POST', headers: { origin: SITE, 'x-client-ip': '192.0.2.40' } });
+    const cookie = join.headers.get('set-cookie')!.split(';')[0]!; assert.equal(h.pool.placesFor('192.0.2.40'), 1);
+    assert.equal((await fetch(`${origin}/api/sandbox/session/claim`, { method: 'POST', headers: { origin: SITE, cookie } })).status, 200);
+    const badge = (role: string, from: string) => fetch(`${origin}/api/badge`, { method: 'POST', headers: { origin: SITE, cookie: from, 'content-type': 'application/json' }, body: JSON.stringify({ role }) });
+    assert.equal((await badge('volunteer', cookie)).headers.get('set-cookie'), null, 'the same role keeps the session and the place');
+    const switched = (await badge('researcher', cookie)).headers.get('set-cookie')!.split(';')[0]!;
+    const view = await (await fetch(`${origin}/api/sandbox/session`, { headers: { cookie: switched } })).json() as { status: string; reason?: string };
+    assert.deepEqual([view.status, view.reason], ['ended', 'session-ended']);
+    await h.settle(); assert.deepEqual(h.pool.status().slots, [{ slot: 1, state: 'ready' }], 'the slot was returned and cleaned, not held until the idle limit');
+    assert.equal(h.pool.placesFor('192.0.2.40'), 0, 'and the address holds no place');
+  });
+});

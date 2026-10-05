@@ -205,6 +205,11 @@ export class SandboxPool {
     await place.offer?.done;
     return this.view(session);
   }
+  /** A role switch replaced this browser's session (sessions.ts): the old subject's place can no longer be reached, so it ends now, and the new session sees why. */
+  replaced(old: SessionClaims, next: SessionClaims): void {
+    const place = this.#places.get(old.subject); if (!place) return;
+    this.#end(place, 'session-ended'); this.#ended.set(next.subject, this.#ended.get(old.subject)!); this.#ended.delete(old.subject); this.sweep();
+  }
   async leave(session: SessionClaims): Promise<SandboxLease> { const place = this.#places.get(session.subject); if (place) this.#end(place, place.lease ? 'returned' : 'left'); this.sweep(); return this.view(session); }
   #lease(session: SessionClaims, active = false): Lease {
     const lease = this.#places.get(session.subject)?.lease;

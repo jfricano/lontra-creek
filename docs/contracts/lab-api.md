@@ -127,7 +127,7 @@ export type LabEndReason =
   | "expired"         // the lease ran its time
   | "idle"            // no heartbeat within the idle limit
   | "unclaimed"       // no bench token fetched within the claim window
-  | "session-ended"   // the visitor's session expired
+  | "session-ended"   // the visitor's session expired, or a role switch replaced it
   | "bench-failed"    // the bench stopped answering or lost the lease
   | "lab-restarted";  // the field station restarted and reset every bench
 

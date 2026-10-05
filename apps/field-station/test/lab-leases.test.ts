@@ -10,6 +10,10 @@ import { benchConfig, benchEnvironment, benchHandlers } from '../src/lab/bench.t
 import { createGateway } from 'streamotter/gateway';
 import { BenchRuntime, requireNoDevelopmentPrincipals } from '../src/lab/runtime.ts';
 import type { Trace } from 'streamotter/contracts';
+import { publicApi } from '../src/server/http.ts';
+import { readConfig } from '../src/server/config.ts';
+import type { FieldStation } from '../src/server/station.ts';
+import type { Notebooks } from '../src/server/notebooks.ts';
 function fixture(count = 3, leaseMs = 300_000) {
   let now = Date.parse('2026-09-27T00:00:00Z');
   const slots = new Map<BenchId, BenchStatus>();
@@ -317,4 +321,21 @@ test('a bench with another failure handling is logged once and left unavailable,
   assert.equal(f.pool.status().benches[0]!.state, 'ready');
   assert.equal(resets(), 1);
   assert.equal((await f.pool.join(f.session('a'), 'a')).status, 'ready');
+});
+
+test('a role switch on the creek tablet (POST /api/badge) ends the Lab place held under the old session at once, and the new one sees why', async () => {
+  const f = fixture(1); await f.pool.initialize(); await f.pool.run(() => f.pool.sweep());
+  const server = publicApi({ config: readConfig({ SITE_ORIGIN: 'https://site.test' }), station: {} as FieldStation, notebooks: {} as Notebooks, lab: f.pool });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`; const headers = { origin: 'https://site.test', 'x-client-ip': '192.0.2.41' };
+  try {
+    const join = await fetch(`${origin}/api/lab/lease`, { method: 'POST', headers });
+    const cookie = join.headers.get('set-cookie')!.split(';')[0]!; assert.equal((await join.json() as { status: string }).status, 'ready');
+    const badge = await fetch(`${origin}/api/badge`, { method: 'POST', headers: { ...headers, cookie, 'content-type': 'application/json' }, body: JSON.stringify({ role: 'researcher' }) });
+    const switched = badge.headers.get('set-cookie')!.split(';')[0]!;
+    const view = await (await fetch(`${origin}/api/lab/lease`, { headers: { ...headers, cookie: switched } })).json() as { status: string; reason?: string };
+    assert.deepEqual([view.status, view.reason], ['ended', 'session-ended']);
+    assert.equal(f.calls.filter(call => call.path === '/bench/v1/reset').length, 2, 'the bench was reset at once, not held until the idle limit');
+    assert.equal(f.pool.placesFor('192.0.2.41'), 0);
+  } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
 });

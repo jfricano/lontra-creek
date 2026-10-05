@@ -152,6 +152,11 @@ export class LeasePool {
     if ([...this.#places.values()].filter(p => !p.lease).length >= this.#queueMax) throw new LabError('queue-full', 503);
     this.#ended.delete(session.subject); this.#places.set(session.subject, { session, address, joined: this.#now(), heartbeat: this.#now() }); await this.sweep(); return this.view(session);
   }
+  /** A role switch replaced this browser's session (sessions.ts): the old subject's place can no longer be reached, so it ends now, and the new session sees why. */
+  async replaced(old: SessionClaims, next: SessionClaims): Promise<void> {
+    const place = this.#places.get(old.subject); if (!place) return;
+    await this.#end(place, 'session-ended'); this.#ended.set(next.subject, this.#ended.get(old.subject)!); this.#ended.delete(old.subject);
+  }
   async leave(session: SessionClaims): Promise<LabLease> { const place = this.#places.get(session.subject); if (place) await this.#end(place, place.lease ? 'returned' : 'left'); await this.sweep(); return this.view(session); }
   #lease(session: SessionClaims, active = false): NonNullable<Place['lease']> { const lease = this.#places.get(session.subject)?.lease; if (!lease || active && !lease.claimed) throw new LabError('no-lease', 409); return lease; }
   async #call<T>(session: SessionClaims, path: string, body?: unknown): Promise<T> { const lease = this.#lease(session); try { return await this.#client.call<T>(lease.bench, path, body === undefined ? 'GET' : 'POST', body); } catch (error) { if (error instanceof LabError && error.status < 500) throw error; await this.#end(this.#places.get(session.subject)!, 'bench-failed'); throw new LabError('bench-unavailable', 503); } }

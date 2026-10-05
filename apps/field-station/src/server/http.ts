@@ -202,7 +202,11 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
         if (origin !== undefined && cors["access-control-allow-origin"] === undefined) return send(response, 403, { error: "Origin not allowed." }, cors);
         const body = await readJson(request);
         const role: Role = body["role"] === "researcher" ? "researcher" : "volunteer";
+        const before = readSession(request.headers.cookie, config.secret);
         const result = badgeFor({ cookieHeader: request.headers.cookie, role, secret: config.secret, secure: config.production });
+        // A new subject replaces the cookie, so the Lab and sandbox places held under the old one end now rather than at their idle limit.
+        const next = result.setCookie === null ? null : readSession(result.setCookie, config.secret);
+        if (before && next) { options.sandbox?.replaced(before, next); void options.lab?.run(() => options.lab!.replaced(before, next)).catch(() => undefined); }
         return send(response, 200, { badge: result.badge, token: result.token.token, expiresAt: result.token.expiresAt },
           result.setCookie === null ? cors : { ...cors, "set-cookie": result.setCookie });
       }

@@ -17,6 +17,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, test, type TestContext } from 'node:test';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { advanceTo, createWorld, currentEmissions, type Emission, type WorldState } from '@lontra-creek/sim';
 import { snapshotAcknowledges } from '../src/lab/bench.ts';
 import type { RecordCoordinates, RecoveryAssessment } from '../src/lab/contract.ts';
@@ -165,6 +166,27 @@ describe('the recovery guard', () => {
     const barrier = ledger.barriers().at(-1)!;
     assert.equal(barrier.revisions['station:LC-03'], Expected.revision(TICK + 1));
     assert.equal(barrier.revisions['station:LC-01'], Expected.revision(TICK + 2));
+  });
+
+  test('a record the bench consumed before its publication was recorded is matched once the send completes, and the wait is bounded', async t => {
+    const s = await studies(t); s.registry.open(1, S1);
+    await s.registry.beginRun(1, S1, { scenarioId: 'S04', runId: 'run-1', mutation: flowLc03(), coverage: 'pending' });
+    const at: RecordCoordinates = { topic: 'lab-1.field.gauges', partition: 1, offset: '100' };
+    let acked!: (coordinates: RecordCoordinates) => void;
+    // The broker has the record and the bench's guard asks before the producer's acknowledgment is handled here.
+    const publishing = s.registry.publish(1, S1, 'run-1', record('run-1'), { send: () => new Promise(resolve => { acked = resolve; }) });
+    const assessing = s.registry.assess(1, { studyId: S1, sourceId: 'field', record: at });
+    await sleep(20);
+    acked(at); await publishing;
+    assert.equal((await assessing).decision, 'recoverable');
+    // A record no publication will match holds once the wait runs out, whatever is still in flight.
+    const bounded = new LabStudies({ dataDir: s.dataDir, world: s.src, assessWaitMs: 50 }); bounded.open(2, S2);
+    await bounded.beginRun(2, S2, { scenarioId: 'S04', runId: 'run-1', mutation: flowLc03(), coverage: 'pending' });
+    void bounded.publish(2, S2, 'run-1', { ...record('run-1'), topic: 'lab-2.field.gauges' }, { send: () => new Promise(() => undefined) });
+    const started = Date.now();
+    const stuck = await bounded.assess(2, { studyId: S2, sourceId: 'field', record: { ...at, topic: 'lab-2.field.gauges' } });
+    assert.deepEqual([stuck.decision, stuck.decision === 'hold' && stuck.reason], ['hold', 'unknown-record']);
+    assert.ok(Date.now() - started < 1_000);
   });
 
   test('the ledger survives a reopen (a bench restart within the study) and only the open study may be assessed', async t => {

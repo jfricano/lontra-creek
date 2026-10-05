@@ -32,6 +32,8 @@ import type { ScenarioRun } from './scenarios.ts';
 const STUDY_ID = /^[A-Za-z0-9_-]{16}$/;
 /** How long closing a study waits for its in-flight publications. */
 export const CLOSE_WAIT_MS = 5_000;
+/** How long the guard waits for in-flight publications to record where they landed: well under the library's 10-second guard budget. */
+export const ASSESS_WAIT_MS = 3_000;
 export const LEDGER_SUMMARIES_KEPT = 20;
 /** Closed study IDs remembered per bench, so none is reopened. */
 const CLOSED_KEPT = 64;
@@ -61,13 +63,14 @@ export class LabStudies {
   readonly #world: WorldSource;
   readonly #now: () => number;
   readonly #closeWaitMs: number;
+  readonly #assessWaitMs: number;
   readonly #log: (message: string) => void;
   readonly #current = new Map<BenchId, Study>();
   readonly #closed = new Map<BenchId, string[]>();
   /** Discards under way, by bench and study, so a repeated call joins the first. */
   readonly #discarding = new Map<string, Promise<LedgerSummary>>();
-  constructor(options: { dataDir: string; world: WorldSource; now?: () => number; closeWaitMs?: number; log?: (message: string) => void }) {
-    this.#root = join(options.dataDir, 'lab'); this.#world = options.world; this.#now = options.now ?? Date.now; this.#closeWaitMs = options.closeWaitMs ?? CLOSE_WAIT_MS; this.#log = options.log ?? (() => undefined);
+  constructor(options: { dataDir: string; world: WorldSource; now?: () => number; closeWaitMs?: number; assessWaitMs?: number; log?: (message: string) => void }) {
+    this.#root = join(options.dataDir, 'lab'); this.#world = options.world; this.#now = options.now ?? Date.now; this.#closeWaitMs = options.closeWaitMs ?? CLOSE_WAIT_MS; this.#assessWaitMs = options.assessWaitMs ?? ASSESS_WAIT_MS; this.#log = options.log ?? (() => undefined);
   }
   #dir(bench: BenchId, studyId: string): string { if (!STUDY_ID.test(studyId)) throw new RangeError('Invalid study ID.'); return join(this.#root, `lab-${bench}`, 'studies', studyId); }
   #isClosed(bench: BenchId, studyId: string): boolean { return this.#closed.get(bench)?.includes(studyId) ?? false; }
@@ -171,10 +174,20 @@ export class LabStudies {
     const ledger = await this.ledger(bench, studyId);
     return { revision: view.revision, data: view.data, boundary: ledger.acknowledge({ barrier: boundary, key, served: { tick: served.tick(), revision: view.revision } }) };
   }
-  /** The recovery guard for bench N. Only the open study may be assessed. */
+  /**
+   * The recovery guard for bench N. Only the open study may be assessed. The bench can
+   * consume a record before its producer acknowledgment is handled here, so an unknown
+   * record waits, bounded, for the study's in-flight publications and is matched again.
+   */
   async assess(bench: BenchId, request: RecoveryAssessRequest): Promise<RecoveryAssessment> {
     if (request.sourceId !== 'field') throw new RangeError('Unknown source.');
-    return (await this.ledger(bench, request.studyId)).assess(request);
+    const ledger = await this.ledger(bench, request.studyId);
+    const answer = await ledger.assess(request);
+    const study = this.#current.get(bench);
+    const inFlight = study?.studyId === request.studyId ? study.inFlight : undefined;
+    if (answer.decision !== 'hold' || answer.reason !== 'unknown-record' || !inFlight?.size) return answer;
+    await Promise.race([Promise.allSettled([...inFlight]), sleep(this.#assessWaitMs, undefined, { ref: false })]);
+    return ledger.assess(request);
   }
 
   // --- Scenario runs: what the source-failures intents drive (intents.ts, scenarios.ts). ---
@@ -234,13 +247,10 @@ export class LabStudies {
     const ledger = await this.ledger(bench, studyId);
     // close() may have run while the ledger opened: check again in the same step that starts the send and registers it.
     if (study.state !== 'open' || this.#current.get(bench) !== study) throw new StudyClosedError();
-    const sending = sink.send(record);
-    study.inFlight.add(sending);
-    try {
-      const at = await sending;
-      // A late completion is confined to the old study's ledger, and dropped once that is discarded.
-      if (!ledger.discarded) await ledger.published(runId, at).catch(() => undefined);
-      return at;
-    } finally { study.inFlight.delete(sending); }
+    // In flight until its coordinates are recorded: what close() and the guard wait for.
+    // A late completion is confined to the old study's ledger, and dropped once that is discarded.
+    const publishing = sink.send(record).then(async at => { if (!ledger.discarded) await ledger.published(runId, at).catch(() => undefined); return at; });
+    study.inFlight.add(publishing);
+    try { return await publishing; } finally { study.inFlight.delete(publishing); }
   }
 }

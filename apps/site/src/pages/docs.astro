@@ -1,16 +1,17 @@
 ---
 import ReferencePage from "../layouts/ReferencePage.astro";
 import {LINKS, RELEASE} from "../site.ts";
-import {V11_SOURCES} from "../planned-failure-handling.ts";
+import {FAILURE_SOURCES} from "../failure-handling.ts";
 const root=`${LINKS.github}/blob/v${RELEASE}/docs`;
 const guides=[
 ["Start with a live channel","getting-started.md","Scaffold a fixture project, open the local workbench, and subscribe from a browser."],
 ["Add StreamOtter to your app","existing-app.md","Connect your identity, handlers, and authoritative state to an existing application."],
 ["Connect to Kafka","kafka.md","Configure a broker connection and move from fixture records to a Kafka source."],
-["Troubleshoot a view","troubleshooting.md","Follow state changes, source health, and errors to the part that needs attention."]];
+["Troubleshoot a view","troubleshooting.md","Follow state changes, source health, and errors to the part that needs attention."],
+["Handle bad records","source-failures.md","Turn on source-failure policies, write an honest recovery guard, and operate incidents from the CLI."]];
 ---
 <ReferencePage title="Build with StreamOtter" description="A map to the maintained guides and reference, pinned to the release this site runs.">
   <section class="reference-grid" aria-label="Guides">{guides.map(([title,path,copy])=><article class="reference-card"><h2><a href={`${root}/guides/${path}`}>{title} ↗</a></h2><p>{copy}</p></article>)}</section>
-  <section><h2>Reference and release</h2><ul><li><a href={`${root}/V1_API.md`}>V1 API: contracts, handlers, SDK, states, and protocol</a></li><li><a href={LINKS.status}>Implementation status and verified support matrix</a></li><li><a href={LINKS.changelog}>Changelog</a></li><li><a href={`${LINKS.npm}/v/${RELEASE}`}>streamotter@{RELEASE} on npm</a></li></ul><p>These links open the library’s own documentation on GitHub or npm. The site does not maintain a second copy.</p></section>
-  <section aria-labelledby="planned-docs"><h2 id="planned-docs">Source-failure handling (not in {RELEASE})</h2><p>{RELEASE} has no source-failure guide or recovery-guard recipe, because it has no failure policies. StreamOtter 0.2.0-rc.1 ships them, but this site doesn't use that release yet, so this page doesn't link its guides. Until it does:</p><ul><li><a href={V11_SOURCES.folder}>StreamOtter V1.1 specification and decisions ↗</a>: planned behavior, not this release.</li><li><a href="/when-it-breaks/#source-failure-policies">The planned policies and record disposition, summarized</a></li><li><a href={`${LINKS.demoRepo}/blob/main/docs/LOCAL_LAB.md`}>Run the Failure Lab locally ↗</a>: the Kafka stack with three isolated benches.</li></ul></section>
+  <section><h2>Reference and release</h2><ul><li><a href={`${root}/V1_API.md`}>V1 API: contracts, handlers, SDK, states, and protocol</a></li><li><a href={FAILURE_SOURCES.api}>V1.1 API: failureHandling, recovery guards, incidents, and the operator service</a></li><li><a href={FAILURE_SOURCES.spec}>V1.1 source-failure specification</a> and its <a href={FAILURE_SOURCES.decisions}>decision records</a></li><li><a href={LINKS.status}>Implementation status and verified support matrix</a></li><li><a href={LINKS.changelog}>Changelog</a></li><li><a href={`${LINKS.npm}/v/${RELEASE}`}>streamotter@{RELEASE} on npm</a></li></ul><p>These links open the library’s own documentation on GitHub or npm. The site does not maintain a second copy.</p></section>
+  <section aria-labelledby="site-docs"><h2 id="site-docs">On this site</h2><ul><li><a href="/when-it-breaks/#source-failure-policies">The source-failure policies and record disposition, summarized</a></li><li><a href={`${LINKS.demoRepo}/blob/main/docs/LOCAL_LAB.md`}>Run the Failure Lab locally ↗</a>: the Kafka stack with three isolated benches.</li></ul></section>
 </ReferencePage>

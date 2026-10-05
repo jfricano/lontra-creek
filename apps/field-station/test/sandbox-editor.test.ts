@@ -7,7 +7,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { validateProjectConfig, type ProjectConfig } from 'streamotter/contracts';
 import { reviewCandidate, validateCandidate } from '../src/sandbox/editor.ts';
-import { checkInput, inputFromRequest, routeOperation, SANDBOX_OPERATIONS, SandboxFault } from '../src/sandbox/operations.ts';
+import { checkInput, CONFIG_DEPTH, inputFromRequest, operationRoute, routeOperation, SANDBOX_OPERATIONS, SandboxFault } from '../src/sandbox/operations.ts';
+import { sandboxClient } from '../src/sandbox/leases.ts';
 import { fixtureBase } from './support/sandbox-fixture.ts';
 import { code, harness, wb } from './support/sandbox-harness.ts';
 
@@ -85,10 +86,12 @@ test('A43: the operation allowlist is closed, follows WHC-1 names, and bounds ev
   const bad = (op: Parameters<typeof checkInput>[0], input: unknown) => assert.throws(() => checkInput(op, input), (e: unknown) => e instanceof SandboxFault && e.code === 'invalid-request', `${op} ${JSON.stringify(input)}`);
   bad('dev.fixtures.advance', { sourceId: 'creek', count: 11 }); bad('dev.fixtures.advance', { sourceId: 'creek', count: 0 }); bad('dev.fixtures.advance', { sourceId: 'creek' });
   bad('source-checks', { sourceId: 'creek', brokers: ['evil:9092'] }); bad('source-checks', { sourceId: '../../etc' }); bad('health', { anything: 1 });
-  bad('preview-sessions', { fixturePrincipalRef: 'x'.repeat(65) }); bad('config.validate', { config: 'text' }); bad('traces', { limit: 101 }); bad('traces', { offset: 0 });
+  bad('preview-sessions', { fixturePrincipalRef: 'x'.repeat(65) }); bad('config.validate', { config: 'text' }); bad('traces', { limit: 501 }); bad('traces', { limit: 0 }); bad('traces', { offset: 0 });
   assert.throws(() => inputFromRequest('health', new URLSearchParams('x=1'), undefined), (e: unknown) => e instanceof SandboxFault);
   assert.throws(() => inputFromRequest('traces', new URLSearchParams('limit=5&limit=6'), undefined), (e: unknown) => e instanceof SandboxFault);
   assert.deepEqual(inputFromRequest('traces', new URLSearchParams('limit=5&outcome=failed'), undefined), { limit: 5, outcome: 'failed' });
+  assert.deepEqual(inputFromRequest('traces', new URLSearchParams('limit=500'), undefined), { limit: 500 }, 'the workbench asks for up to 500 traces');
+  for (const op of SANDBOX_OPERATIONS) { const { method, path } = operationRoute(op); assert.equal(routeOperation(method, path), op, 'each operation maps back to its own route'); }
 });
 
 test('A43: the service applies the editor before validating, never applies a candidate, and scopes sources, principals, and previews to the slot', async () => {
@@ -113,8 +116,8 @@ test('A43: the service applies the editor before validating, never applies a can
   await assert.rejects(h.opSlow(s, 'dev.fixtures.advance', { sourceId: 'nope', count: 1 }), wb('INVALID_REQUEST'));
   await assert.rejects(h.opSlow(s, 'traces', { channel: 'holt' }), wb('INVALID_REQUEST'));
   await assert.rejects(h.opSlow(s, 'preview-sessions', { fixturePrincipalRef: 'operator-only' }), wb('INVALID_REQUEST'));
-  assert.deepEqual((await h.opSlow(s, 'dev.principals') as { items: { ref: string }[] }).items.map(i => i.ref), ['visitor'], 'only the slot\'s synthetic principal is listed');
-  const preview = await h.opSlow(s, 'preview-sessions', { fixturePrincipalRef: 'visitor' }) as { expiresAt: string };
+  assert.deepEqual((await h.opSlow(s, 'dev.principals') as { items: { ref: string }[] }).items.map(i => i.ref), ['creek-volunteer', 'developer'], 'only the slot\'s synthetic principals are listed');
+  const preview = await h.opSlow(s, 'preview-sessions', { fixturePrincipalRef: 'creek-volunteer' }) as { expiresAt: string };
   assert.ok(Date.parse(preview.expiresAt) <= Date.parse((h.view(s) as { expiresAt: string }).expiresAt));
   await assert.rejects(h.opSlow(s, 'failures.list' as never), wb('FORBIDDEN', 'operation-not-allowed'));
 });
@@ -136,5 +139,33 @@ test('A43: an operation the installed release does not support is left out of di
   assert.deepEqual(h.pool.discovery(), { hostContract: 1, operations: ['workbench', 'capabilities', 'health', 'config', 'config.validate'], limits: { maxRequestBytes: 65_536 } });
   const s = h.session('s'); await h.join(s); await h.claim(s);
   await assert.rejects(h.opSlow(s, 'traces', {}), wb('FORBIDDEN', 'operation-not-allowed'));
-  await assert.rejects(h.op(s, 'health').then(() => h.op(s, 'health')).then(() => h.op(s, 'health')), code('too-many-requests'));
+  // The refused operation still spent one of the session's eight.
+  for (let i = 0; i < 7; i++) await h.op(s, 'health');
+  await assert.rejects(h.op(s, 'health'), code('too-many-requests'));
+});
+
+/** A candidate whose first schema nests `levels` objects deep in all (the config itself is level 1). */
+const nested = (levels: number): Mutable => { const c = edit(() => undefined); let node: Mutable = {}; c.schemas.station.properties.deep = node; for (let level = 5; level < levels; level++) { const next: Mutable = {}; node.items = next; node = next; } return c; };
+
+test('A43: a candidate nested deeper than 64 levels is refused as invalid-request and never fails the slot', async () => {
+  const fits = nested(CONFIG_DEPTH); const tooDeep = nested(CONFIG_DEPTH + 1);
+  assert.doesNotThrow(() => checkInput('config.validate', { config: fits }));
+  for (const op of ['config.validate', 'config.export'] as const) assert.throws(() => checkInput(op, { config: tooDeep }), (e: unknown) => e instanceof SandboxFault && e.code === 'invalid-request' && /64 levels/.test(e.message), op);
+  // About 14 KB of nesting: within the body limit, and too deep for JSON.stringify.
+  let deep: unknown = 1; for (let i = 0; i < 7000; i++) deep = [deep];
+  const config = { ...fits, schemas: { ...fits.schemas, deep: { const: deep } } };
+  assert.throws(() => JSON.stringify(config), RangeError);
+  const h = await harness({ slots: 1 }); const s = h.session('s'); const next = h.session('next'); await h.join(s); await h.claim(s); await h.join(next);
+  await assert.rejects(h.opSlow(s, 'config.validate', { config }), wb('INVALID_REQUEST', 'invalid-request'), 'the service refuses it before the editor serializes it');
+  await h.settle(); assert.equal(h.view(s).status, 'active'); assert.equal(h.view(next).status, 'queued', 'the slot stays in service');
+});
+
+test('A43: a request the field station cannot encode is refused as invalid-request and ends nothing', async () => {
+  const circular: Record<string, unknown> = {}; circular['self'] = circular;
+  await assert.rejects(sandboxClient('http://127.0.0.1:9', 'x'.repeat(40)).request('/sandbox/v1/slots/1/ops', 'POST', circular), (e: unknown) => e instanceof SandboxFault && e.code === 'invalid-request');
+  let refuse = false;
+  const h = await harness({ slots: 1, client: inner => ({ async request(path, method, body) { if (refuse && path.endsWith('/ops')) throw new SandboxFault('invalid-request', 'The request could not be encoded.'); return inner.request(path, method, body); } }) });
+  const s = h.session('s'); await h.join(s); await h.claim(s);
+  refuse = true; await assert.rejects(h.opSlow(s, 'health'), code('invalid-request'));
+  refuse = false; await h.settle(); assert.equal(h.view(s).status, 'active');
 });

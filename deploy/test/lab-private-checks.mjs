@@ -9,13 +9,28 @@ if (role === 'bench') {
     assert.ok(!['KAFKA_GATEWAY_PASSWORD', 'KAFKA_FIELD_STATION_PASSWORD'].includes(key), `Forbidden environment key: ${key}`);
     if (/^LAB_BENCH_[123]_(SERVICE|RELAY)_TOKEN$/.test(key)) assert.ok(key.startsWith(`LAB_BENCH_${number}_`), `Other-bench credential: ${key}`);
   }
-  const response = await fetch('http://127.0.0.1:7420/bench/v1/status', {
-    headers: { authorization: `Bearer ${process.env[`LAB_BENCH_${number}_SERVICE_TOKEN`]}` }
-  });
-  assert.equal(response.status, 200);
-  const status = await response.json();
+  // A bench returned just before this check (lab.test.ts ends its leases) is still resetting: its
+  // gateway is down and its next study's journal not yet open. Check it once it serves a study again.
+  const readStatus = async () => {
+    const response = await fetch('http://127.0.0.1:7420/bench/v1/status', {
+      headers: { authorization: `Bearer ${process.env[`LAB_BENCH_${number}_SERVICE_TOKEN`]}` }
+    });
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  const serveDeadline = Date.now() + 180_000;
+  let status = await readStatus();
+  while (!['ready', 'leased'].includes(status.state)) {
+    assert.ok(Date.now() < serveDeadline, `Bench ${number} must serve a study again (state ${status.state}).`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    status = await readStatus();
+  }
   assert.deepEqual(status.checks, { developmentPrincipals: 0, fixtureSources: 0, managementHost: '127.0.0.1' });
   assert.equal(status.bench, number);
+  // Failure handling as the deployment set it, with the library's own durable journal (section 8b).
+  const profile = process.env.LAB_FAILURE_HANDLING ?? 'off';
+  assert.equal(status.failures.profile, profile);
+  if (profile !== 'off') { assert.equal(status.failures.durable, true); assert.match(status.failures.handlerBuildId, /^lontra-lab@[\d.]+\+projection-v2-(broken|corrected)$/); }
   const headers = { authorization: `Bearer ${process.env[`LAB_BENCH_${number}_SERVICE_TOKEN`]}` };
   assert.equal((await fetch(`http://field-station:7410/lab-internal/${number}/views/station/LC-03`, { headers })).status, 200);
   for (const path of [`/lab-internal/${number % 3 + 1}/views/station/LC-03`, `/lab-internal/${number}/views/holt/A`, '/internal/views/notebook/someone']) {

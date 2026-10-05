@@ -4,6 +4,21 @@ September 26, 2026 · F.7 · Backs [`apps/site/src/release-facts.ts`](../../apps
 
 Everything below describes `streamotter@0.1.0-rc.3`, checked against the installed `node_modules/streamotter` (and `node_modules/@streamotter/*`) and the GitHub repository's public docs at tag `v0.1.0-rc.3`, fetched with `gh api -H "Accept: application/vnd.github.raw" "repos/jfricano/StreamOtter/contents/<path>?ref=v0.1.0-rc.3"`. The local StreamOtter checkout was not read.
 
+## Updated for 0.2.0-rc.1 (October 4, 2026)
+
+Rechecked against the installed `streamotter@0.2.0-rc.1` (then a pre-publish pack, which the npm release replaced on October 5) and the StreamOtter repository at the commit that pack was built from. Every `source` points at the tag `v0.2.0-rc.1`, which now exists. What changed on the pages:
+
+- `FORBIDDEN` and `INVALID_PARAMS`: in production, parameters that fail `paramsSchema` are answered `FORBIDDEN` and traced as `INVALID_PARAMS` (stage `authorize`); development still answers `INVALID_PARAMS` with the path. Non-object and oversized parameters are `INVALID_PARAMS` in both modes and are rejected before the channel lookup, untraced (`runtime/session.ts`, `V1_API.md` §7).
+- Refused handshakes are traced at most 10 per second after a burst of 100 (`HANDSHAKE_TRACE_RATE`, hand-copied; `V1_API.md` §10).
+- `OVERLOADED`: a connection whose unsent output passes `maxPendingBytesPerConnection` is closed and logged; malformed and unknown frames count against the control rate.
+- `RESYNC_REQUIRED`: an explicit `resync()` that runs out of attempts ends in `resync-required` and rejects with that code.
+- `CANCELLED` is now also a gateway trace code, for a handshake whose client disconnected while `authenticate()` ran.
+- `maxControlFrameBytes` must be at least 9,216 (`MIN_CONTROL_FRAME_BYTES`, checked against the installed validator in the test).
+- Paused-source log lines carry `failureClass`; `MAP_HANDLER_FAILURE.failureClass` is `mapper-error`, checked against the package's `FAILURE_CLASSES`.
+- The support matrix adds the failure journal's Node.js floor, 24.15.0 (`JOURNAL_NODE_FLOOR`; the package exports no constant for it), and records that V1.1's Firefox and WebKit checks (F45) were not run.
+
+The source-failure policies themselves are in `apps/site/src/failure-handling.ts`, which imports what the package exports and is tested against the installed validator, CLI and gateway.
+
 ## Sources used
 
 - **Installed package source** (`node_modules/streamotter/`, `node_modules/@streamotter/{contracts,gateway,client}/`), specifically:

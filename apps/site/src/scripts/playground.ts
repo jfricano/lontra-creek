@@ -1,3 +1,4 @@
+import { PLAYGROUND_PRESETS, presetText } from "../data/playground-presets.ts";
 import { watchIdle } from "./idle-session.ts";
 import { installTabletNetwork } from "./tablet-network.ts";
 // Vite may share contracts with the SDK chunk; install the transport shim first.
@@ -5,11 +6,18 @@ installTabletNetwork();
 const editor=document.querySelector<HTMLTextAreaElement>("#config-editor")!;
 const status=document.querySelector<HTMLElement>("#validation-status")!;
 const issues=document.querySelector<HTMLElement>("#validation-issues")!;
-const original=editor.value;
+const picker=document.querySelector<HTMLSelectElement>("#config-preset")!;
+const note=document.querySelector<HTMLElement>("#preset-note")!;
 let timer:ReturnType<typeof setTimeout>;
+/** Set once the installed validator has loaded; until then a preset only fills the editor. */
+let validate:(()=>void)|undefined;
+// A preset is only text in the editor: whatever the validator says about it is its own answer.
+const load=()=>{const preset=PLAYGROUND_PRESETS.find(entry=>entry.id===picker.value)??PLAYGROUND_PRESETS[0]!;picker.value=preset.id;note.textContent=preset.note;editor.value=presetText(preset);clearTimeout(timer);validate?.();};
+picker.addEventListener("change",load);
+document.querySelector("#reset-config")!.addEventListener("click",load);
 // Split at the page boundary: no other route loads the validator.
 void import("streamotter/contracts").then(({validateProjectConfig})=>{
-  const validate=()=>{
+  validate=()=>{
     issues.replaceChildren();
     try {
       const result=validateProjectConfig(JSON.parse(editor.value));
@@ -17,8 +25,7 @@ void import("streamotter/contracts").then(({validateProjectConfig})=>{
       for(const issue of result.issues){const li=document.createElement("li");li.textContent=`${issue.path}: ${issue.message} (${issue.code})`;issues.append(li);}
     }catch {status.textContent="Invalid JSON. Check commas, braces, and quoted property names.";}
   };
-  editor.addEventListener("input",()=>{clearTimeout(timer);timer=setTimeout(validate,250);});
-  document.querySelector("#reset-config")!.addEventListener("click",()=>{editor.value=original;validate();});
+  editor.addEventListener("input",()=>{clearTimeout(timer);timer=setTimeout(validate!,250);});
   validate();
 }).catch(()=>{status.textContent="The validator could not load. Reload this page to try again.";});
 const connect=document.querySelector<HTMLButtonElement>("#console-connect")!;

@@ -41,6 +41,9 @@ function expectedAcls(benches: readonly number[]): string[] {
     grant(`lab-${n}`, "prefixed", ["read", "describe"], [`topic:lab-${n}.`]);
     grant(`lab-${n}`, "literal", ["write"], [`topic:lab-${n}.quarantine`]);
     grant(`lab-${n}`, "prefixed", ["read", "delete"], [`group:streamotter-lab-${n}-`]);
+    // V1.1's quarantine writer checks its topic's settings; reading evidence back uses a throwaway group named for the bench's project.
+    grant(`lab-${n}`, "literal", ["describe_configs"], [`topic:lab-${n}.quarantine`]);
+    grant(`lab-${n}`, "prefixed", ["read", "delete"], [`group:streamotter-lontra-creek-lab-${n}-quarantine-read-`]);
   }
   return acls.sort();
 }

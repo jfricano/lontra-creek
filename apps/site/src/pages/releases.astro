@@ -1,26 +1,26 @@
 ---
 import ReferencePage from "../layouts/ReferencePage.astro";
-import {RELEASE_VERSION, NPM_RELEASE_PAGE, SUPPORT_MATRIX,KAFKA_MODES,DEFAULT_LIMIT_VALUES,LIMIT_FACTS} from "../release-facts.ts";
+import {RELEASE_VERSION, UPCOMING_STABLE, NPM_RELEASE_PAGE, SUPPORT_MATRIX,KAFKA_MODES,DEFAULT_LIMIT_VALUES,LIMIT_FACTS} from "../release-facts.ts";
 import {SITE_RELEASE, SURFACES, SURFACE_LABELS} from "../demo-availability.ts";
-import {INSTALLED_VALIDATOR_ON_FAILURE_HANDLING, V11_SOURCES} from "../planned-failure-handling.ts";
+import {FAILURE_SOURCES, INSTALLED_VALIDATOR_ON_FAILURE_HANDLING} from "../failure-handling.ts";
 import {LINKS} from "../site.ts";
-const rejected = INSTALLED_VALIDATOR_ON_FAILURE_HANDLING.issues[0];
+const accepted = INSTALLED_VALIDATOR_ON_FAILURE_HANDLING.valid;
 ---
 <ReferencePage title="Releases and availability" description="The site release, the exact StreamOtter package it installs, what the demo can run today, and the verified operating boundary, each stated separately.">
-  <p class="notice"><strong>Release candidate.</strong> StreamOtter {RELEASE_VERSION}'s API may change before 0.1.0. <a href={NPM_RELEASE_PAGE}>View this release on npm</a> · <a href={LINKS.changelog}>Changelog</a></p>
+  <p class="notice">{UPCOMING_STABLE && <><strong>Release candidate.</strong> StreamOtter {RELEASE_VERSION}'s API may change before {UPCOMING_STABLE}. </>}<a href={NPM_RELEASE_PAGE}>View this release on npm</a> · <a href={LINKS.changelog}>Changelog</a></p>
   <section aria-labelledby="site-release" data-release-site>
     <h2 id="site-release">Site release</h2>
     <dl class="facts-list">
       <dt>Site</dt><dd>{SITE_RELEASE.name}. <a href={LINKS.demoRepo}>Source ↗</a></dd>
       <dt>Status</dt><dd>{SITE_RELEASE.launch}</dd>
-      <dt>Milestone</dt><dd>{SITE_RELEASE.milestone} Features that need StreamOtter capabilities no installed release provides are shown as unavailable, with the reason.</dd>
+      <dt>Milestone</dt><dd>{SITE_RELEASE.milestone} A demo feature that needs something this backend doesn't report is shown as unavailable, with the reason.</dd>
       <dt>Versioning</dt><dd>{SITE_RELEASE.versioning}</dd>
     </dl>
   </section>
   <section aria-labelledby="library-package" data-release-library>
     <h2 id="library-package">Library package</h2>
     <p>This site and its field station install <code>streamotter@{RELEASE_VERSION}</code>, pinned exactly: no version range, the same version in both workspaces and the lockfile.</p>
-    <p><strong>StreamOtter V1.1 is published as 0.2.0-rc.1, which this deployment doesn't use yet.</strong> Its <a href={V11_SOURCES.spec}>approved specification ↗</a> adds source-failure policies, quarantine, a recovery guard, local operator commands, and an embeddable workbench. {RELEASE_VERSION}, which this site runs, has none of them: its validator rejects a <code>failureHandling</code> section{rejected && <> with <code>{rejected.code}</code></>}. <a href="/when-it-breaks/#source-failure-policies">What V1.1 plans for bad records</a></p>
+    <p><strong>Source-failure handling is in this release, opt-in.</strong> {RELEASE_VERSION} includes StreamOtter V1.1: source-failure policies, quarantine, a recovery guard, local operator commands, and a host contract for running the workbench inside your own site. Its validator accepts a <code>failureHandling</code> section{accepted && <> (this demo's own configuration passes with a <code>quarantine-hold</code> policy added)</>}; a configuration without one behaves as before. <a href="/when-it-breaks/#source-failure-policies">How each failure is handled</a> · <a href={FAILURE_SOURCES.guide}>Handle bad records guide ↗</a></p>
   </section>
   <section aria-labelledby="demo-availability" data-release-demo>
     <h2 id="demo-availability">Demo availability</h2>
@@ -36,7 +36,9 @@ const rejected = INSTALLED_VALIDATOR_ON_FAILURE_HANDLING.issues[0];
   <section aria-labelledby="verified-boundary">
     <h2 id="verified-boundary">Verified operating boundary</h2>
     <p>The library's own boundary and verification record for {RELEASE_VERSION}. They aren't measurements of this demo's deployment, its capacity, or its browser coverage.</p>
-    <h3>V1 boundaries</h3><ul><li>Run one gateway per project. V1 has no distributed coordination between gateways.</li><li>Channels deliver full state, not an event log. Reconnecting gets a fresh snapshot; missed intermediate revisions are not replayed.</li><li>Production mode exposes no management API, workbench, or production health endpoint.</li><li>Public readers of one channel instance share its public state. Use separate channels for separate audiences.</li><li>A bad record pauses its source. It is never committed or skipped, and <code>resumeSource()</code> retries it after a fix.</li></ul><p><a href={LINKS.status}>Read the library’s limitations and verification record ↗</a></p>
+    <h3>V1 boundaries</h3><ul><li>Run one gateway per project. V1 has no distributed coordination between gateways.</li><li>Channels deliver full state, not an event log. Reconnecting gets a fresh snapshot; missed intermediate revisions are not replayed.</li><li>Production mode exposes no management API, workbench, or production health endpoint.</li><li>Public readers of one channel instance share its public state. Use separate channels for separate audiences.</li><li>A bad record pauses its source by default. It is never committed or skipped silently, and <code>resumeSource()</code> retries it after a fix.</li></ul>
+    <h3>Source-failure boundaries</h3><ul><li>Policies are opt-in, per source, and only for invalid JSON and payload-schema failures. Every other failure class pauses, and no policy skips a record silently.</li><li>Incidents are kept in a local SQLite journal under the gateway's state directory: one gateway per directory, and Node.js 24.15 or later wherever it runs.</li><li>The operator service is reached in-process, through the gateway's local socket, or, in development only, through the management routes the workbench uses. No HTTP route returns raw evidence, and a browser visitor never reaches the operator socket.</li><li>The gateway checks a recovery boundary's identity and lifecycle, not that your snapshots really contain what the skipped record changed. That claim is your application's.</li></ul>
+    <p><a href={LINKS.status}>Read the library’s limitations and verification record ↗</a> · <a href={FAILURE_SOURCES.status}>Source-failure verification ↗</a></p>
   </section>
   <section><h2>Verified support matrix</h2><p>These are the package’s verification results, not a claim about the capacity or browser coverage of this demo deployment.</p><div class="table-scroll" tabindex="0" aria-label="Support matrix"><table><thead><tr><th scope="col">Component</th><th scope="col">Environment</th><th scope="col">Verification</th></tr></thead><tbody>{[...SUPPORT_MATRIX,...KAFKA_MODES].map(f=><tr><th scope="row">{f.component}</th><td>{f.detail}<p>{f.note}</p></td><td><a href={f.sources[0]}>{f.status.replaceAll("-"," ")}</a></td></tr>)}</tbody></table></div></section>
   <section><h2>Default package limits</h2><p>Imported from the installed package. These are defaults, not measured capacity. The demo’s operating limits are separate.</p><div class="table-scroll" tabindex="0" aria-label="Default limits"><table><thead><tr><th scope="col">Limit</th><th scope="col">Default</th><th scope="col">Meaning</th></tr></thead><tbody>{Object.entries(DEFAULT_LIMIT_VALUES).map(([key,value])=><tr><th scope="row"><code>{key}</code></th><td>{value}</td><td>{LIMIT_FACTS[key as keyof typeof LIMIT_FACTS].description}</td></tr>)}</tbody></table></div></section>

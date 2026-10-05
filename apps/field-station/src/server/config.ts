@@ -68,6 +68,13 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     throw new Error("Production needs Kafka over TLS with SCRAM: set KAFKA_CA_FILE, KAFKA_FIELD_STATION_USERNAME, and KAFKA_FIELD_STATION_PASSWORD.");
   }
 
+  const siteOrigins = list(env["SITE_ORIGIN"] ?? (production ? required("SITE_ORIGIN") : "http://localhost:4321,http://127.0.0.1:4321"));
+  // Production runs behind Caddy, which matches SITE_ORIGIN as one literal Origin: a list there would allow what Caddy refuses.
+  // Development (no Caddy) may list several, such as localhost and 127.0.0.1.
+  if (production && (siteOrigins.length !== 1 || !URL.canParse(siteOrigins[0]!) || new URL(siteOrigins[0]!).origin !== siteOrigins[0])) {
+    throw new Error("SITE_ORIGIN must be one exact origin in production, such as https://streamotter.dev.");
+  }
+
   const labBenches = integer(env, "FIELD_LAB_BENCHES", 0, 0);
   if (labBenches > MAX_BENCHES) throw new RangeError(`FIELD_LAB_BENCHES must be at most ${MAX_BENCHES}.`);
 
@@ -84,7 +91,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     epoch: epoch === null ? null : new Date(epoch).toISOString(),
     tickMs: integer(env, "FIELD_TICK_MS", 2_000, 100),
     generation: integer(env, "FIELD_GENERATION", 1, 1),
-    siteOrigins: list(env["SITE_ORIGIN"] ?? (production ? required("SITE_ORIGIN") : "http://localhost:4321,http://127.0.0.1:4321")),
+    siteOrigins,
     gatewayOrigin: env["GATEWAY_PUBLIC_ORIGIN"] ?? (production ? required("GATEWAY_PUBLIC_ORIGIN") : "http://127.0.0.1:7400"),
     gatewayPath: GATEWAY_PATH,
     host: env["FIELD_HOST"] ?? "127.0.0.1",

@@ -35,6 +35,28 @@ https://localhost:443 {
 	handle /lab/3/* {
 		respond 404
 	}
+	# Workbench sandbox previews only; the sandbox API and slot management stay private.
+	handle /sandbox/1/socket.io/* {
+		respond @foreignOrigin 403
+		reverse_proxy sandbox:7601
+	}
+	handle /sandbox/2/socket.io/* {
+		respond @foreignOrigin 403
+		reverse_proxy sandbox:7602
+	}
+	handle /sandbox/3/socket.io/* {
+		respond @foreignOrigin 403
+		reverse_proxy sandbox:7603
+	}
+	handle /sandbox/* {
+		respond 404
+	}
+	# The mounted workbench is never framed.
+	@workbench path /workbench /workbench/*
+	header @workbench {
+		X-Frame-Options DENY
+		Content-Security-Policy "frame-ancestors 'none'"
+	}
 	handle {
 		root * /srv/site
 		file_server

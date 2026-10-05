@@ -11,9 +11,12 @@
  * (eligible for a lease), then `open` once a lease is bound to it. An open study is
  * never handed to another lease: only a reset (study discard) ends it.
  *
- * StreamOtter 0.1.0-rc.3 has no journal of its own. The journal directory is created
- * and removed with the study so the native journal can be bound to it later (W9b);
- * nothing here emulates native recovery state.
+ *   <stateDir>/lab-N/studies/<studyId>/journal/ the study's StreamOtter failure journal
+ *
+ * With failure handling (LAB_FAILURE_HANDLING other than `off`), the bench creates the
+ * study's native failure journal under its directory when it provisions the study
+ * (journal.ts), and every gateway of the study opens it; it is removed with the
+ * study's directory. Nothing here emulates native recovery state.
  */
 import { randomBytes } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
@@ -25,6 +28,11 @@ const FORMAT = 1;
 /** Discarded-study summaries kept per bench; older ones are deleted. */
 export const SUMMARIES_KEPT = 20;
 const STUDY_ID = /^[A-Za-z0-9_-]{16}$/;
+/**
+ * Directories the bench creates are owner-only: StreamOtter refuses a journal whose state
+ * directory others could write (section 8b), and nothing here is for anyone else.
+ */
+const PRIVATE = 0o700;
 
 export interface StudyDescriptor extends BenchStudy {
   format: typeof FORMAT;
@@ -33,6 +41,11 @@ export interface StudyDescriptor extends BenchStudy {
   lease: { leaseId: string; expiresAt: string } | null;
   /** Scenario state the bench's handlers read, restored with the study. */
   calibration: 'present' | 'removed';
+  /** Which projection the `lab-projection-v2` records go through: `corrected` once an inspect-old-reading start switched it. */
+  mapping: 'broken' | 'corrected';
+  /** calibration-blip starts in this study, and the transient failures still armed for the next live LC-03 reading. */
+  blips: number;
+  blip: number;
 }
 
 /** URL-safe and short enough that `lab-N-<studyId>` passes rc.3's identifier rule ([A-Za-z][A-Za-z0-9_-]{0,63}). */
@@ -42,7 +55,7 @@ export const generationFor = (bench: number, studyId: string): string => `lab-${
 export const consumerGroupFor = (bench: number, studyId: string): string => `${benchNamed(bench).consumerGroupPrefix}${studyId}`;
 
 export function newStudy(bench: number, at: number, studyId = newStudyId()): StudyDescriptor {
-  return { format: FORMAT, bench, studyId, generation: generationFor(bench, studyId), consumerGroup: consumerGroupFor(bench, studyId), createdAt: new Date(at).toISOString(), phase: 'provisioning', restarts: { gateway: 0, process: 0 }, lease: null, calibration: 'present' };
+  return { format: FORMAT, bench, studyId, generation: generationFor(bench, studyId), consumerGroup: consumerGroupFor(bench, studyId), createdAt: new Date(at).toISOString(), phase: 'provisioning', restarts: { gateway: 0, process: 0 }, lease: null, calibration: 'present', mapping: 'broken', blips: 0, blip: 0 };
 }
 
 /** A descriptor read back from disk, or null when it is missing, unreadable, or not this bench's. */
@@ -56,6 +69,9 @@ export function parseStudy(bench: number, text: string): StudyDescriptor | null 
   if (lease !== null && (typeof lease !== 'object' || typeof lease.leaseId !== 'string' || typeof lease.expiresAt !== 'string')) return null;
   const restarts = value.restarts;
   if (!restarts || !Number.isSafeInteger(restarts.gateway) || !Number.isSafeInteger(restarts.process)) return null;
+  // Written before failure handling: its handlers were the broken projection with nothing armed.
+  value.mapping ??= 'broken'; value.blips ??= 0; value.blip ??= 0;
+  if (!['broken', 'corrected'].includes(value.mapping) || !Number.isSafeInteger(value.blips) || !Number.isSafeInteger(value.blip) || value.blips < 0 || value.blip < 0) return null;
   return value as StudyDescriptor;
 }
 
@@ -66,6 +82,8 @@ export class StudyStore {
   constructor(stateDir: string, bench: number) { this.#root = join(stateDir, `lab-${bench}`); this.#bench = bench; }
   get root(): string { return this.#root; }
   directory(studyId: string): string { if (!STUDY_ID.test(studyId)) throw new Error('Invalid study ID.'); return join(this.#root, 'studies', studyId); }
+  /** The study's failure journal directory: the gateway's `stateDirectory`. */
+  journal(studyId: string): string { return join(this.directory(studyId), 'journal'); }
   /** The persisted study; `corrupt` when a descriptor exists but cannot be trusted. */
   async load(): Promise<StudyDescriptor | null | 'corrupt'> {
     let text: string;
@@ -73,7 +91,7 @@ export class StudyStore {
     return parseStudy(this.#bench, text) ?? 'corrupt';
   }
   async save(study: StudyDescriptor): Promise<void> {
-    await mkdir(this.directory(study.studyId), { recursive: true });
+    await mkdir(this.directory(study.studyId), { recursive: true, mode: PRIVATE });
     await this.#write(join(this.#root, 'study.json'), study);
   }
   /** Removes a study's journal directory. Missing is fine: removal is idempotent. */
@@ -83,7 +101,7 @@ export class StudyStore {
   /** Writes a discarded study's summary once: a retried discard never replaces the first, fuller record. */
   async summarize(summary: StudySummary): Promise<void> {
     const dir = join(this.#root, 'summaries'); const path = join(dir, `${summary.studyId}.json`);
-    await mkdir(dir, { recursive: true });
+    await mkdir(dir, { recursive: true, mode: PRIVATE });
     try { await stat(path); return; } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     await this.#write(path, summary);
     const files = (await readdir(dir)).filter(name => name.endsWith('.json'));
@@ -98,8 +116,8 @@ export class StudyStore {
     return (await Promise.all(files.filter(name => name.endsWith('.json')).map(async name => JSON.parse(await readFile(join(dir, name), 'utf8')) as StudySummary))).sort((a, b) => a.closedAt.localeCompare(b.closedAt));
   }
   async #write(path: string, value: unknown): Promise<void> {
-    await mkdir(join(path, '..'), { recursive: true });
-    await writeFile(`${path}.tmp`, JSON.stringify(value));
+    await mkdir(join(path, '..'), { recursive: true, mode: PRIVATE });
+    await writeFile(`${path}.tmp`, JSON.stringify(value), { mode: 0o600 });
     await rename(`${path}.tmp`, path);
   }
 }

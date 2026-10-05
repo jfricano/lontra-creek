@@ -12,6 +12,15 @@ on `edge-lontra`, exact shared-edge peer **10.203.43.2**, and selected region
 **us-sanjose-1**. Domain names in the example remain subject to domain-manager
 approval. No Oracle eligibility, capacity or deployed infrastructure is inferred.
 
+**October 4, 2026.** The [rollout plan](releases/0.2.0-rc.1/ROLLOUT_PLAN.md),
+reconciled with devops's procedure, now governs activation on this host, in two
+phases. The domain is `streamotter.dev`, with `DEMO_HOST=demo.streamotter.dev`.
+Neither phase sets `lab.enabled`, and the V1.1 workbench sandbox
+(`deploy/compose.sandbox.yaml`, `SANDBOX_SERVICE_TOKEN`) has no shared-host
+overlay or adapter tests: the release layout carries neither, and no sandbox
+token is created on the host. Enabling either needs the owner's separate approval
+with its own acceptance.
+
 ## Candidate and evidence
 
 Main `2397e2c` contains accepted PR20 application/deployment preparation. This

@@ -4,12 +4,16 @@ import type { BenchId, BenchStatus } from '../src/lab/contract.ts';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { benchError, configuredLab, LeasePool, type BenchClient } from '../src/lab/leases.ts';
-import { LabError, MAX_LEASE_MS } from '../src/lab/errors.ts';
+import { BenchNotFound, LabError, MAX_LEASE_MS } from '../src/lab/errors.ts';
 import { LabFeed } from '../src/lab/feed.ts';
 import { benchConfig, benchEnvironment, benchHandlers } from '../src/lab/bench.ts';
 import { createGateway } from 'streamotter/gateway';
 import { BenchRuntime, requireNoDevelopmentPrincipals } from '../src/lab/runtime.ts';
 import type { Trace } from 'streamotter/contracts';
+import { publicApi } from '../src/server/http.ts';
+import { readConfig } from '../src/server/config.ts';
+import type { FieldStation } from '../src/server/station.ts';
+import type { Notebooks } from '../src/server/notebooks.ts';
 function fixture(count = 3, leaseMs = 300_000) {
   let now = Date.parse('2026-09-27T00:00:00Z');
   const slots = new Map<BenchId, BenchStatus>();
@@ -91,7 +95,9 @@ test('redaction drops handshakes and map noise, replaces identifiers, bounds pag
 test('bench environment rejects production and other-bench secrets; options have no protected channels or development principals', () => {
   const env = { LAB_BENCH: '1', LAB_BENCH_1_SERVICE_TOKEN: 's'.repeat(32), LAB_BENCH_1_RELAY_TOKEN: 'r'.repeat(32) };
   assert.equal(benchEnvironment(env).number, 1);
-  for (const key of ['FIELD_STATION_SECRET', 'FIELD_STATION_SERVICE_TOKEN', 'KAFKA_GATEWAY_PASSWORD', 'KAFKA_FIELD_STATION_PASSWORD', 'LAB_BENCH_2_SERVICE_TOKEN', 'LAB_BENCH_3_RELAY_TOKEN']) assert.throws(() => benchEnvironment({ ...env, [key]: 'secret' }), /forbidden/);
+  for (const key of ['FIELD_STATION_SECRET', 'FIELD_STATION_SERVICE_TOKEN', 'FIELD_STATION_INTERNAL_URL', 'KAFKA_GATEWAY_PASSWORD', 'KAFKA_FIELD_STATION_PASSWORD', 'LAB_BENCH_2_SERVICE_TOKEN', 'LAB_BENCH_3_RELAY_TOKEN', 'SANDBOX_SERVICE_TOKEN', 'KAFKA_LAB_2_PASSWORD', 'CLOUDFLARE_API_TOKEN', 'SOME_FUTURE_SECRET', 'DEPLOY_KEY', 'lowercase_token']) assert.throws(() => benchEnvironment({ ...env, [key]: 'secret' }), /forbidden/, key);
+  // Its own credentials, and ordinary settings that merely look alike, are fine.
+  assert.doesNotThrow(() => benchEnvironment({ ...env, KAFKA_LAB_PASSWORD: 'p', KAFKA_LAB_USERNAME: 'lab-1', KAFKA_CA_FILE: '/etc/ca.pem', PATH: '/usr/bin', NODE_VERSION: '24.21.0', HOSTNAME: 'lab-1', LAB_STATE_DIR: '/var/lib/lontra', MONKEY: 'x' }));
   const config = benchConfig(1); assert.deepEqual(Object.keys(config.channels).sort(), ['creekOverview', 'otter', 'reach', 'station']); assert.ok(Object.values(config.sources).every(source => source.kind === 'kafka'));
   const handlers = benchHandlers(1, { authenticate: () => null, serviceToken: env.LAB_BENCH_1_SERVICE_TOKEN, snapshotOrigin: 'http://field.test', calibration: () => true, record: () => {} });
   assert.doesNotThrow(() => createGateway({ config, handlers, mode: 'production' }));
@@ -119,6 +125,9 @@ test("a bench's error codes reach the visitor as the contract names them", () =>
   assert.deepEqual(mapped(429, 'too-many-actions'), ['too-many-actions', 429]);
   assert.deepEqual(mapped(400), ['invalid-request', 400]);
   for (const status of [401, 404, 500, 502]) assert.deepEqual(mapped(status, 'no-lease'), ['bench-unavailable', 503]);
+  // A 404 is the bench failing like the rest, marked so an operation lookup can tell an operation the bench forgot.
+  assert.ok(benchError(404, undefined) instanceof BenchNotFound);
+  for (const status of [401, 500]) assert.ok(!(benchError(status, undefined) instanceof BenchNotFound));
 });
 
 test('over HTTP, a bench no-lease stays no-lease and a bench failure ends the lease as bench-failed', async () => {
@@ -292,4 +301,41 @@ test('requests that arrive while the pool starts grant nothing until every bench
   assert.equal(view.status, 'ready', 'granted after the startup reset');
   await f.pool.token(a); f.advance(5000); f.pool.heartbeat(a); await f.pool.sweep();
   assert.equal(f.pool.view(a).status, 'active');
+});
+
+test('a bench with another failure handling is logged once and left unavailable, never reset for it', async t => {
+  const f = fixture(1); const slot = f.slots.get(1)!;
+  const resets = () => f.calls.filter(call => call.path === '/bench/v1/reset').length;
+  const logged: string[] = []; t.mock.method(console, 'error', (line: string) => { logged.push(line); });
+  // This field station runs profile off; the bench was started with retry.
+  slot.failures = { profile: 'retry', durable: true, handlerBuildId: 'h' };
+  await f.pool.initialize();
+  for (let i = 0; i < 120; i++) { f.advance(5000); await f.pool.sweep(); }
+  assert.equal(resets(), 1, 'only the startup reset: another one cannot change the profile');
+  assert.equal(f.pool.status().benches[0]!.state, 'unavailable');
+  assert.equal(logged.length, 1);
+  assert.match(logged[0]!, /Lab bench 1 reports failure handling retry; this field station requires off\.$/);
+  // Restarted with the deployment's profile, it is granted without another reset.
+  delete slot.failures;
+  for (let i = 0; i < 7; i++) { f.advance(5000); await f.pool.sweep(); }
+  assert.equal(f.pool.status().benches[0]!.state, 'ready');
+  assert.equal(resets(), 1);
+  assert.equal((await f.pool.join(f.session('a'), 'a')).status, 'ready');
+});
+
+test('a role switch on the creek tablet (POST /api/badge) ends the Lab place held under the old session at once, and the new one sees why', async () => {
+  const f = fixture(1); await f.pool.initialize(); await f.pool.run(() => f.pool.sweep());
+  const server = publicApi({ config: readConfig({ SITE_ORIGIN: 'https://site.test' }), station: {} as FieldStation, notebooks: {} as Notebooks, lab: f.pool });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`; const headers = { origin: 'https://site.test', 'x-client-ip': '192.0.2.41' };
+  try {
+    const join = await fetch(`${origin}/api/lab/lease`, { method: 'POST', headers });
+    const cookie = join.headers.get('set-cookie')!.split(';')[0]!; assert.equal((await join.json() as { status: string }).status, 'ready');
+    const badge = await fetch(`${origin}/api/badge`, { method: 'POST', headers: { ...headers, cookie, 'content-type': 'application/json' }, body: JSON.stringify({ role: 'researcher' }) });
+    const switched = badge.headers.get('set-cookie')!.split(';')[0]!;
+    const view = await (await fetch(`${origin}/api/lab/lease`, { headers: { ...headers, cookie: switched } })).json() as { status: string; reason?: string };
+    assert.deepEqual([view.status, view.reason], ['ended', 'session-ended']);
+    assert.equal(f.calls.filter(call => call.path === '/bench/v1/reset').length, 2, 'the bench was reset at once, not held until the idle limit');
+    assert.equal(f.pool.placesFor('192.0.2.41'), 0);
+  } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
 });

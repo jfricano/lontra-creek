@@ -16,12 +16,14 @@
 import pkg from "streamotter/package.json" with { type: "json" };
 import {
   DEFAULT_LIMITS, PUBLIC_MESSAGES,
-  type ConnectionState, type ErrorCode, type Limits, type SourceStatus, type SubscriptionState,
+  type ConnectionState, type ErrorCode, type FailureClass, type Limits, type SourceStatus, type SubscriptionState,
   type Trace, type TraceStage
 } from "streamotter/contracts";
 
 /** The exact version this file describes; read from the installed package, never hand-typed. */
 export const RELEASE_VERSION: string = pkg.version;
+/** The stable version a prerelease leads to (`0.2.0` for `0.2.0-rc.1`), or null for a stable release. */
+export const UPCOMING_STABLE: string | null = RELEASE_VERSION.includes("-") ? RELEASE_VERSION.slice(0, RELEASE_VERSION.indexOf("-")) : null;
 /** The GitHub tag that version was published from. Every `source` below resolves under this tag. */
 export const RELEASE_TAG = `v${RELEASE_VERSION}`;
 
@@ -41,6 +43,14 @@ export const NPM_RELEASE_PAGE = `${NPM_PACKAGE}/v/${RELEASE_VERSION}`;
 
 const V1_API = "docs/V1_API.md";
 const IMPLEMENTATION_STATUS = "docs/IMPLEMENTATION_STATUS.md";
+const SOURCE_FAILURES_GUIDE = "docs/guides/source-failures.md";
+
+/** Refused handshakes are traced at this sustained rate after a burst (V1_API §10). Not exported by the package. */
+export const HANDSHAKE_TRACE_RATE = { perSecond: 10, burst: 100 } as const;
+/** The smallest valid `limits.maxControlFrameBytes`: a CONNECT frame with an 8 KiB token must fit. Checked against the installed validator in the test. */
+export const MIN_CONTROL_FRAME_BYTES = 9_216;
+/** The first Node.js release whose `node:sqlite` the failure journal opens (V1.1 API §11, decision D1). Not exported by the package. */
+export const JOURNAL_NODE_FLOOR = "24.15.0";
 
 // --- Errors ------------------------------------------------------------------------
 
@@ -78,18 +88,19 @@ export const ERROR_FACTS: Readonly<Record<ErrorCode, ErrorFact>> = {
       "authenticate() returns null, or the token is missing or over 8 KiB: handshake rejected before a connection opens.",
       "authenticate() returns a principal whose expiresAt is already in the past: handshake rejected.",
       "A previously open session's principal.expiresAt is reached while connected: the session closes and tells the client to reconnect with a new token.",
-      "The application revokes the principal (Gateway.revoke) between handshake and use, or while authorize/snapshot is pending: the session or subscription closes immediately.",
+      "The application revokes the principal (Gateway.revoke) between handshake and use, or while authorize/snapshot is pending: the session or subscription closes immediately. A session revoked between authentication and the connection opening is refused.",
       "Client-side: the authenticated identityKey changes after reconnect() (a different subject/tenant): the SDK closes every prior subscription with UNAUTHENTICATED before the new identity subscribes fresh.",
       "Client-side: getToken() rejects, times out (10 s), or resolves to an empty string: the client enters auth-required."
     ],
     visibility: {
       browserSdk: "A connection 'state' change to auth-required, or a subscription 'state' change to failed with reason UNAUTHENTICATED (account switch); no so:error frame for the handshake-time cases, since the connection never opens.",
-      gatewayTrace: "Handshake rejections are recorded: authenticateHandshake()'s reject() helper calls traces.record with stage authorize, outcome rejected, and this code as the errorCode — the same stage a successful handshake logs with outcome ok. That covers every handshake-time situation above (missing/oversized token, authenticate() returning null or an expired principal, and revocation caught before the connection opens). Only a revocation or expiry that closes an already-open session (Gateway.revoke, or the principal's own expiresAt) is untraced, visible solely as the session closing.",
+      gatewayTrace: "Handshake rejections are recorded: authenticateHandshake()'s reject() helper calls traces.record with stage authorize, outcome rejected, and this code as the errorCode — the same stage a successful handshake logs with outcome ok. That covers every handshake-time situation above (missing/oversized token, authenticate() returning null or an expired principal, and revocation caught before the connection opens). Only a revocation or expiry that closes an already-open session (Gateway.revoke, or the principal's own expiresAt) is untraced, visible solely as the session closing. Refused handshakes are traced at most ${HANDSHAKE_TRACE_RATE.perSecond} per second after a burst of ${HANDSHAKE_TRACE_RATE.burst}, so a flood of bad connections can't evict other traces; the gateway logs how many it skipped.",
       operatorLog: "None beyond the connection closing; the gateway does not log routine sign-out or expiry."
     },
     sources: [
       repoDoc(V1_API, "7-authentication-and-access-lifecycle"),
       repoDoc(V1_API, "13-implementation-refinements-contract-revision-02"),
+      repoDoc(V1_API, "10-management-api-and-workbench"),
       repoFile("packages/gateway/src/runtime/gateway.ts"),
       repoFile("packages/gateway/src/runtime/session.ts"),
       repoFile("packages/client/src/client.ts")
@@ -97,18 +108,19 @@ export const ERROR_FACTS: Readonly<Record<ErrorCode, ErrorFact>> = {
   },
   FORBIDDEN: {
     publicMessage: PUBLIC_MESSAGES.FORBIDDEN,
-    meaning: "A recognized identity is not permitted to see this specific channel instance. The gateway also reports an unrecognized channel name or an unsupported channel version as FORBIDDEN to the browser, deliberately, so a visitor cannot enumerate which channels or versions exist.",
+    meaning: "A recognized identity is not permitted to see this specific channel instance. The gateway also reports an unrecognized channel name or an unsupported channel version as FORBIDDEN to the browser, deliberately, so a visitor cannot enumerate which channels or versions exist. In production, parameters that fail the channel's schema are answered FORBIDDEN for the same reason.",
     defaultRetryable: false,
     situations: [
       "The application's authorize() handler returns anything other than true, at subscribe time, at any resynchronization attempt, or immediately before a snapshot is delivered.",
       "The subscribed channel name does not exist in the deployed project (internally CHANNEL_NOT_FOUND; reported to the browser as FORBIDDEN).",
       "The subscribed channelVersion does not match the one deployed channel version (internally CHANNEL_VERSION_UNSUPPORTED; reported to the browser as FORBIDDEN).",
+      "In production, the subscribe parameters fail the channel's paramsSchema (traced as INVALID_PARAMS; reported to the browser as FORBIDDEN, so the answer reveals neither the channel nor its parameter names). A development gateway answers INVALID_PARAMS instead.",
       "The application revokes access to this exact channel/params for this subject between authorize checks.",
       "No Origin header at all in production mode, or an Origin not on the allowed list: the handshake is rejected before the auth payload is even read."
     ],
     visibility: {
       browserSdk: "A so:error frame with code FORBIDDEN and a subscription 'state' change to failed; no data is ever sent for that subscription. For the Origin case, the connection never opens at all.",
-      gatewayTrace: "Stage authorize, outcome rejected — the same path as every other handshake or channel-authorize rejection. The trace's errorCode is the real cause (FORBIDDEN for a bad Origin or a denied channel, CHANNEL_NOT_FOUND, or CHANNEL_VERSION_UNSUPPORTED) even though the browser only ever receives FORBIDDEN.",
+      gatewayTrace: "Stage authorize, outcome rejected — the same path as every other handshake or channel-authorize rejection. The trace's errorCode is the real cause (FORBIDDEN for a bad Origin or a denied channel, CHANNEL_NOT_FOUND, CHANNEL_VERSION_UNSUPPORTED, or INVALID_PARAMS for a production schema mismatch) even though the browser only ever receives FORBIDDEN.",
       operatorLog: "No warning is logged for an ordinary denial; it is expected traffic, not a fault."
     },
     sources: [
@@ -119,19 +131,20 @@ export const ERROR_FACTS: Readonly<Record<ErrorCode, ErrorFact>> = {
   },
   INVALID_PARAMS: {
     publicMessage: PUBLIC_MESSAGES.INVALID_PARAMS,
-    meaning: "The channel parameters on a subscribe request are structurally invalid: not a plain object, over maxParamsBytes once canonically encoded, or a mismatch against the channel's declared parameter schema. This check runs before authorize or any handler, so it never reaches application code.",
+    meaning: "The channel parameters on a subscribe request are invalid: not a plain object, over maxParamsBytes once canonically encoded, or a mismatch against the channel's declared parameter schema. The check runs before authorize or any handler, so it never reaches application code. In production a schema mismatch is answered FORBIDDEN instead, like an unknown channel; the other two cases are INVALID_PARAMS in both modes.",
     defaultRetryable: false,
     situations: [
-      "params is missing, not an object, or fails canonicalization (for example a non-finite number).",
-      "The canonical JSON encoding of params exceeds maxParamsBytes.",
-      "A parameter value does not satisfy the channel's paramsSchema (wrong type, out of range, or an unlisted enum value)."
+      "params is missing, not an object, or fails canonicalization (for example a non-finite number): rejected before the channel is looked up, in both modes.",
+      "The canonical JSON encoding of params exceeds maxParamsBytes: rejected before the channel is looked up, in both modes.",
+      "A parameter value does not satisfy the channel's paramsSchema (wrong type, out of range, or an unlisted enum value): INVALID_PARAMS with the failing path from a development gateway, FORBIDDEN from a production one."
     ],
     visibility: {
-      browserSdk: "The so:subscribe acknowledgement itself carries {ok:false, error} with code INVALID_PARAMS; the SDK surfaces this as that subscription's failure. No so:state or so:error frame follows, since no subscription was created.",
-      gatewayTrace: "None: this is a protocol-layer rejection before any Trace entry is recorded.",
+      browserSdk: "The so:subscribe acknowledgement itself carries {ok:false, error} with code INVALID_PARAMS (FORBIDDEN for a schema mismatch in production); the SDK surfaces this as that subscription's failure. No so:state or so:error frame follows, since no subscription was created.",
+      gatewayTrace: "A schema mismatch is traced in both modes: stage authorize, outcome rejected, errorCode INVALID_PARAMS. Parameters that aren't an object or are too large are rejected before the channel lookup and leave no trace.",
       operatorLog: "None."
     },
     sources: [
+      repoDoc(V1_API, "7-authentication-and-access-lifecycle"),
       repoDoc(V1_API, "2-configuration-and-generated-application-contracts"),
       repoFile("packages/gateway/src/runtime/session.ts")
     ]
@@ -167,12 +180,13 @@ export const ERROR_FACTS: Readonly<Record<ErrorCode, ErrorFact>> = {
     situations: [
       "The source is degraded or paused when a subscription's synchronization attempt begins (a new subscribe, or a retry): the attempt waits in stale, reporting the source's actual current reason if one is known, or SOURCE_UNAVAILABLE otherwise.",
       "An already-live or already-authorizing subscription's source transitions from ready to not-ready (Kafka rebalance, consumer crash, 12 s without fetch/heartbeat activity, or any pause below): every affected subscription is told stale with reason SOURCE_UNAVAILABLE specifically, regardless of the internal cause.",
+      "With failureHandling, while a recovery boundary is in force: a snapshot that doesn't return the boundary's recoveryBoundaryId fails that attempt as a retryable SOURCE_UNAVAILABLE, and the view stays stale until one does.",
       "Client-side: the gateway cannot be reached within the connection attempt, the handshake's transport closes before completing, or a control request (unsubscribe/resync) is issued while disconnected."
     ],
     visibility: {
       browserSdk: "A subscription 'state' change to stale with reason SOURCE_UNAVAILABLE only; no so:error frame is sent for a source-caused pause (fail() is never called), so an 'error' listener is not invoked for this case.",
       gatewayTrace: "The trace's errorCode is the true cause, not SOURCE_UNAVAILABLE: for example HANDLER_FAILED (map handler threw), INVALID_PAYLOAD (bad record or bad map output), TIMEOUT (map handler timed out), or REVISION_CONFLICT (two records mapped to the same revision with different data). SourceStatus.reason carries that same true cause.",
-      operatorLog: "A warning naming the source, its new status, and the true reason code — for example \"Source not ready\" or \"Source paused on an unprocessable record; it will not be committed or skipped.\""
+      operatorLog: "A warning naming the source, its new status, and the true reason code — for example \"Source not ready\" or \"Source paused on an unprocessable record; it will not be committed or skipped.\" A pause on a record also names its failureClass (for example mapper-error or invalid-json), the trusted classification of why the record couldn't be processed."
     },
     sources: [
       repoDoc(V1_API, "13-implementation-refinements-contract-revision-02"),
@@ -190,12 +204,13 @@ export const ERROR_FACTS: Readonly<Record<ErrorCode, ErrorFact>> = {
     situations: [
       "A raw source record is not valid JSON, exceeds maxSourceRecordBytes, or is a tombstone (V1 gives tombstones no meaning): pauses the source.",
       "A map handler's return value is not an array, exceeds maxMapOutputs, or one of its MappedState entries fails validation: pauses the source.",
-      "A snapshot handler's return value is not a {revision, data} object, its data fails the channel's payload schema, or its revision is lower than one already delivered on that subscription: fails that subscription's attempt (or, for the regression case, retries it)."
+      "A snapshot handler's return value is not a {revision, data} object, its data fails the channel's payload schema, or its revision is lower than one already delivered on that subscription: fails that subscription's attempt (or, for the regression case, retries it).",
+      "A snapshot returns recoveryBoundaryId while its source has no recovery boundary in force (failureHandling only)."
     ],
     visibility: {
       browserSdk: "Source-caused: stale/SOURCE_UNAVAILABLE, no error frame (see SOURCE_UNAVAILABLE above). Snapshot-caused: a so:error with code INVALID_PAYLOAD and state failed for that one subscription, or stale while the retry policy runs for a regression.",
       gatewayTrace: "Stage validate or map (source records) or snapshot (bad snapshot), outcome failed or rejected, errorCode INVALID_PAYLOAD.",
-      operatorLog: "A warning with the source ID, record position, and a redacted reason (never the offending payload)."
+      operatorLog: "A warning with the source ID, record position, failure class (invalid-json, payload-schema, routing-invalid, tombstone, or oversize), and a redacted reason (never the offending payload)."
     },
     sources: [
       repoDoc(V1_API, "6-source-progress-failures-and-flow-control"),
@@ -209,7 +224,8 @@ export const ERROR_FACTS: Readonly<Record<ErrorCode, ErrorFact>> = {
     defaultRetryable: true,
     situations: [
       "A connection tries to open more than maxSubscriptionsPerConnection subscriptions.",
-      "A connection sends control requests (subscribe/unsubscribe/resync) faster than controlRequestsPerSecond, burst 40.",
+      "A connection sends control requests (subscribe/unsubscribe/resync) faster than controlRequestsPerSecond, burst 40. Malformed and unknown frames count against the same rate; a connection that runs out on them is closed with OVERLOADED.",
+      "A client stops reading and its unsent output passes maxPendingBytesPerConnection: the gateway closes the connection without waiting for that output to drain.",
       "A subscription's pending byte budget (maxPendingBytesPerSubscription, or the connection/gateway-wide budgets above it) is exhausted before the client acknowledges outstanding frames.",
       "A client does not send a receipt within receiptTimeoutMs (5 s): its whole connection is closed with OVERLOADED.",
       "The gateway is not in its running state when a handshake arrives (still starting, or already stopping): the handshake is rejected before authentication runs.",
@@ -217,11 +233,12 @@ export const ERROR_FACTS: Readonly<Record<ErrorCode, ErrorFact>> = {
     ],
     visibility: {
       browserSdk: "A rejected subscribe/control acknowledgement, a subscription 'state' change to stale (buffer overflow, retried with backoff) or resync-required (attempts exhausted), or the whole connection closing (receipt timeout or a rejected handshake).",
-      gatewayTrace: "Stage queue, outcome rejected, errorCode OVERLOADED for a buffer overflow. The handshake-time cases above (the gateway not running, or its maxConnections limit reached) are also recorded, via the same stage-authorize/outcome-rejected handshake path as every other handshake rejection.",
-      operatorLog: "None beyond the connection or subscription outcome; this is treated as expected back-pressure, not a fault."
+      gatewayTrace: "Stage queue, outcome rejected, errorCode OVERLOADED for a buffer overflow. The handshake-time cases above (the gateway not running, or its maxConnections limit reached) are also recorded, via the same stage-authorize/outcome-rejected handshake path as every other handshake rejection, at the same bounded rate.",
+      operatorLog: "None for ordinary back-pressure. Closing a connection that stopped reading logs a warning, \"Closing a connection that stopped reading\"."
     },
     sources: [
       repoDoc(V1_API, "6-source-progress-failures-and-flow-control"),
+      repoDoc(V1_API, "13-implementation-refinements-contract-revision-02"),
       repoFile("packages/gateway/src/runtime/session.ts"),
       repoFile("packages/gateway/src/runtime/subscription.ts")
     ]
@@ -232,7 +249,8 @@ export const ERROR_FACTS: Readonly<Record<ErrorCode, ErrorFact>> = {
     defaultRetryable: true,
     situations: [
       "Three consecutive synchronization attempts failed (source outage, snapshot timeout, or handler failure that keeps recurring) without reaching live.",
-      "The SDK detects a protocol violation on delivered frames (a sequence gap, an unexpected future receipt) more times than its retry budget allows."
+      "The SDK detects a protocol violation on delivered frames (a sequence gap, an unexpected future receipt) more times than its retry budget allows.",
+      "An explicit resync() that runs out of attempts before the gateway starts a new one: the subscription ends in resync-required and resync() rejects with RESYNC_REQUIRED, rather than timing out."
     ],
     visibility: {
       browserSdk: "A subscription 'state' change to resync-required; ready() and resync() both reject pending waits with this code until resync() is called.",
@@ -241,7 +259,9 @@ export const ERROR_FACTS: Readonly<Record<ErrorCode, ErrorFact>> = {
     },
     sources: [
       repoDoc(V1_API, "5-states-and-synchronization"),
-      repoFile("packages/gateway/src/runtime/subscription.ts")
+      repoDoc(V1_API, "13-implementation-refinements-contract-revision-02"),
+      repoFile("packages/gateway/src/runtime/subscription.ts"),
+      repoFile("packages/client/src/subscription.ts")
     ]
   },
   UNSUPPORTED_CAPABILITY: {
@@ -271,7 +291,7 @@ export const ERROR_FACTS: Readonly<Record<ErrorCode, ErrorFact>> = {
       "subscriptionId or requestId is not a UUID, or a control call has no acknowledgement callback.",
       "A requestId already used on this connection is reused with a different payload.",
       "A so:receipt frame is missing a field or has an out-of-range sequence.",
-      "A management API trace cursor is malformed (not from a valid page).",
+      "A management API trace cursor is malformed (not from a valid page), or a management GET request declares a body (answered 400).",
       "Client-side: a data frame arrives with a sequence gap, or a receipt is acknowledged for a frame never sent — the affected subscription fails and needs fresh synchronization.",
       "The handshake's auth payload carries a field other than token or protocolVersion: the handshake is rejected."
     ],
@@ -328,18 +348,19 @@ export const ERROR_FACTS: Readonly<Record<ErrorCode, ErrorFact>> = {
   },
   CANCELLED: {
     publicMessage: PUBLIC_MESSAGES.CANCELLED,
-    meaning: "A purely local, client-side cancellation: an AbortSignal passed to a wait fired, or unsubscribe() cancelled a pending attempt. The gateway is never involved and never sees this code.",
+    meaning: "A cancellation. In the SDK it is purely local: an AbortSignal passed to a wait fired, or unsubscribe() cancelled a pending attempt. The gateway uses it for one case of its own: a client that disconnects while authenticate() is still running.",
     defaultRetryable: false,
     situations: [
       "The AbortSignal passed to ready()/resync()/the initial connect wait fires before the wait resolves.",
-      "unsubscribe() cancels a subscription's in-flight synchronization attempt locally."
+      "unsubscribe() cancels a subscription's in-flight synchronization attempt locally.",
+      "A client disconnects mid-handshake: the gateway aborts authenticate()'s signal and rejects the handshake. An authenticate() that ignores the signal still counts against maxConnections until it settles or handlerTimeoutMs passes."
     ],
     visibility: {
-      browserSdk: "The specific promise rejects with CANCELLED; no network message is sent for this reason.",
-      gatewayTrace: "Never; this never reaches the gateway.",
+      browserSdk: "The specific promise rejects with CANCELLED; no network message is sent for this reason. The handshake case has no browser left to tell.",
+      gatewayTrace: "Only the handshake case: stage authorize, outcome rejected, errorCode CANCELLED, like other handshake rejections. SDK-side cancellations never reach the gateway.",
       operatorLog: "Never."
     },
-    sources: [repoFile("packages/client/src/waiters.ts"), repoFile("packages/client/src/subscription.ts")]
+    sources: [repoFile("packages/client/src/waiters.ts"), repoFile("packages/client/src/subscription.ts"), repoDoc(V1_API, "13-implementation-refinements-contract-revision-02"), repoFile("packages/gateway/src/runtime/gateway.ts")]
   },
   CLIENT_CLOSED: {
     publicMessage: PUBLIC_MESSAGES.CLIENT_CLOSED,
@@ -366,7 +387,7 @@ export const ERROR_FACTS: Readonly<Record<ErrorCode, ErrorFact>> = {
     visibility: {
       browserSdk: "The map case: only stale/SOURCE_UNAVAILABLE, no direct mention of HANDLER_FAILED. The authorize/snapshot/authenticate and local-listener cases: a so:error (or a locally constructed StreamError) with code HANDLER_FAILED and, for a subscription, state failed.",
       gatewayTrace: "Stage map, authorize, or snapshot, outcome failed, errorCode HANDLER_FAILED — this is the one place the real cause is visible for the map case. Requires a development-mode gateway's management API or a Failure Lab bench's redacted feed; the production demo gateway exposes no trace endpoint.",
-      operatorLog: "A warning with the stage, channel or source ID, and the handler's (redacted) error description; for the map case, exactly: \"Source paused on an unprocessable record; it will not be committed or skipped.\" resumeSource() is required after the operator fixes the handler or its data — the paused record is retried, never skipped."
+      operatorLog: "A warning with the stage, channel or source ID, and the handler's (redacted) error description; for the map case, exactly: \"Source paused on an unprocessable record; it will not be committed or skipped.\", with failureClass mapper-error (mapper-timeout for a timeout, mapper-transient for a TransientMappingError). resumeSource() is required after the operator fixes the handler or its data — the paused record is retried, never skipped."
     },
     sources: [
       repoDoc(V1_API, "13-implementation-refinements-contract-revision-02"),
@@ -446,11 +467,11 @@ export const SUBSCRIPTION_STATE_FACTS: Readonly<Record<SubscriptionState, StateF
     sources: [repoDoc(V1_API, "5-states-and-synchronization")]
   },
   stale: {
-    description: "Not currently delivering updates: waiting for the source, retrying after an attempt failure, or told the connection dropped. Comes with a `reason` (an ErrorCode) in every case that has one; a source problem's reason is always the normalized SOURCE_UNAVAILABLE, never the specific cause.",
+    description: "Not currently delivering updates: waiting for the source, retrying after an attempt failure, or told the connection dropped. Comes with a `reason` (an ErrorCode) in every case that has one; a source problem's reason is always the normalized SOURCE_UNAVAILABLE, never the specific cause. resync() on a stale view keeps it stale until the gateway starts the new attempt.",
     sources: [repoDoc(V1_API, "5-states-and-synchronization"), repoDoc(V1_API, "13-implementation-refinements-contract-revision-02")]
   },
   "resync-required": {
-    description: "Automatic retries (3 attempts, 1 s then 2 s backoff) were exhausted for this incident. Call resync() to try again explicitly; the wire spelling is exactly 'resync-required'.",
+    description: "Automatic retries (3 attempts, 1 s then 2 s backoff) were exhausted for this incident, or an explicit resync() ran out of attempts. Call resync() to try again explicitly; the wire spelling is exactly 'resync-required'.",
     sources: [repoDoc(V1_API, "5-states-and-synchronization")]
   },
   failed: {
@@ -514,7 +535,7 @@ export const LIMIT_FACTS: Readonly<Record<keyof Limits, LimitFact>> = {
   maxParamsBytes: { description: "The largest canonical-JSON encoding of a subscribe request's params.", sources: [repoDoc(V1_API, "2-configuration-and-generated-application-contracts")] },
   maxPendingFramesPerSubscription: { description: "How many undelivered frames one subscription may queue before it is treated as overflowing.", sources: [repoDoc(V1_API, "6-source-progress-failures-and-flow-control")] },
   maxPendingBytesPerSubscription: { description: "The byte budget for one subscription's undelivered frames.", sources: [repoDoc(V1_API, "6-source-progress-failures-and-flow-control")] },
-  maxPendingBytesPerConnection: { description: "The byte budget shared by every subscription on one connection.", sources: [repoDoc(V1_API, "6-source-progress-failures-and-flow-control")] },
+  maxPendingBytesPerConnection: { description: "The byte budget shared by every subscription on one connection. A connection whose unsent output passes it, because the client stopped reading, is closed.", sources: [repoDoc(V1_API, "6-source-progress-failures-and-flow-control"), repoDoc(V1_API, "13-implementation-refinements-contract-revision-02")] },
   maxPendingBytesGateway: { description: "The byte budget shared by every connection on the gateway (64 MiB by default); not a bound on total process memory or native broker buffers.", sources: [repoDoc(V1_API, "6-source-progress-failures-and-flow-control")] },
   maxMapOutputs: { description: "The most MappedState entries one map() call may return for one source record and channel; more pauses the source.", sources: [repoDoc(V1_API, "3-server-handlers-and-gateway-lifecycle")] },
   maxConcurrentSnapshots: { description: "How many snapshot() calls may be in flight at once, gateway-wide; a subscription waits for a slot, counted against its snapshotTimeoutMs.", sources: [repoDoc(V1_API, "6-source-progress-failures-and-flow-control")] },
@@ -524,7 +545,7 @@ export const LIMIT_FACTS: Readonly<Record<keyof Limits, LimitFact>> = {
   maxSyncAttempts: { description: "How many synchronization attempts one incident gets (with 1 s then 2 s backoff) before the subscription enters resync-required (3 by default).", sources: [repoDoc(V1_API, "5-states-and-synchronization")] },
   maxTraceEntries: { description: "The most trace rows the gateway retains in memory at once; older rows age out.", sources: [repoDoc(V1_API, "10-management-api-and-workbench")] },
   maxTraceBytes: { description: "The byte budget for retained trace rows.", sources: [repoDoc(V1_API, "10-management-api-and-workbench")] },
-  maxControlFrameBytes: { description: "The largest control-channel payload (subscribe/unsubscribe/resync/receipt) the gateway will parse.", sources: [repoDoc(V1_API, "8-socketio-protocol-v1")] },
+  maxControlFrameBytes: { description: `The largest control-channel payload (subscribe/unsubscribe/resync/receipt) the gateway will parse. It must be at least ${MIN_CONTROL_FRAME_BYTES.toLocaleString("en-US")}, so a handshake carrying an 8 KiB token fits; a smaller value fails validation with INCONSISTENT_LIMITS.`, sources: [repoDoc(V1_API, "8-socketio-protocol-v1"), repoDoc(V1_API, "proposed-default-limits")] },
   controlRequestsPerSecond: { description: "The sustained rate of control requests one connection may make (burst capacity is twice this rate: 20/s sustained, burst 40, by default).", sources: [repoDoc(V1_API, "6-source-progress-failures-and-flow-control"), repoFile("packages/gateway/src/runtime/session.ts")] }
 };
 
@@ -543,12 +564,13 @@ export interface SupportFact {
 export const SUPPORT_MATRIX: readonly SupportFact[] = [
   { component: "Node.js", detail: "24.21.0", status: "verified", note: "Full suite; the specification's target version.", sources: [repoDoc(IMPLEMENTATION_STATUS, "environment-used-for-the-results-below")] },
   { component: "Node.js", detail: "26.9.0", status: "verified", note: "Full suite; timings in the status doc are from this version.", sources: [repoDoc(IMPLEMENTATION_STATUS, "environment-used-for-the-results-below")] },
+  { component: "Node.js", detail: `${JOURNAL_NODE_FLOOR} or later, for the failure journal`, status: "verified", note: `Needed only where a gateway with failureHandling has a state directory: earlier Node 24 releases print an experimental warning for node:sqlite, so the gateway refuses to open the journal on them. The journal's tests ran on 24.21.0 and 26.10.0, and its refusal on 24.14.0.`, sources: [repoDoc(SOURCE_FAILURES_GUIDE, "1-before-you-start"), repoDoc(IMPLEMENTATION_STATUS, "known-limitations-of-the-implementation")] },
   { component: "Socket.IO (server and client)", detail: "4.8.3", status: "verified", note: "Pinned; server and client kept at the identical version.", sources: [repoDoc(IMPLEMENTATION_STATUS, "environment-used-for-the-results-below")] },
   { component: "KafkaJS", detail: "2.2.4", status: "verified", note: "Pinned behind an internal adapter; two KafkaJS defects at this version are worked around inside it.", sources: [repoDoc(IMPLEMENTATION_STATUS, "decisions-and-deviations-worth-knowing")] },
   { component: "Apache Kafka", detail: "4.1.2, single-node KRaft", status: "verified", note: "The only broker version exercised; other versions are unverified (see the Kafka modes below).", sources: [repoDoc(IMPLEMENTATION_STATUS, "environment-used-for-the-results-below")] },
-  { component: "Browsers", detail: "Chromium (automated and manual checks)", status: "verified", sources: [repoDoc(IMPLEMENTATION_STATUS, "limitations-and-open-items")] },
-  { component: "Browsers", detail: "Firefox", status: "unverified", note: "Explicitly untested by the package's own test suite.", sources: [repoDoc(IMPLEMENTATION_STATUS, "limitations-and-open-items")] },
-  { component: "Browsers", detail: "Safari / WebKit", status: "unverified", note: "Explicitly untested by the package's own test suite.", sources: [repoDoc(IMPLEMENTATION_STATUS, "limitations-and-open-items")] },
+  { component: "Browsers", detail: "Chromium (automated and manual checks)", status: "verified", note: "The V1.1 browser tests, including the workbench's Failures tab, ran in headless Chromium 141.", sources: [repoDoc(IMPLEMENTATION_STATUS, "limitations-and-open-items"), repoDoc(IMPLEMENTATION_STATUS, "runs-recorded-in-the-implementation-log")] },
+  { component: "Browsers", detail: "Firefox", status: "unverified", note: "Explicitly untested by the package's own test suite; its V1.1 browser checks (F45) were not run.", sources: [repoDoc(IMPLEMENTATION_STATUS, "limitations-and-open-items"), repoDoc(IMPLEMENTATION_STATUS, "status-by-area")] },
+  { component: "Browsers", detail: "Safari / WebKit", status: "unverified", note: "Explicitly untested by the package's own test suite; its V1.1 browser checks (F45) were not run.", sources: [repoDoc(IMPLEMENTATION_STATUS, "limitations-and-open-items"), repoDoc(IMPLEMENTATION_STATUS, "status-by-area")] },
   { component: "Reverse proxies", detail: "Caddy (loopback, private CA)", status: "verified", note: "The one proxy exercised; nginx and cloud load balancers are unverified — the package's stated requirements are WebSocket-upgrade forwarding on the socket path and passing the browser's Origin header.", sources: [repoDoc(IMPLEMENTATION_STATUS, "limitations-and-open-items")] }
 ];
 
@@ -596,6 +618,8 @@ export interface MapHandlerFailureFact {
   summary: string;
   cause: ErrorCode;
   sourceStatus: { status: SourceStatus["status"]; reason: ErrorCode };
+  /** The trusted failure class the gateway logs (and, with failureHandling, records in the incident) for this record. */
+  failureClass: FailureClass;
   trace: { stage: TraceStage; outcome: Trace["outcome"]; errorCode: ErrorCode };
   operatorLog: string;
   visitor: { subscriptionState: SubscriptionState; reason: ErrorCode };
@@ -622,6 +646,7 @@ export const MAP_HANDLER_FAILURE: MapHandlerFailureFact = {
   summary: "A map() handler throws while processing a source record: the source pauses, the visitor's views go stale with SOURCE_UNAVAILABLE, and the gateway's trace shows the real cause, HANDLER_FAILED.",
   cause: "HANDLER_FAILED",
   sourceStatus: { status: "paused", reason: "HANDLER_FAILED" },
+  failureClass: "mapper-error",
   trace: { stage: "map", outcome: "failed", errorCode: "HANDLER_FAILED" },
   operatorLog: "Source paused on an unprocessable record; it will not be committed or skipped.",
   visitor: { subscriptionState: "stale", reason: "SOURCE_UNAVAILABLE" },

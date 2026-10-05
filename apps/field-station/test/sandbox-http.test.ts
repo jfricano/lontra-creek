@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
-import type { Server } from 'node:http';
+import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -13,14 +13,18 @@ import { readConfig } from '../src/server/config.ts';
 import { publicApi } from '../src/server/http.ts';
 import type { FieldStation } from '../src/server/station.ts';
 import type { Notebooks } from '../src/server/notebooks.ts';
-import { publishedBackend, SandboxService, sandboxEnvironment } from '../src/sandbox/service.ts';
-import { configuredSandbox } from '../src/sandbox/leases.ts';
+import { publishedBackend } from '../src/sandbox/seam.ts';
+import { SandboxService, sandboxEnvironment } from '../src/sandbox/service.ts';
+import { configuredSandbox, sandboxClient, SANDBOX_CALL_TIMEOUT_MS, SANDBOX_DEFAULTS, SANDBOX_OPS_TIMEOUT_MS } from '../src/sandbox/leases.ts';
+import { CALL_TIMEOUT_MS } from '../src/sandbox/seam.ts';
 import { harness, SERVICE_TOKEN } from './support/sandbox-harness.ts';
 
 const SITE = 'https://site.test';
 async function serving(server: Server, run: (origin: string) => Promise<void>) { await new Promise<void>(r => server.listen(0, '127.0.0.1', r)); try { await run(`http://127.0.0.1:${(server.address() as AddressInfo).port}`); } finally { server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); } }
 const api = (sandbox?: Awaited<ReturnType<typeof harness>>['pool']) => publicApi({ config: readConfig({ SITE_ORIGIN: SITE }), station: {} as FieldStation, notebooks: {} as Notebooks, ...(sandbox ? { sandbox } : {}) });
 const WB = { 'x-streamotter-workbench': '1', origin: SITE };
+/** An install from before WHC-1: the rc.3 workbench shipped no host manifest contract. */
+const PRE_WHC1 = { package: '@streamotter/workbench', version: '0.1.0-rc.3' };
 // Spread requests over client addresses so this test exercises the routes, not the shared request budget.
 let client = 0;
 const fetch = (url: string, init: RequestInit = {}) => globalThis.fetch(url, { ...init, headers: { 'x-client-ip': `198.51.100.${++client % 250}`, ...(init.headers as Record<string, string> ?? {}) } });
@@ -95,8 +99,8 @@ test('A42/A43: lifecycle and WHC-1 routes enforce Origin, the workbench header, 
   });
 });
 
-test('A44/A46: the rc.3 production backend reports seam-unavailable and allocates nothing', async () => {
-  const h = await harness({ backend: () => publishedBackend() });
+test('A44/A46: on a pre-WHC-1 install the production backend reports seam-unavailable and allocates nothing', async () => {
+  const h = await harness({ backend: () => publishedBackend({ siteOrigins: [SITE], manifest: PRE_WHC1 }) });
   const status = h.pool.status(); assert.equal(status.availability, 'unavailable'); assert.equal(status.reason, 'seam-unavailable'); assert.equal(status.runtime, null);
   assert.deepEqual(h.pool.discovery().operations, ['workbench'], 'nothing but discovery while the seam is unavailable');
   await serving(api(h.pool), async origin => {
@@ -108,9 +112,11 @@ test('A44/A46: the rc.3 production backend reports seam-unavailable and allocate
 });
 
 test('A43: the sandbox service API needs its bearer token, and production cannot select a test runtime', async () => {
-  const service = new SandboxService({ backend: publishedBackend(), slots: [1], serviceToken: SERVICE_TOKEN }); await service.start();
+  const service = new SandboxService({ backend: publishedBackend({ siteOrigins: [SITE], manifest: PRE_WHC1 }), slots: [1], serviceToken: SERVICE_TOKEN }); await service.start();
   await serving(service.api(), async origin => {
-    assert.equal((await fetch(`${origin}/healthz`)).status, 200);
+    const unhealthy = await fetch(`${origin}/healthz`); assert.equal(unhealthy.status, 503, 'a service that cannot serve is not healthy');
+    assert.deepEqual(await unhealthy.json(), { availability: 'unavailable', slots: 0 });
+    assert.equal((await fetch(`${origin}/healthz`, { method: 'POST' })).status, 405);
     assert.equal((await fetch(`${origin}/sandbox/v1/status`)).status, 401);
     assert.equal((await fetch(`${origin}/sandbox/v1/status`, { headers: { authorization: `Bearer ${'x'.repeat(40)}` } })).status, 401);
     const status = await (await fetch(`${origin}/sandbox/v1/status`, { headers: { authorization: `Bearer ${SERVICE_TOKEN}` } })).json() as { reason: string };
@@ -119,17 +125,100 @@ test('A43: the sandbox service API needs its bearer token, and production cannot
   const env = { SANDBOX_SERVICE_TOKEN: SERVICE_TOKEN, SANDBOX_RUNTIME: 'fixture' };
   assert.deepEqual(sandboxEnvironment(env).slots, [1, 2, 3]);
   for (const key of ['FIELD_STATION_SECRET', 'KAFKA_GATEWAY_PASSWORD', 'KAFKA_LAB_USERNAME', 'LAB_BENCH_1_SERVICE_TOKEN', 'LAB_PROXY_TOKEN']) assert.throws(() => sandboxEnvironment({ ...env, [key]: 'secret' }), /forbidden/);
-  // A shared env file: every secret deploy/make-secrets.sh writes is refused; the service's own and other non-secret settings are not.
+  // An allowlist: every secret deploy/make-secrets.sh writes is refused, and so is any other setting that is not the service's own.
   const generated = [...readFileSync(new URL('../../../deploy/make-secrets.sh', import.meta.url), 'utf8').matchAll(/^([A-Z][A-Z0-9_]*)=\$\(secret\)$/gm)].map(m => m[1]!);
-  assert.ok(generated.includes('LAB_RELAY_TOKEN') && generated.length >= 14, 'the secrets the script writes');
-  for (const key of generated) assert.throws(() => sandboxEnvironment({ ...env, [key]: 'secret' }), /forbidden/, key);
-  assert.deepEqual(sandboxEnvironment({ ...env, SANDBOX_SLOTS: '2', SANDBOX_API_PORT: '7620', LAB_BENCH_API_URLS: 'http://lab-1:7420', LAB_LEASE_SECONDS: '600', NODE_ENV: 'production' }).slots, [1, 2]);
+  assert.ok(generated.includes('LAB_RELAY_TOKEN') && generated.includes('SANDBOX_SERVICE_TOKEN') && generated.length >= 15, 'the secrets the script writes');
+  for (const key of generated.filter(k => k !== 'SANDBOX_SERVICE_TOKEN')) assert.throws(() => sandboxEnvironment({ ...env, [key]: 'secret' }), /forbidden/, key);
+  for (const key of ['LAB_BENCH_API_URLS', 'LAB_LEASE_SECONDS', 'KAFKA_BROKERS', 'GATEWAY_TOKEN', 'AWS_SECRET_ACCESS_KEY', 'NODE_OPTIONS', 'sandbox_token']) assert.throws(() => sandboxEnvironment({ ...env, [key]: 'x' }), /forbidden in the sandbox environment/, key);
+  // What deploy/compose.sandbox.yaml sets, and what the node image and the container runtime add.
+  const container = { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: '/home/node', HOSTNAME: 'a1b2c3', PWD: '/app/apps/field-station', NODE_VERSION: '24.21.0', YARN_VERSION: '1.22.22', TERM: 'xterm' };
+  assert.deepEqual(sandboxEnvironment({ ...env, ...container, SANDBOX_SLOTS: '2', SANDBOX_API_PORT: '7620', NODE_ENV: 'production', SITE_ORIGIN: 'https://streamotter.dev' }).slots, [1, 2]);
   assert.throws(() => sandboxEnvironment({ SANDBOX_SERVICE_TOKEN: 'short' }), /32/);
+  const settings = sandboxEnvironment(env);
+  assert.deepEqual([settings.siteOrigins, settings.gatewayHost, settings.portBase, settings.port], [['https://localhost:8443'], '0.0.0.0', 7600, 7620], 'slot N listens on 7600 + N, clear of the API on 7620');
+  assert.deepEqual(sandboxEnvironment({ ...env, SITE_ORIGIN: 'https://streamotter.dev' }).siteOrigins, ['https://streamotter.dev']);
+  for (const origin of ['https://streamotter.dev,https://localhost:8443', 'https://streamotter.dev, https://localhost:8443']) assert.throws(() => sandboxEnvironment({ ...env, SITE_ORIGIN: origin }), /one exact origin/, 'Caddy matches SITE_ORIGIN literally, so a list is refused');
+  assert.throws(() => sandboxEnvironment({ ...env, NODE_ENV: 'production' }), /SITE_ORIGIN is required/);
+  for (const origin of ['https://streamotter.dev/', 'streamotter.dev', 'https://streamotter.dev/workbench', '']) assert.throws(() => sandboxEnvironment({ ...env, SITE_ORIGIN: origin }), /one exact origin|required/, origin);
+  assert.throws(() => sandboxEnvironment({ ...env, SANDBOX_GATEWAY_PORT_BASE: '7618' }), /API port 7620/, 'slot 2 would take the API port');
+  assert.equal(sandboxEnvironment({ ...env, SANDBOX_GATEWAY_PORT_BASE: '7618', SANDBOX_SLOTS: '1' }).portBase, 7618);
+  assert.throws(() => sandboxEnvironment({ ...env, SANDBOX_GATEWAY_PORT_BASE: '0' }), /port number/);
   const main = readFileSync(new URL('../src/sandbox/sandbox-main.ts', import.meta.url), 'utf8');
-  assert.match(main, /backend: publishedBackend\(\)/); assert.doesNotMatch(main, /SANDBOX_RUNTIME|sandbox-fixture|FixtureBackend/);
+  assert.match(main, /backend: publishedBackend\(\{ siteOrigins: settings\.siteOrigins, gatewayHost: settings\.gatewayHost, portBase: settings\.portBase \}\)/); assert.doesNotMatch(main, /SANDBOX_RUNTIME|sandbox-fixture|FixtureBackend|manifest/);
   const src = new URL('../src/', import.meta.url).pathname;
   const files = readdirSync(src, { recursive: true, encoding: 'utf8' }).filter(f => f.endsWith('.ts'));
   for (const file of files) assert.doesNotMatch(readFileSync(join(src, file), 'utf8'), /from ['"][^'"]*(test\/|sandbox-fixture)/, file);
   assert.equal(configuredSandbox({}, 'https://demo.test'), undefined, 'no SANDBOX_API_URL, no sandbox');
   assert.throws(() => configuredSandbox({ SANDBOX_API_URL: 'http://sandbox:7620', SANDBOX_SERVICE_TOKEN: 'short' }, 'https://demo.test'), /32/);
+});
+
+test('A44: while one visitor\'s call to the sandbox service hangs, every other sandbox request is still answered', async () => {
+  let hang: Promise<void> | null = null; let entered = false;
+  const h = await harness({ client: inner => ({ async request(path, method, body) { if (hang && path.endsWith('/claim')) { entered = true; await hang; } return inner.request(path, method, body); } }) });
+  await serving(api(h.pool), async origin => {
+    const join = (ip: string) => fetch(`${origin}/api/sandbox/session`, { method: 'POST', headers: { origin: SITE, 'x-client-ip': ip } });
+    const a = (await join('192.0.2.1')).headers.get('set-cookie')!.split(';')[0]!; const b = (await join('192.0.2.2')).headers.get('set-cookie')!.split(';')[0]!;
+    let release!: () => void; hang = new Promise(r => { release = r; });
+    const claiming = fetch(`${origin}/api/sandbox/session/claim`, { method: 'POST', headers: { origin: SITE, cookie: a } });
+    while (!entered) await new Promise(r => setTimeout(r, 5));
+    const quick = async (path: string, init: RequestInit = {}) => { const started = Date.now(); const r = await fetch(`${origin}/api/sandbox/${path}`, { ...init, signal: AbortSignal.timeout(2000) }); assert.ok(Date.now() - started < 1000, path); return r; };
+    assert.equal((await quick('status')).status, 200);
+    assert.equal((await quick('session', { headers: { cookie: b } })).status, 200);
+    assert.equal((await quick('session', { method: 'POST', headers: { origin: SITE, 'x-client-ip': '192.0.2.3' } })).status, 200, 'a new session gets the last free slot');
+    hang = null; release(); assert.equal((await claiming).status, 200);
+  });
+});
+
+test('A44: the field station waits 3 s for a lifecycle call or status poll, and longer than the service for a slot operation', async () => {
+  assert.ok(SANDBOX_CALL_TIMEOUT_MS < SANDBOX_DEFAULTS.failMs && SANDBOX_CALL_TIMEOUT_MS < SANDBOX_DEFAULTS.pollMs, 'a poll times out before the next is due, well inside the outage limit');
+  assert.ok(CALL_TIMEOUT_MS < SANDBOX_OPS_TIMEOUT_MS, 'the service gives up on a slot before the field station gives up on the service');
+  const silent = createServer(() => undefined); await new Promise<void>(r => silent.listen(0, '127.0.0.1', r));
+  try {
+    const pool = configuredSandbox({ SANDBOX_API_URL: `http://127.0.0.1:${(silent.address() as AddressInfo).port}`, SANDBOX_SERVICE_TOKEN: SERVICE_TOKEN, SANDBOX_SLOTS: '1' }, 'https://demo.test')!;
+    const started = Date.now(); await pool.initialize(); const waited = Date.now() - started;
+    assert.ok(waited >= SANDBOX_CALL_TIMEOUT_MS - 100 && waited < SANDBOX_CALL_TIMEOUT_MS + 2000, `returned after ${waited} ms`);
+    assert.deepEqual(pool.status().slots, [{ slot: 1, state: 'unavailable' }]);
+  } finally { silent.closeAllConnections(); silent.close(); }
+});
+
+test('A44: /healthz is 200 only while the seam is available and a slot can serve', async () => {
+  const h = await harness({ slots: 1 });
+  await serving(h.service.api(), async origin => {
+    const health = async () => { const r = await fetch(`${origin}/healthz`); return [r.status, await r.json()]; };
+    assert.deepEqual(await health(), [200, { availability: 'available', slots: 1 }]);
+    for (const method of ['POST', 'PUT', 'DELETE']) { const r = await fetch(`${origin}/healthz`, { method }); assert.equal(r.status, 405, method); assert.equal(r.headers.get('allow'), 'GET'); }
+    const s = h.session('s'); await h.join(s); await h.claim(s);
+    assert.deepEqual(await health(), [200, { availability: 'available', slots: 1 }], 'a leased slot is serving');
+    h.fixture.failClose = 2; await h.leave(s); await h.settle();
+    assert.deepEqual(await health(), [503, { availability: 'available', slots: 0 }], 'every slot failed its cleanup');
+    await h.advance(30_000); await h.advance(30_000);
+    assert.deepEqual(await health(), [200, { availability: 'available', slots: 1 }], 'healthy again once a cleanup succeeds');
+  });
+});
+
+test('A44: every call to the sandbox service opens its own connection, so a call is never sent on one a hung service will reset', async () => {
+  const seen: (string | undefined)[] = [];
+  const server = createServer((request, response) => { seen.push(request.headers.connection); response.writeHead(200, { 'content-type': 'application/json' }); response.end('{}'); });
+  await new Promise<void>(r => server.listen(0, '127.0.0.1', r));
+  try {
+    const client = sandboxClient(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, SERVICE_TOKEN);
+    await client.request('/sandbox/v1/status'); await client.request('/sandbox/v1/slots/1/ops', 'POST', { op: 'health' });
+    assert.deepEqual(seen, ['close', 'close']);
+  } finally { server.closeAllConnections(); server.close(); }
+});
+
+test('A44: a role switch on the creek tablet (POST /api/badge) ends the place held under the old session at once, and the new one sees why', async () => {
+  const h = await harness({ slots: 1 });
+  await serving(api(h.pool), async origin => {
+    const join = await fetch(`${origin}/api/sandbox/session`, { method: 'POST', headers: { origin: SITE, 'x-client-ip': '192.0.2.40' } });
+    const cookie = join.headers.get('set-cookie')!.split(';')[0]!; assert.equal(h.pool.placesFor('192.0.2.40'), 1);
+    assert.equal((await fetch(`${origin}/api/sandbox/session/claim`, { method: 'POST', headers: { origin: SITE, cookie } })).status, 200);
+    const badge = (role: string, from: string) => fetch(`${origin}/api/badge`, { method: 'POST', headers: { origin: SITE, cookie: from, 'content-type': 'application/json' }, body: JSON.stringify({ role }) });
+    assert.equal((await badge('volunteer', cookie)).headers.get('set-cookie'), null, 'the same role keeps the session and the place');
+    const switched = (await badge('researcher', cookie)).headers.get('set-cookie')!.split(';')[0]!;
+    const view = await (await fetch(`${origin}/api/sandbox/session`, { headers: { cookie: switched } })).json() as { status: string; reason?: string };
+    assert.deepEqual([view.status, view.reason], ['ended', 'session-ended']);
+    await h.settle(); assert.deepEqual(h.pool.status().slots, [{ slot: 1, state: 'ready' }], 'the slot was returned and cleaned, not held until the idle limit');
+    assert.equal(h.pool.placesFor('192.0.2.40'), 0, 'and the address holds no place');
+  });
 });

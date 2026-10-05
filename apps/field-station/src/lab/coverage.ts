@@ -15,9 +15,10 @@
  * study, so a second incident never drops the first one's requirement. A snapshot
  * acknowledges a barrier only when the state it serves is at or past it.
  *
- * Everything here is written against these interfaces, not native types:
- * StreamOtter 0.1.0-rc.3 has no recovery guard or barrier. W9b adds the thin
- * adapter to the native types once a published release exports them.
+ * Everything here is written against these interfaces, not native types. The bench
+ * binds them to StreamOtter's native recovery guard and snapshot acknowledgment
+ * (bench.ts, `recoveryGuard` and `snapshotAcknowledges`) over the private routes in
+ * Lab contract section 8a.
  */
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -53,6 +54,9 @@ export interface DerivedMutation {
 /** Channels a bench serves; holts never reach a bench. */
 const BENCH_CHANNELS: ReadonlySet<string> = new Set(['station', 'otter', 'reach', 'creekOverview']);
 
+/** A mutation built at a tick the world has since passed: nothing was derived or recorded, so it may be built again. */
+export class StaleMutationError extends RangeError { constructor() { super('A mutation is at or after the current tick.'); } }
+
 /**
  * Derives a mutation's affected instances by applying it to a copy of the world
  * and comparing every view the simulation derives, before and after. The tick is
@@ -60,7 +64,8 @@ const BENCH_CHANNELS: ReadonlySet<string> = new Set(['station', 'otter', 'reach'
  * returned are then derived at the mutation's own tick.
  */
 export function deriveMutation(world: WorldState, mutation: DomainMutation): DerivedMutation {
-  if (!Number.isSafeInteger(mutation.tick) || mutation.tick < world.tick) throw new RangeError('A mutation is at or after the current tick.');
+  if (!Number.isSafeInteger(mutation.tick)) throw new RangeError('A mutation is at or after the current tick.');
+  if (mutation.tick < world.tick) throw new StaleMutationError();
   const entries = Object.entries(mutation.reading);
   if (entries.length === 0 || entries.some(([, value]) => typeof value !== 'number' || !Number.isFinite(value))) throw new RangeError('A reading needs finite values.');
   const changed = structuredClone(world);

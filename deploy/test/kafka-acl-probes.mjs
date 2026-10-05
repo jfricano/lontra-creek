@@ -106,6 +106,12 @@ async function probe(name, expected, fn) {
   console.log(`${pass ? 'ok  ' : 'FAIL'} ${expected.padEnd(7)} ${name}${result.outcome === expected ? '' : ` (got ${result.outcome}${result.detail ? `: ${result.detail}` : ''})`}`);
 }
 const describeTopic = topic => () => admin.fetchTopicOffsets(topic);
+/** Kafka answers DescribeConfigs per resource: KafkaJS reports a refused one as an error in the result, not a rejection. */
+const describeConfigs = topic => async () => {
+  const { resources } = await admin.describeConfigs({ includeSynonyms: false, resources: [{ type: 2, name: topic, configNames: ['max.message.bytes'] }] });
+  const refused = resources.find(resource => resource.errorCode !== 0);
+  if (refused) throw Object.assign(new Error(refused.errorMessage ?? 'refused'), { type: refused.errorCode === 29 ? 'TOPIC_AUTHORIZATION_FAILED' : `ERROR_${refused.errorCode}` });
+};
 const deleteGroup = group => async () => {
   const [result] = await admin.deleteGroups([group]);
   if (result?.error && result.error.type !== 'GROUP_ID_NOT_FOUND') throw result.error;
@@ -165,6 +171,12 @@ try {
     await probe(`write ${quarantine} (idempotent producer)`, 'allowed', () => produce(quarantine, { idempotent: true }));
     await probe(`read ${quarantine}`, 'allowed', () => consume(quarantine, `${group}-q`));
     await probe('delete its own quarantine read group', 'allowed', deleteGroup(`${group}-q`));
+    // StreamOtter 0.2.0-rc.1's quarantine writer and reader: the topic's settings, and throwaway groups named for the bench's project.
+    const evidenceGroup = `streamotter-lontra-creek-lab-${number}-quarantine-read-acl-probe-${run}`;
+    await probe(`describe ${quarantine}'s configuration`, 'allowed', describeConfigs(quarantine));
+    await probe(`read ${quarantine} in a quarantine-read group`, 'allowed', () => consume(quarantine, evidenceGroup));
+    await probe('delete that quarantine-read group', 'allowed', deleteGroup(evidenceGroup));
+    await probe(`describe ${mine}field.gauges's configuration`, 'denied', describeConfigs(`${mine}field.gauges`));
     for (const topic of WORLD.filter(topic => topic !== 'field.holts').map(topic => `${mine}${topic}`)) await probe(`write ${topic} (its own source)`, 'denied', () => produce(topic));
     await probe(`read ${mine}field.gauges in another bench's group`, 'denied', () => consume(`${mine}field.gauges`, `streamotter-lab-${number % 3 + 1}-acl-probe-${run}`));
     await probe(`read ${mine}field.gauges in the production gateway's group`, 'denied', () => consume(`${mine}field.gauges`, 'streamotter-lontra-creek-field'));
@@ -174,6 +186,8 @@ try {
       await probe(`write ${topic}`, 'denied', () => produce(topic));
     }
     for (const other of benches.filter(other => other !== number)) {
+      await probe(`describe lab-${other}.quarantine's configuration`, 'denied', describeConfigs(`lab-${other}.quarantine`));
+      await probe(`read lab-${other}.quarantine in its quarantine-read group`, 'denied', () => consume(`lab-${other}.quarantine`, `streamotter-lontra-creek-lab-${other}-quarantine-read-acl-probe-${run}`));
       for (const topic of [`lab-${other}.field.gauges`, `lab-${other}.quarantine`]) {
         await probe(`read ${topic}`, 'denied', () => consume(topic, `streamotter-lab-${number}-acl-probe-${run}-${other}`));
         await probe(`write ${topic}`, 'denied', () => produce(topic));

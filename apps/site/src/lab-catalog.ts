@@ -95,6 +95,12 @@ export const TRACKS: Record<LabTrack, LabScenarioId[]> = {
   "source-failures": ["fouled-sensor", "garbled-reading", "bad-projection", "inspect-old-reading", "conflicting-readings", "calibration-blip", "too-many-bad-readings", "restart-recovery", "unavailable-evidence"]
 };
 
+/**
+ * The source-failure stories beyond Fouled sensor: the new scenarios the field station's
+ * capability summary reports on. Whether each one runs is that summary's answer, never this list's.
+ */
+export const NEW_SOURCE_EXERCISES: readonly LabScenarioId[] = TRACKS["source-failures"].filter(id => SCENARIOS[id].controls === null);
+
 /** The track a scenario link opens when the URL names no track: Fouled sensor opens Source failures, where it is LC11-S01. */
 export function homeTrack(id: LabScenarioId): LabTrack {
   return TRACKS["source-failures"].includes(id) ? "source-failures" : "connections";

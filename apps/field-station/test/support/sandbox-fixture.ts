@@ -12,7 +12,7 @@ export function fixtureBase(slot: SlotId): ProjectConfig {
   const string = { type: 'string', minLength: 1, maxLength: 64 } as const;
   return {
     configVersion: 1, projectId: `lontra-creek-sandbox-${slot}`,
-    gateway: { host: '0.0.0.0', port: 7600 + slot * 10, path: `/sandbox/${slot}/socket.io`, allowedOrigins: ['https://streamotter.dev'] },
+    gateway: { host: '0.0.0.0', port: 7600 + slot, path: `/sandbox/${slot}/socket.io`, allowedOrigins: ['https://streamotter.dev'] },
     connections: {},
     sources: { creek: { kind: 'fixture', generation: 'creek-1', fixtureRef: 'creek' }, jobs: { kind: 'fixture', generation: 'jobs-1', fixtureRef: 'jobs' } },
     schemas: {
@@ -33,7 +33,7 @@ export const FIXTURE_RUNTIME = { packages: { streamotter: '0.1.0-rc.3', workbenc
 
 export class FixtureRuntime implements SlotRuntime {
   readonly base: ProjectConfig;
-  readonly principalRef = 'visitor';
+  readonly principalRefs = ['creek-volunteer', 'developer'];
   readonly maxima = { receiptTimeoutMs: 10_000, maxSubscriptionsPerConnection: 8, maxPendingFramesPerSubscription: 100 };
   readonly slot: SlotId;
   readonly traces: Trace[] = [];
@@ -45,6 +45,8 @@ export class FixtureRuntime implements SlotRuntime {
   hold: { release: () => void } | null = null;
   holdNext = false;
   #fail: ((error: unknown) => void) | null = null;
+  /** When set, the next call fails with this error, as the slot's handler or the seam would. */
+  failNext: unknown = null;
   /** Overrides the export content, to test the download guard. */
   exportContent: string | null = null;
   readonly #backend: FixtureBackend;
@@ -55,6 +57,7 @@ export class FixtureRuntime implements SlotRuntime {
     if (this.closed) throw new Error('Runtime closed.');
     this.calls.push({ op, input });
     if (this.holdNext) { this.holdNext = false; await new Promise<void>((release, fail) => { this.hold = { release }; this.#fail = fail; }); }
+    if (this.failNext !== null) { const error = this.failNext; this.failNext = null; throw error; }
     const sources = Object.entries(this.base.sources).map(([sourceId, s]) => ({ sourceId, kind: s.kind, status: 'healthy' as const }));
     const answer = ((): unknown => {
       switch (op as SandboxOperation) {
@@ -68,13 +71,15 @@ export class FixtureRuntime implements SlotRuntime {
         case 'source-checks': return { steps: [{ stage: 'resolve', outcome: 'skipped', message: 'Fixture sources need no broker.' }] };
         case 'sources.resume': return sources.find(s => s.sourceId === (input as { sourceId: string }).sourceId);
         case 'preview-sessions': { const id = `preview-${this.slot}-${++this.#n}`; const token = `sop_fixture_${this.slot}_${this.#n}_secret`; this.previews.set(id, token); return { token, expiresAt: new Date(this.#backend.now() + 300_000).toISOString(), previewSessionId: id }; }
-        case 'dev.principals': return { items: [{ ref: 'visitor', tenantId: 'lontra', subject: 'visitor' }, { ref: 'operator-only', tenantId: 'lontra', subject: 'operator' }] };
+        case 'dev.principals': return { items: [{ ref: 'creek-volunteer', tenantId: 'lontra-creek', subject: 'creek-volunteer' }, { ref: 'developer', tenantId: 'local', subject: 'developer' }, { ref: 'operator-only', tenantId: 'lontra', subject: 'operator' }] };
         case 'dev.fixtures.advance': { const { sourceId, count } = input as { sourceId: string; count: number }; for (let i = 0; i < count; i++) this.#trace({ sourceId, stage: 'map', channel: sourceId === 'creek' ? 'station' : 'jobProgress', subscriptionId: `sub-${this.slot}` }); return { advanced: count }; }
         case 'dev.disconnect': { const { previewSessionId } = input as { previewSessionId: string }; if (!this.previews.delete(previewSessionId)) throw new StreamOtterError('INVALID_REQUEST', { message: 'Unknown preview session.' }); return null; }
         case 'traces': {
-          const { limit = 100, cursor } = input as { limit?: number; cursor?: string }; const start = cursor ? Number(cursor) : 0;
-          const items = this.traces.slice(start, start + limit); const end = start + items.length;
-          return { items, nextCursor: end < this.traces.length || items.length ? String(end) : null };
+          // As the native trace buffer pages: without a cursor the newest `limit`, oldest first; a cursor polls for newer ones.
+          const { limit = 100, cursor } = input as { limit?: number; cursor?: string };
+          if (cursor === undefined) return { items: this.traces.slice(-limit), nextCursor: String(this.traces.length) };
+          const items = this.traces.slice(Number(cursor), Number(cursor) + limit);
+          return { items, nextCursor: String(Number(cursor) + items.length) };
         }
       }
     })();

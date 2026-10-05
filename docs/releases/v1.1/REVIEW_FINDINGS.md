@@ -66,7 +66,7 @@ Contracts and docs changed with each fix are listed in its commit.
 
 - SITE-2: if the page is closed while Start is in flight, the keepalive return can reach the server before the join; that place then lasts until the idle limit (60–90 s).
 - LAB-7: if a bench process crashes between a failed reset and its retry, the boot-time discard still writes `leaseId: null`; fixing that needs a new `study.json` field.
-- SBX: the published WHC-1 workbench may fire several calls at once when it mounts, which the 2-a-second operation budget would partly refuse. This can only be checked once a StreamOtter release with the seam exists (W9a).
+- SBX: the published WHC-1 workbench may fire several calls at once when it mounts, which the 2-a-second operation budget would partly refuse. This can only be checked once a StreamOtter release with the seam exists (W9a). Confirmed in W9a on the local stack with 0.2.0-rc.1 (five reads at once, then two more for the first view); the budget now allows a burst of 8 before its 2 a second.
 
 ## Verification after the fixes
 

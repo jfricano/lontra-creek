@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { LabCapabilities, LabScenarioId } from "../../field-station/src/lab/contract.ts";
 import { labCapabilities } from "../../field-station/src/lab/capabilities.ts";
 import { SCENARIOS, TRACKS } from "../src/lab-catalog.ts";
-import { UNSUPPORTED, capabilityAnswer, capabilityNote, scenarioAvailability, selectionFromUrl, urlFor, type CapabilityAnswer } from "../src/scripts/lab-catalog-model.ts";
+import { PAGE_RUNS, UNSUPPORTED, capabilityAnswer, capabilityNote, scenarioAvailability, selectionFromUrl, startState, urlFor, type CapabilityAnswer } from "../src/scripts/lab-catalog-model.ts";
 
 const NEW = TRACKS["source-failures"].filter(id => id !== "fouled-sensor");
 const rc3: CapabilityAnswer = { kind: "summary", summary: labCapabilities({ labEnabled: true, now: 0, version: "0.1.0-rc.3" }) };
@@ -53,10 +53,46 @@ test("a missing, unreachable, or older summary leaves every new exercise unavail
   // An older backend that knows only the existing scenarios.
   const older: LabCapabilities = { ...(rc3 as { summary: LabCapabilities }).summary, scenarios: (rc3 as { summary: LabCapabilities }).summary.scenarios.filter(s => SCENARIOS[s.id].controls !== null) };
   assert.equal(scenarioAvailability("bad-projection", { kind: "summary", summary: older }).text, "This backend does not support this scenario.");
-  // A newer backend that offers an exercise this page can't run is still unavailable here.
-  const newer: LabCapabilities = { ...older, scenarios: [...older.scenarios, { id: "garbled-reading", available: true, reason: null }] };
-  assert.deepEqual(scenarioAvailability("garbled-reading", { kind: "summary", summary: newer }), { state: "unavailable", text: "This backend reports this exercise, but this version of the site can't run it yet." });
-  assert.equal(scenarioAvailability("garbled-reading", { kind: "summary", summary: newer }, new Set(["garbled-reading"])).state, "available");
+  // A backend that offers an exercise this page has none for is still unavailable here.
+  const free = { available: true, reason: null };
+  const newer: LabCapabilities = { ...older, scenarios: [...older.scenarios, { id: "garbled-reading", ...free }], features: { incidentProjection: free, intents: free } };
+  assert.deepEqual(scenarioAvailability("garbled-reading", { kind: "summary", summary: newer }, new Set()), { state: "unavailable", text: "This backend reports this exercise, but this version of the site can't run it yet." });
+  assert.equal(scenarioAvailability("garbled-reading", { kind: "summary", summary: newer }).state, "available");
+});
+
+/** A summary as a 0.2.0-rc.1 backend could answer it: a fixture, not the field station's own output. */
+function offered(scenarios: Partial<Record<LabScenarioId, LabCapabilities["scenarios"][number]["reason"]>>, features: Partial<LabCapabilities["features"]> = {}): CapabilityAnswer {
+  const free = { available: true, reason: null };
+  const base = (rc3 as { summary: LabCapabilities }).summary;
+  return { kind: "summary", summary: { ...base, library: { name: "streamotter", version: "0.2.0-rc.1" },
+    scenarios: base.scenarios.map(s => s.id in scenarios ? { id: s.id, available: scenarios[s.id] === null, reason: scenarios[s.id] ?? null } : SCENARIOS[s.id].controls === null ? { id: s.id, available: false, reason: { code: "not-integrated", text: "Not verified." } } : s),
+    features: { incidentProjection: free, intents: free, ...features } } };
+}
+
+test("this page runs every new exercise, each only where the backend reports it, its intents, and its projection available", () => {
+  assert.deepEqual([...PAGE_RUNS].sort(), [...NEW].sort());
+  const restricted = { code: "deployment-restricted" as const, text: "This deployment's failure handling (retry) doesn't provide what this exercise needs, so it doesn't run it." };
+  const answer = offered({ "calibration-blip": null, "garbled-reading": restricted });
+  assert.deepEqual(scenarioAvailability("calibration-blip", answer), { state: "available", text: "Available on a leased bench." });
+  assert.deepEqual(scenarioAvailability("garbled-reading", answer), { state: "unavailable", text: restricted.text });
+  assert.deepEqual(scenarioAvailability("bad-projection", answer), { state: "unavailable", text: "Not verified." });
+  assert.match(capabilityNote(answer, "0.2.0-rc.1"), /1 of 8 new exercises can run here\.$/);
+  // Listed as available, but without intents or the projection the page can't start or follow it.
+  const noIntents = offered({ "calibration-blip": null }, { intents: { available: false, reason: { code: "lab-disabled", text: "This backend has no Lab benches." } } });
+  assert.deepEqual(scenarioAvailability("calibration-blip", noIntents), { state: "unavailable", text: "This backend has no Lab benches." });
+  const noProjection = offered({ "calibration-blip": null }, { incidentProjection: { available: false, reason: null } });
+  assert.deepEqual(scenarioAvailability("calibration-blip", noProjection), { state: "unavailable", text: UNSUPPORTED });
+  // A summary without the intents flag isn't one this page can read.
+  const { intents: _, ...partial } = (answer as { summary: LabCapabilities }).summary.features;
+  assert.equal(capabilityAnswer({ ...(answer as { summary: LabCapabilities }).summary, features: partial }).kind, "unreachable");
+});
+
+test("Start sends only on a borrowed bench with nothing waiting, and its line says why otherwise", () => {
+  const available = { state: "available" as const, text: "Available on a leased bench." };
+  assert.deepEqual(startState(available, { leased: false, busy: false }), { enabled: false, text: "Available on a leased bench. Borrow a bench below, then start it here." });
+  assert.deepEqual(startState(available, { leased: true, busy: false }), { enabled: true, text: "Available on your bench." });
+  assert.deepEqual(startState(available, { leased: true, busy: true }), { enabled: false, text: "Available on your bench once its current request finishes; follow it in Current incident below." });
+  for (const state of ["existing", "pending", "unavailable"] as const) assert.deepEqual(startState({ state, text: "Why." }, { leased: true, busy: false }), { enabled: false, text: "Why." }, state);
 });
 
 test("the backend note names the backend's version and any skew with the page's build", () => {

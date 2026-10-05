@@ -43,5 +43,6 @@ LAB_BENCH_2_RELAY_TOKEN=$(secret)
 KAFKA_LAB_3_PASSWORD=$(secret)
 LAB_BENCH_3_SERVICE_TOKEN=$(secret)
 LAB_BENCH_3_RELAY_TOKEN=$(secret)
+SANDBOX_SERVICE_TOKEN=$(secret)
 ENV
 echo "Wrote $file."

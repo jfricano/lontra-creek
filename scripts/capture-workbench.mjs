@@ -1,11 +1,17 @@
-/** Capture only the pinned npm workbench, never a library checkout. Requires QA's Playwright dependency. */
+/** Capture only the installed workbench, never a library checkout. Requires QA's Playwright dependency. */
 import { chromium } from "playwright";
 import { spawn, execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
+import { installedStreamotter } from "./capture-provenance.mjs";
 const require=createRequire(import.meta.url);
+// The labels below come from the install itself, so a capture can't claim a source or version it didn't use.
+const installed=installedStreamotter(new URL("../",import.meta.url));
+const SHOTS=["connect","define","preview","updated","inspect","export"];
+/** A PNG's pixel size, from its IHDR chunk. */
+const pngSize=file=>{const head=readFileSync(file);return {width:head.readUInt32BE(16),height:head.readUInt32BE(20)};};
 const cli=join(dirname(require.resolve("streamotter/package.json")),"bin/streamotter.js");
 const scratch=mkdtempSync(join(tmpdir(),"lontra-workbench-"));
 const out=resolve("apps/site/public/recordings/workbench");mkdirSync(out,{recursive:true});
@@ -31,7 +37,8 @@ try {
   await page.getByRole("tab",{name:"Inspect",exact:true}).click();await capture("inspect");
   await page.getByRole("tab",{name:"Export",exact:true}).click();await capture("export");
   await context.close();
-  const manifest={version:require("streamotter/package.json").version,capturedAt:new Date().toISOString(),source:"Published npm workbench; CLI-generated fixture project on loopback",viewport:{width:1280,height:900},node:process.version,steps:["Connect: inspect the fixture source","Define: inspect the channel and schemas","Preview: subscribe to job_1 as developer","Connect: advance one real fixture record","Preview: inspect the updated state","Inspect: read payload-free trace metadata","Export: review the export controls"]};
+  const workbench=installed.install==="published npm" ? "Published npm workbench" : "Workbench from a pre-publish tarball, not from npm";
+  const manifest={version:installed.version,capturedAt:new Date().toISOString(),install:installed.install,platform:installed.platform,source:`${workbench}; CLI-generated fixture project on loopback, ${installed.platform}`,viewport:{width:1280,height:900},node:process.version,images:Object.fromEntries(SHOTS.map(name=>[name,pngSize(join(out,`${name}.png`))])),steps:["Connect: inspect the fixture source","Define: inspect the channel and schemas","Preview: subscribe to job_1 as developer","Connect: advance one real fixture record","Preview: inspect the updated state","Inspect: read payload-free trace metadata","Export: review the export controls"]};
   writeFileSync(join(out,"capture.json"),JSON.stringify(manifest,null,2)+"\n");
   console.log(`Captured workbench ${manifest.version}: six images and provenance.`);
 } finally {await browser?.close();child.kill("SIGTERM");await new Promise(r=>child.once("exit",r));rmSync(scratch,{recursive:true,force:true});}

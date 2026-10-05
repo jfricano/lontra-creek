@@ -6,12 +6,9 @@
  * is silent.
  */
 import type { LabCapabilities } from "../../../field-station/src/lab/contract.ts";
-import { SCENARIOS, TRACKS } from "../lab-catalog.ts";
+import { NEW_SOURCE_EXERCISES } from "../lab-catalog.ts";
 import { fetchConfig, type FieldConfig } from "./field-api.ts";
 import { capabilityAnswer, scenarioAvailability, type CapabilityAnswer } from "./lab-catalog-model.ts";
-
-/** The source-failure stories the current bench can't run, from the Lab catalog (as on the page above). */
-const WAITING_EXERCISES = TRACKS["source-failures"].filter(id => SCENARIOS[id].controls === null);
 
 /** What the service answered. `config` is null when `/api/config` failed. */
 export interface ServiceAnswer {
@@ -31,7 +28,7 @@ export function serviceLines(answer: ServiceAnswer, builtWith: string): string[]
       const { summary } = capabilities;
       lines.push(`StreamOtter it runs: ${summary.library.version}.${summary.library.version === builtWith ? "" : ` This page was built for ${builtWith}, so some facts above may not match it.`}`);
       lines.push(summary.backend.lab === "enabled" ? "Lab benches: enabled." : "Lab benches: none on this backend.");
-      lines.push(`New source-failure exercises it can run: ${runnable(summary)} of ${WAITING_EXERCISES.length}.`);
+      lines.push(`New source-failure exercises it can run: ${runnable(summary)} of ${NEW_SOURCE_EXERCISES.length}.`);
       break;
     }
     case "absent": lines.push("It doesn't report Lab capabilities, so the StreamOtter version it runs and the exercises it can run are unknown here."); break;
@@ -42,7 +39,7 @@ export function serviceLines(answer: ServiceAnswer, builtWith: string): string[]
 }
 
 function runnable(summary: LabCapabilities): number {
-  return WAITING_EXERCISES.filter(id => scenarioAvailability(id, { kind: "summary", summary }).state === "available").length;
+  return NEW_SOURCE_EXERCISES.filter(id => scenarioAvailability(id, { kind: "summary", summary }).state === "available").length;
 }
 
 async function readCapabilities(origin: string): Promise<CapabilityAnswer> {

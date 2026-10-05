@@ -1,4 +1,4 @@
-/** Capture actual SDK events from the installed npm gateway, never fabricated states. */
+/** Capture actual SDK events from the installed gateway, never fabricated states. */
 import { createServer } from "node:net";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createGateway, silentLogger } from "streamotter/gateway";
@@ -8,6 +8,10 @@ import { handlers, development, fixtureTickSizes } from "../apps/field-station/s
 import { projectConfig } from "../apps/field-station/src/project.ts";
 import { fieldStationSecret, issueToken } from "../apps/field-station/src/identity.ts";
 import type { AppChannels } from "../apps/field-station/src/generated/streamotter.generated.ts";
+import { installedStreamotter } from "./capture-provenance.mjs";
+// The label comes from the install itself: version, npm or pre-publish tarball, and this machine's platform.
+const installed = installedStreamotter(new URL("../", import.meta.url));
+const where = `Local fixture run on ${installed.platform}; streamotter@${installed.version} from ${installed.install === "published npm" ? "npm" : "a pre-publish tarball"}, no Kafka; one simulation tick per two seconds`;
 const socket = createServer();
 await new Promise<void>(resolve => socket.listen(0, "127.0.0.1", resolve));
 const port = (socket.address() as { port: number }).port;
@@ -35,6 +39,6 @@ try {
   await new Promise(resolve => setTimeout(resolve, 250));
   const destination = new URL("../apps/site/public/recordings/creek.json", import.meta.url);
   await mkdir(new URL(".", destination), { recursive: true });
-  await writeFile(destination, JSON.stringify({ recordedAt, where: "Local fixture run on macOS; published streamotter@0.1.0-rc.3, no Kafka; one simulation tick per two seconds", durationMs: Math.round(performance.now()-started), events }, null, 2)+"\n");
+  await writeFile(destination, JSON.stringify({ recordedAt, where, durationMs: Math.round(performance.now()-started), events }, null, 2)+"\n");
   console.log(`Captured ${events.length} actual SDK events.`);
 } finally { await client.close(); await management.close(); await gateway.stop(); }

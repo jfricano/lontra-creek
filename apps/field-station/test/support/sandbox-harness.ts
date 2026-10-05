@@ -30,7 +30,7 @@ export async function harness(options: { slots?: number; backend?: (now: () => n
   const cap = options.cap ?? new AddressCap();
   const pool = new SandboxPool({ client, slots, gatewayOrigin: 'https://demo.test', now: clock, cap });
   await service.start(); if (options.initialize !== false) await pool.initialize();
-  const settle = async () => { for (let i = 0; i < 2; i++) { await service.settled(); pool.refresh(); await pool.run(() => pool.sweep()); } };
+  const settle = async () => { for (let i = 0; i < 2; i++) { await pool.settled(); await service.settled(); pool.refresh(); pool.sweep(); await pool.settled(); } };
   await settle();
   const h = {
     pool, fixture, cap, requests, clock,
@@ -40,14 +40,16 @@ export async function harness(options: { slots?: number; backend?: (now: () => n
     setDown(value: boolean) { down = value; },
     settle,
     async advance(ms: number) { now += ms; await settle(); },
+    /** Moves the clock without sweeping, for use while a call is in flight. */
+    tick(ms: number) { now += ms; },
     /** One maintenance sweep after `ms`, as main.ts's timer runs it: no forced poll. */
-    async sweepAfter(ms: number) { now += ms; await service.settled(); await pool.run(() => pool.sweep()); },
+    async sweepAfter(ms: number) { now += ms; await pool.settled(); await service.settled(); pool.sweep(); await pool.settled(); },
     session: (subject: string, ttlMs = 1_800_000): SessionClaims => ({ subject, role: 'volunteer', exp: now + ttlMs }),
-    join: (s: SessionClaims, address = s.subject) => pool.run(async () => { await pool.sweep(); return pool.join(s, address); }),
+    join: (s: SessionClaims, address = s.subject) => { pool.sweep(); return pool.join(s, address); },
     view: (s: SessionClaims) => pool.view(s),
-    leave: (s: SessionClaims) => pool.run(() => pool.leave(s)),
-    claim: (s: SessionClaims) => pool.run(() => pool.claim(s)),
-    reset: (s: SessionClaims) => pool.run(() => pool.reset(s)),
+    leave: (s: SessionClaims) => pool.leave(s),
+    claim: (s: SessionClaims) => pool.claim(s),
+    reset: (s: SessionClaims) => pool.reset(s),
     op: (s: SessionClaims, op: SandboxOperation, input: unknown = null) => pool.operate(s, op, input),
     /** Lets the per-session operation budget refill between calls. */
     async opSlow(s: SessionClaims, op: SandboxOperation, input: unknown = null) { now += 1000; return pool.operate(s, op, input); },

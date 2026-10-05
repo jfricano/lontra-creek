@@ -476,6 +476,13 @@ describe("configuration from the environment", () => {
     assert.throws(() => readConfig({ ...production, FIELD_TICK_MS: "5" }), /FIELD_TICK_MS/);
   });
 
+  test("production takes one exact site origin, as Caddy matches it; development may list several", () => {
+    for (const origin of ["https://streamotter.dev,https://localhost:8443", "https://streamotter.dev, https://localhost:8443", "https://streamotter.dev/", "streamotter.dev"]) {
+      assert.throws(() => readConfig({ ...production, SITE_ORIGIN: origin }), /one exact origin/, origin);
+    }
+    assert.deepEqual(readConfig({ SITE_ORIGIN: "http://127.0.0.1:4321,http://localhost:4321" }).siteOrigins, ["http://127.0.0.1:4321", "http://localhost:4321"]);
+  });
+
   test("development needs nothing", () => {
     const config = readConfig({});
     assert.equal(config.epoch, null);

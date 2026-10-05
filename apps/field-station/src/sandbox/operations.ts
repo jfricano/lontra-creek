@@ -10,9 +10,14 @@ import type { SandboxErrorCode, SandboxOperation, SandboxRequest, WorkbenchOpera
 export const HOST_CONTRACT = 1;
 export const API_BASE = '/api/sandbox/wb/v1';
 export const CONFIG_BODY_BYTES = 65_536;
+/** How deeply a candidate may nest objects and arrays. The slot's base needs far fewer; a deeper one would fail to serialize later. */
+export const CONFIG_DEPTH = 64;
 export const BODY_BYTES = 4_096;
 export const DOWNLOAD_BYTES = 262_144;
+/** The most traces one page serves; a larger `limit` (the workbench asks for up to 500) is narrowed to it. */
 export const TRACE_LIMIT = 100;
+/** The largest `limit` accepted, the native maximum. */
+export const TRACE_QUERY_LIMIT = 500;
 export const ADVANCE_LIMIT = 10;
 
 export const SANDBOX_OPERATIONS: readonly SandboxOperation[] = ['capabilities', 'health', 'sources', 'channels', 'config', 'config.validate', 'config.export', 'traces', 'source-checks', 'sources.resume', 'preview-sessions', 'dev.principals', 'dev.fixtures.advance', 'dev.disconnect'];
@@ -28,6 +33,13 @@ const ROUTES: Readonly<Record<string, WorkbenchOperation>> = {
 };
 export function routeOperation(method: string, path: string): WorkbenchOperation | null {
   return ROUTES[`${method} ${path}`] ?? (method === 'GET' && /^\/failures\/[^/]+$/.test(path) ? 'failures.show' : null);
+}
+/** The method and path (relative to the API base) of an allowlisted operation, from the same table. */
+export function operationRoute(op: SandboxOperation): { method: 'GET' | 'POST'; path: string } {
+  const route = Object.keys(ROUTES).find(key => ROUTES[key] === op);
+  if (!route) throw new Error(`No route for ${op}.`);
+  const [method, path] = route.split(' ') as ['GET' | 'POST', string];
+  return { method, path };
 }
 export const isSandboxOperation = (op: unknown): op is SandboxOperation => SANDBOX_OPERATIONS.includes(op as SandboxOperation);
 export const bodyLimit = (op: SandboxOperation): number => op.startsWith('config.') ? CONFIG_BODY_BYTES : BODY_BYTES;
@@ -69,13 +81,29 @@ function exact(value: unknown, required: readonly string[], optional: readonly s
 }
 const id = (value: unknown, name: string, max = 64): string => { if (typeof value !== 'string' || value.length === 0 || value.length > max || !/^[\w.:-]+$/.test(value)) throw invalid(`${name} must be an identifier of at most ${max} characters.`); return value; };
 
+/** Whether a JSON value nests objects and arrays deeper than `limit` (the value itself is level 1). Iterative, so any depth is safe to check. */
+function deeper(value: unknown, limit: number): boolean {
+  const stack: [unknown, number][] = [[value, 1]];
+  while (stack.length) {
+    const [item, level] = stack.pop()!;
+    if (item === null || typeof item !== 'object') continue;
+    if (level > limit) return true;
+    for (const child of Object.values(item)) stack.push([child, level + 1]);
+  }
+  return false;
+}
+
 /** Bounds every operation's input in its canonical object form; anything else is refused. */
 export function checkInput<O extends SandboxOperation>(op: O, input: unknown): SandboxRequest<O> {
   const checked = ((): unknown => {
     switch (op as SandboxOperation) {
       case 'capabilities': case 'health': case 'sources': case 'channels': case 'config': case 'dev.principals':
         if (input !== null) throw invalid('This operation takes no input.'); return null;
-      case 'config.validate': case 'config.export': { const { config } = exact(input, ['config']); if (!isPlainObject(config)) throw invalid('config must be a JSON object.'); return { config }; }
+      case 'config.validate': case 'config.export': {
+        const { config } = exact(input, ['config']); if (!isPlainObject(config)) throw invalid('config must be a JSON object.');
+        if (deeper(config, CONFIG_DEPTH)) throw invalid(`config nests more than ${CONFIG_DEPTH} levels deep.`);
+        return { config };
+      }
       case 'source-checks': case 'sources.resume': return { sourceId: id(exact(input, ['sourceId'])['sourceId'], 'sourceId') };
       case 'preview-sessions': return { fixturePrincipalRef: id(exact(input, ['fixturePrincipalRef'])['fixturePrincipalRef'], 'fixturePrincipalRef') };
       case 'dev.disconnect': return { previewSessionId: id(exact(input, ['previewSessionId'])['previewSessionId'], 'previewSessionId', 128) };
@@ -86,7 +114,7 @@ export function checkInput<O extends SandboxOperation>(op: O, input: unknown): S
       }
       case 'traces': {
         const fields = exact(input, [], ['limit', 'cursor', 'sourceId', 'channel', 'outcome']); const out: Record<string, unknown> = {};
-        if (fields['limit'] !== undefined) { const limit = fields['limit']; if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1 || limit > TRACE_LIMIT) throw invalid(`limit must be an integer from 1 to ${TRACE_LIMIT}.`); out['limit'] = limit; }
+        if (fields['limit'] !== undefined) { const limit = fields['limit']; if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1 || limit > TRACE_QUERY_LIMIT) throw invalid(`limit must be an integer from 1 to ${TRACE_QUERY_LIMIT}.`); out['limit'] = limit; }
         if (fields['cursor'] !== undefined) { const cursor = fields['cursor']; if (typeof cursor !== 'string' || !/^[\w-]{1,128}$/.test(cursor)) throw invalid('cursor is malformed.'); out['cursor'] = cursor; }
         if (fields['sourceId'] !== undefined) out['sourceId'] = id(fields['sourceId'], 'sourceId');
         if (fields['channel'] !== undefined) { if (!isIdentifier(fields['channel'])) throw invalid('channel must be an identifier.'); out['channel'] = fields['channel']; }
@@ -104,7 +132,7 @@ export function queryInput(op: SandboxOperation, query: URLSearchParams): Record
   if (op !== 'traces') { if (keys.length) throw invalid(`Unknown query parameter "${keys[0]!.slice(0, 64)}".`); return null; }
   if (new Set(keys).size !== keys.length) throw invalid('Duplicate query parameter.');
   const input: Record<string, unknown> = Object.fromEntries(query);
-  if (input['limit'] !== undefined) { if (!/^\d{1,3}$/.test(input['limit'] as string)) throw invalid(`limit must be an integer from 1 to ${TRACE_LIMIT}.`); input['limit'] = Number(input['limit']); }
+  if (input['limit'] !== undefined) { if (!/^\d{1,3}$/.test(input['limit'] as string)) throw invalid(`limit must be an integer from 1 to ${TRACE_QUERY_LIMIT}.`); input['limit'] = Number(input['limit']); }
   checkInput(op, input);
   return input;
 }

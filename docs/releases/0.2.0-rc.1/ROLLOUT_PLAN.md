@@ -17,7 +17,7 @@ What has actually been run since (sources, digests, run and deployment IDs, the 
 
 | Component | Source | How it ships | StreamOtter version it uses |
 | --- | --- | --- | --- |
-| npm packages (6) | StreamOtter #55 → #20 → #56, publisher #57 | Manual, owner-approved publication | is 0.2.0-rc.1 |
+| npm packages (6) | StreamOtter #55 → #20 → #56, publisher #57 | Manual, owner-approved publication (done October 5, 2026) | is 0.2.0-rc.1 |
 | Demo backend (shared host) | Lontra Creek `main` | `images.yml` builds `ghcr.io/jfricano/lontra-creek:<sha>`; devops activate that release with the shared-host procedure | Pinned exactly in Lontra's lockfile |
 | streamotter.dev site | Lontra Creek `main` | `Deploy static site` (manual, preview then production) to Cloudflare Pages | Same pin, bundled into the site |
 
@@ -55,13 +55,15 @@ Shared host (devops, with their procedure):
 
 ### Step 1. StreamOtter 0.2.0-rc.1 on npm (owner)
 
+Done October 5, 2026: all six packages are on npm at 0.2.0-rc.1 with provenance, on the `latest` tag. The steps below are kept as the record of how it ran.
+
 1. On jason's go, merge #55, then #20, then #56, retargeting each stacked branch to `main` before its merge and refreshing its checks. CI on main: `Verify (Node 24)` and `Verify (Node 26)` green. Run `Extended checks` by hand on main (Kafka, install, browser and deploy tiers, plus the replicated Kafka tier); it otherwise runs only nightly.
 2. Reconcile publisher #57 (owner-approved npm trusted publishing, green and unmerged at `b89feb8`) with the merged main, especially its overlapping CI and its release checklist, which replaces the manual one. Merge it only on jason's go.
 3. Prepare the release commit: `node scripts/release/set-version.mjs 0.2.0-rc.1` (the manifests are still `0.1.0-rc.3`), date the CHANGELOG entry, full suite. The step-by-step handoff is [docs/releases/0.2.0-rc.1/RELEASE_HANDOFF.md](https://github.com/jfricano/StreamOtter/blob/feat/v1.2-quality-fixes/docs/releases/0.2.0-rc.1/RELEASE_HANDOFF.md).
 4. On jason's go, tag `v0.2.0-rc.1` on main and publish all six packages: dispatch `publish.yml` (from #57) on main with the release tag and the distribution tag, then jason approves the `npm-release` environment. Nothing publishes on a push, tag or release event. Direct publishing from jason's machine with StreamOtter's [release checklist](https://github.com/jfricano/StreamOtter/blob/main/docs/RELEASE_CHECKLIST.md) stays allowed. The distribution tag is jason's final choice; `latest` is recommended, and any `next` promotion is a separate step.
 5. Verify: all six packages are on npm with provenance and the chosen tag (`npm dist-tag ls`), and a clean registry install passes (`STREAMOTTER_INSTALL_FROM=registry pnpm test:install`). Saved npm trust settings are setup evidence, not proof of publication.
 
-Publishing with `--tag latest` (the rule until the first stable version) moves every unpinned `npm install streamotter` to 0.2.0-rc.1. Two changes can refuse a config or request that rc.3 accepted (the `maxControlFrameBytes` minimum, and production answers to invalid subscribe parameters; see the CHANGELOG).
+Publishing with `--tag latest` (the rule until the first stable version) moved every unpinned `npm install streamotter` to 0.2.0-rc.1. Two changes can refuse a config or request that rc.3 accepted (the `maxControlFrameBytes` minimum, and production answers to invalid subscribe parameters; see the CHANGELOG).
 
 Rollback: never unpublish. `npm dist-tag add <pkg>@0.1.0-rc.3 latest` for all six, `npm deprecate <pkg>@0.2.0-rc.1 "<reason>; use 0.1.0-rc.3"`, and fix forward as 0.2.0-rc.2. Lontra Creek is unaffected (pinned).
 
@@ -98,11 +100,11 @@ Rollback: Cloudflare Pages → Deployments → roll back to the previous product
 
 ### Phase 2. Lontra Creek on StreamOtter 0.2.0-rc.1 (after step 1 is verified on npm)
 
-1. The Lontra Creek V1.1 thread opens a separate pin PR (today on `feat/v1.1-source-failure-exercises`, stacked on #41). Its scope, which needs its own review and devops reconciliation before merge:
+1. The pin PR is [#42](https://github.com/jfricano/lontra-creek/pull/42) (draft, `feat/v1.1-source-failure-exercises`, targeting `main`). Its scope, which needs its own review and devops reconciliation before merge:
    - `streamotter@0.2.0-rc.1` in both apps and the lockfile, the three tripwire tests, capability labels, and the WHC-1 version and integrity facts.
    - `@streamotter/workbench` mounted on `/workbench/`, with a Pages `_headers` policy for it (`frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff`).
    - A workbench sandbox Compose overlay (`deploy/compose.sandbox.yaml`) with a new `SANDBOX_SERVICE_TOKEN`, routed in the standalone `Caddyfile` and the local Lab's `Caddyfile.local-lab`. `Caddyfile.shared` does not route it, and it has no shared-host overlay or adapter tests yet.
-   - A release-pin guard (`scripts/check-release-pins.mjs`) that `images.yml` and `site.yml` run first: it refuses to build while StreamOtter comes from anywhere but the npm registry. The branch's temporary pre-publish tarballs (`vendor/`) must be removed, so this PR can only be built after step 1 is verified on npm.
+   - A release-pin guard (`scripts/check-release-pins.mjs`) that `images.yml` and `site.yml` run first: it refuses to build while StreamOtter comes from anywhere but the npm registry. The branch's temporary pre-publish tarballs (`vendor/`) were removed on October 5, when the pin commit moved both apps to the registry release.
    Before it merges, after step 1 is verified on npm:
    - Re-run the real-Kafka exercise suite and the sandbox suites against the registry install, and re-record their evidence. A test keyed to the published package integrity enforces this.
    - Recapture the recordings, and re-check the `v0.2.0-rc.1` tag anchors the site links to.
@@ -127,5 +129,5 @@ Before enabling either feature on the hosted demo later (not part of either phas
 
 - Route health and backup failures to a real notification channel, through the shared host's monitoring.
 - Off-host encrypted backups are owned by the shared infrastructure owner and still need a destination and key-recovery decision. World checkpoints are not disaster recovery.
-- A fresh full Lontra Creek review starts once 0.2.0-rc.1 is published.
+- A fresh full Lontra Creek review starts now that 0.2.0-rc.1 is published.
 - StreamOtter docs still say streamotter.app in a few places (`docs/RELEASE_PLAN.md`, `docs/IMPLEMENTATION_STATUS.md`, `docs/WEBSITE_AND_DEMO_PLAN.md`, the workbench host contract docs, tests and examples). None is in a package README or manifest, so npm is unaffected; fold it into the release docs pass.

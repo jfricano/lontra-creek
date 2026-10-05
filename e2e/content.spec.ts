@@ -1,8 +1,11 @@
 import { readFileSync } from "node:fs";
 import { expect, test, type Request } from "@playwright/test";
+import { validateProjectConfig } from "streamotter/contracts";
+import { labCapabilities, NEW_SCENARIOS } from "../apps/field-station/src/lab/capabilities.ts";
+import { PLAYGROUND_PRESETS, presetText } from "../apps/site/src/data/playground-presets.ts";
 
 /** The StreamOtter version the site pins, read from its package.json as the site itself does. */
-const release = (JSON.parse(readFileSync(new URL("../apps/site/package.json", import.meta.url), "utf8")) as { dependencies: { streamotter: string } }).dependencies.streamotter;
+const release = (JSON.parse(readFileSync(new URL("../node_modules/streamotter/package.json", import.meta.url), "utf8")) as { version: string }).version;
 /** Non-GET Lab requests: anything that would borrow a bench, start a scenario, or approve an operation. */
 function labWrites(page: import("@playwright/test").Page): string[] {
   const writes: string[] = [];
@@ -50,6 +53,32 @@ test("playground validates real configuration and receives real SDK data", async
   await expect(page.getByRole("button", { name: "Connect to field station" })).toBeEnabled();
 });
 
+test("playground presets show the installed validator's own answer for each failure policy (LC11-A34)", async ({ page }) => {
+  const requests: string[] = [];
+  page.on("request", request => { if (request.method() !== "GET") requests.push(new URL(request.url()).pathname); });
+  await page.goto("/playground/");
+  const status = page.locator("#validation-status");
+  await expect(status).toContainText("Valid configuration");
+  const picker = page.getByLabel("Start from");
+  await expect(picker.locator("optgroup")).toHaveCount(2);
+  for (const preset of PLAYGROUND_PRESETS) {
+    await picker.selectOption(preset.id);
+    await expect(page.locator("#config-editor")).toHaveValue(presetText(preset));
+    await expect(page.locator("[data-preset-note]")).toHaveText(preset.note);
+    // The page's answer is exactly what the same package says in Node.
+    const result = validateProjectConfig(preset.config);
+    expect(result.valid, preset.id).toBe(preset.group === "accepted");
+    if (result.valid) await expect(status).toContainText("Valid configuration");
+    else await expect(page.locator("#validation-issues li")).toHaveText(result.issues.map(issue => `${issue.path}: ${issue.message} (${issue.code})`));
+  }
+  // Reset returns to the selected preset's text, not to the first example.
+  await page.locator("#config-editor").fill("{}");
+  await page.getByRole("button", { name: "Reset example" }).click();
+  await expect(page.locator("#config-editor")).toHaveValue(presetText(PLAYGROUND_PRESETS.at(-1)!));
+  // Nothing is sent anywhere: no handler runs and no configuration reaches a server.
+  expect(requests).toEqual([]);
+});
+
 test("playground reports service unavailability without replacing it with sample data", async ({ page }) => {
   await page.route("**/api/config", route => route.abort());
   await page.goto("/playground/");
@@ -92,7 +121,8 @@ test("the walkthrough keeps six chapters and offers an optional next step into S
   await expect(page.locator("[data-chapter-link]")).toHaveCount(6);
   const next = page.locator("[data-walk-next]");
   await expect(next).toContainText("never breaks the shared creek");
-  await expect(next).toContainText(`This demo runs streamotter@${release}. Quarantine and guarded continuation are in StreamOtter V1.1, published as 0.2.0-rc.1, which this demo doesn't use yet.`);
+  await expect(next).toContainText(`This demo runs streamotter@${release}, which also offers quarantine and guarded continuation as opt-in policies.`);
+  await expect(next).not.toContainText("planned");
   const link = next.getByRole("link", { name: "Next: handle a bad reading" });
   await expect(link).toHaveAttribute("href", "/lab/?scenario=fouled-sensor#source-failures");
   await link.click();
@@ -102,22 +132,26 @@ test("the walkthrough keeps six chapters and offers an optional next step into S
   expect(writes).toEqual([]);
 });
 
-test("the failure reference shows the planned policy matrix and record-disposition lifecycle, labeled as planned", async ({ page }) => {
+test("the failure reference shows the installed release's policy matrix and record-disposition lifecycle as opt-in", async ({ page }) => {
   await page.goto("/when-it-breaks/");
-  const planned = page.locator("[data-planned-policies]");
-  await expect(planned.getByRole("heading", { level: 2 })).toHaveText("Planned: source-failure policies in StreamOtter V1.1");
-  await expect(planned.locator(".notice")).toContainText(`Not in ${release}.`);
-  await expect(planned.locator(".notice")).toContainText("UNKNOWN_KEY");
-  await expect(planned).toContainText("There is no ignore, discard, or force-skip option.");
-  const matrix = planned.getByRole("table", { name: "Failure-policy matrix (planned)" });
+  const policies = page.locator("[data-failure-policies]");
+  await expect(policies.getByRole("heading", { level: 2 })).toHaveText(`Source-failure policies in streamotter@${release}`);
+  await expect(policies.locator(".notice")).toContainText("Opt-in.");
+  await expect(policies.locator(".notice")).toContainText("the installed validator accepts a failureHandling section");
+  await expect(policies).not.toContainText(/planned|UNKNOWN_KEY|not in \d/i);
+  await expect(policies).toContainText("There is no ignore, discard, or force-skip option.");
+  const matrix = policies.getByRole("table", { name: "Failure-policy matrix" });
   await expect(matrix.locator("tbody tr")).toHaveCount(8);
   await expect(matrix.locator("tbody tr").first()).toContainText("invalid-json");
-  await expect(planned.locator(".lifecycle h4")).toHaveText(["Held", "Evidence saved", "Hold, or ask the recovery guard", "Source advanced", "Views resynchronized"]);
-  await expect(planned).toContainText("Subscription states don't change.");
-  // Every planned source is pinned to one StreamOtter commit, never main.
-  for (const href of await planned.locator('a[href^="https://github.com/jfricano/StreamOtter/"]').evaluateAll(nodes => nodes.map(node => node.getAttribute("href")!))) {
-    expect(href).toMatch(/\/(?:blob|tree)\/[0-9a-f]{40}\/docs\/releases\/v1\.1/);
-  }
+  await expect(policies.locator(".lifecycle h4")).toHaveText(["Held", "Evidence saved", "Hold, or ask the recovery guard", "Source advanced", "Views resynchronized"]);
+  await expect(policies).toContainText("Subscription states don't change.");
+  await expect(policies.getByRole("region", { name: "Operator actions" }).locator("tbody tr")).toHaveCount(10);
+  // What the demo runs is the backend's answer, not this page's.
+  await expect(policies).toContainText("asks the demo's backend which of them its benches can run");
+  // Every source is the release's own documentation at its tag, never main or a planning commit.
+  const hrefs = await policies.locator('a[href^="https://github.com/jfricano/StreamOtter/"]').evaluateAll(nodes => nodes.map(node => node.getAttribute("href")!));
+  expect(hrefs.length).toBeGreaterThan(5);
+  for (const href of hrefs) expect(href).toMatch(new RegExp(`/(?:blob|tree)/v${release.replaceAll(".", "\\.")}/docs/`));
   // The installed release's reference is still first and unchanged in kind.
   await expect(page.getByLabel("Subscription state")).toBeVisible();
   await expect(page.locator("details summary").filter({ hasText: "HANDLER_FAILED" })).toHaveCount(1);
@@ -129,11 +163,12 @@ test("releases keep the site release, library package, demo availability, and ve
   await expect(page.locator("[data-release-site]")).toContainText("Pre-launch.");
   await expect(page.locator("[data-release-site]")).toContainText("V1.1, in development.");
   await expect(page.locator("[data-release-library]")).toContainText(`install streamotter@${release}, pinned exactly`);
-  await expect(page.locator("[data-release-library]")).toContainText("StreamOtter V1.1 is published as 0.2.0-rc.1, which this deployment doesn't use yet.");
+  await expect(page.locator("[data-release-library]")).toContainText("Source-failure handling is in this release, opt-in.");
+  await expect(page.locator("[data-release-library]")).not.toContainText(/planned|REQUIRED|UNKNOWN_KEY/);
   const rows = page.locator("[data-release-demo] tbody tr");
   await expect(rows).toHaveCount(5);
   await expect(rows.filter({ hasText: "Connections and clients" }).locator("td").first()).toHaveText("Runs where the Lab is on");
-  await expect(rows.filter({ hasText: "Source failures" })).toContainText("Fouled sensor, on the same benches. The other 8 stories");
+  await expect(rows.filter({ hasText: "Source failures" })).toContainText("Fouled sensor, on the same benches, and 8 more stories, each only where this field station's backend reports it can run it.");
   const service = page.locator("[data-release-service]");
   await expect(service).toHaveAttribute("data-service", "answered", { timeout: 15_000 });
   await expect(service.locator("li").first()).toHaveText("Field station: answering, replaying fixture data without Kafka.");
@@ -158,11 +193,35 @@ test("version and availability facts agree across pages (LC11-A40)", async ({ pa
   }
   expect(versions.size).toBeGreaterThan(3);
   for (const entry of versions) expect(entry.split(" ")[1], entry).toBe(release);
-  // The Lab's count of exercises that can't run matches the releases page's.
   await page.goto("/lab/#source-failures");
-  const waiting = await page.locator('[data-lab-track="source-failures"] [data-lab-start]').count();
   await expect(page.locator("main")).not.toContainText(/four controlled failures/i);
   await expect(page.getByRole("heading", { name: "Bench controls" })).toBeVisible();
-  await page.goto("/releases/");
-  await expect(page.locator("[data-release-demo]")).toContainText(`The other ${waiting} stories are listed`);
 });
+
+// Summaries the field station's own code produces for each deployment (the backend is the source of truth):
+// the hosted demo without benches, in both rollout phases, and Lab benches under each failure-handling profile.
+// Evidence for every new scenario under both profiles, for an injected install, so the counts don't depend on which builds have been verified.
+const integrity = { "node_modules/streamotter": "sha512-evidence" };
+const verified = new Map([[release, { packages: integrity, scenarios: Object.fromEntries(NEW_SCENARIOS.map(id => [id, ["quarantine", "retry"] as const])), evidence: "test" }]]);
+for (const [name, summary, runs] of [
+  ["the hosted demo on 0.1.0-rc.3 (phase 1)", labCapabilities({ labEnabled: false, now: Date.now(), version: "0.1.0-rc.3" }), 0],
+  [`the hosted demo on ${release} (phase 2)`, labCapabilities({ labEnabled: false, now: Date.now(), version: release }), 0],
+  ["a Lab with failure handling off", labCapabilities({ labEnabled: true, now: Date.now(), version: release, verified, integrity }), 0],
+  ["a Lab on the retry profile", labCapabilities({ labEnabled: true, now: Date.now(), version: release, verified, integrity, profile: "retry" }), 1],
+  ["a local Lab on the quarantine profile", labCapabilities({ labEnabled: true, now: Date.now(), version: release, verified, integrity, profile: "quarantine", localExercises: true }), 8]
+] as const) {
+  test(`the Lab and the releases page count the same runnable source-failure exercises for ${name}`, async ({ page }) => {
+    await page.route("**/api/lab/capabilities", route => route.fulfill({ json: summary }));
+    await page.goto("/lab/#source-failures");
+    const track = page.locator('[data-lab-track="source-failures"]');
+    await expect(page.locator("[data-lab-capability]")).toContainText(`${runs} of 8 new exercises can run here.`);
+    const stories = await track.locator("[data-lab-start]").count();
+    const available = await track.locator('[data-lab-scenario]:has([data-lab-start]) [data-lab-availability][data-state="available"]').count();
+    expect([stories, available]).toEqual([8, runs]);
+    await page.goto("/releases/");
+    // The static row counts the stories and leaves whether they run to the report below it, which reads the same summary.
+    await expect(page.locator("[data-release-demo]")).toContainText(`and ${stories} more stories, each only where this field station's backend reports it can run it.`);
+    await expect(page.locator("[data-release-service]")).toHaveAttribute("data-service", "answered", { timeout: 15_000 });
+    await expect(page.locator("[data-release-service] li")).toContainText([`New source-failure exercises it can run: ${available} of ${stories}.`]);
+  });
+}

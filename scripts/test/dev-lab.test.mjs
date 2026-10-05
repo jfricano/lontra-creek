@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import {
-  DEFAULT_DIR, DEFAULT_PROJECT, ROOT, UsageError,
-  checkOwnDirectory, checkPrerequisites, compareVersions, confirmDiscard, extraCaDockerfile, localDirectory, parseArgs, readEnv, urls, waitForReadyBench
+  COMPOSE_FILES, DEFAULT_DIR, DEFAULT_PROJECT, MIN_NODE, ROOT, UsageError,
+  checkOwnDirectory, checkPrerequisites, compareVersions, confirmDiscard, extraCaDockerfile, localDirectory, parseArgs, readEnv, sandboxSecret, urls, waitForReadyBench
 } from "../dev-lab.mjs";
 
 describe("parseArgs", () => {
@@ -81,42 +81,48 @@ describe("checkPrerequisites", () => {
     const { run } = runner(healthy);
     const problems = await checkPrerequisites({ run, portFree: free, nodeVersion: "22.12.0" });
     assert.equal(problems.length, 1);
-    assert.match(problems[0], /Node 24 or later.*22\.12\.0/);
+    assert.match(problems[0], /Node 24\.15\.0 or later.*22\.12\.0/);
+    assert.match((await checkPrerequisites({ run, portFree: free, nodeVersion: "24.14.1" })).join(), /Node 24\.15\.0 or later.*24\.14\.1/, "the engines floor, not just the major");
+  });
+
+  test("asks for the Node the root package.json's engines field does", async () => {
+    const engines = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).engines.node;
+    assert.equal(engines, `>=${MIN_NODE.replace(/\.0$/, "")}`);
   });
 
   test("reports missing Docker without probing its daemon or Compose", async () => {
     const { run, calls } = runner({ "openssl version": ok("OpenSSL 3") });
-    const problems = await checkPrerequisites({ run, portFree: free, nodeVersion: "24.0.0" });
+    const problems = await checkPrerequisites({ run, portFree: free, nodeVersion: "24.15.0" });
     assert.deepEqual(problems.map(p => /Docker is not installed/.test(p)), [true]);
     assert.ok(!calls.some(call => call.startsWith("docker info") || call.startsWith("docker compose")));
   });
 
   test("reports a stopped daemon, a missing or old Compose, and missing OpenSSL", async () => {
     const stopped = runner({ ...healthy, "docker info --format {{.ServerVersion}}": { status: 1, stdout: "", stderr: "Cannot connect" } });
-    assert.match((await checkPrerequisites({ run: stopped.run, portFree: free, nodeVersion: "24.0.0" })).join(), /daemon is not reachable/);
+    assert.match((await checkPrerequisites({ run: stopped.run, portFree: free, nodeVersion: "24.15.0" })).join(), /daemon is not reachable/);
 
     const noCompose = runner({ ...healthy, "docker compose version --short": { status: 1, stdout: "", stderr: "unknown command" } });
-    assert.match((await checkPrerequisites({ run: noCompose.run, portFree: free, nodeVersion: "24.0.0" })).join(), /`docker compose` plugin/);
+    assert.match((await checkPrerequisites({ run: noCompose.run, portFree: free, nodeVersion: "24.15.0" })).join(), /`docker compose` plugin/);
 
     const oldCompose = runner({ ...healthy, "docker compose version --short": ok("2.20.2\n") });
-    assert.match((await checkPrerequisites({ run: oldCompose.run, portFree: free, nodeVersion: "24.0.0" })).join(), /2\.24\.4 or later.*found 2\.20\.2/);
+    assert.match((await checkPrerequisites({ run: oldCompose.run, portFree: free, nodeVersion: "24.15.0" })).join(), /2\.24\.4 or later.*found 2\.20\.2/);
 
     const noOpenssl = runner({ ...healthy, "openssl version": { status: null, stdout: "", stderr: "" } });
-    assert.match((await checkPrerequisites({ run: noOpenssl.run, portFree: free, nodeVersion: "24.0.0" })).join(), /OpenSSL is required/);
+    assert.match((await checkPrerequisites({ run: noOpenssl.run, portFree: free, nodeVersion: "24.15.0" })).join(), /OpenSSL is required/);
   });
 
   test("reports a busy port 8443 unless the check is skipped for an already running stack", async () => {
     const { run } = runner(healthy);
     const ports = [];
     const busy = async port => { ports.push(port); return false; };
-    assert.match((await checkPrerequisites({ run, portFree: busy, nodeVersion: "24.0.0" })).join(), /Port 8443 on 127\.0\.0\.1 is in use/);
+    assert.match((await checkPrerequisites({ run, portFree: busy, nodeVersion: "24.15.0" })).join(), /Port 8443 on 127\.0\.0\.1 is in use/);
     assert.deepEqual(ports, [8443]);
-    assert.deepEqual(await checkPrerequisites({ run, portFree: busy, nodeVersion: "24.0.0", checkPort: false }), []);
+    assert.deepEqual(await checkPrerequisites({ run, portFree: busy, nodeVersion: "24.15.0", checkPort: false }), []);
   });
 
   test("reports a missing --extra-ca file", async () => {
     const { run } = runner(healthy);
-    assert.match((await checkPrerequisites({ run, portFree: free, nodeVersion: "24.0.0", extraCa: "/nonexistent/ca.pem" })).join(), /--extra-ca file not found/);
+    assert.match((await checkPrerequisites({ run, portFree: free, nodeVersion: "24.15.0", extraCa: "/nonexistent/ca.pem" })).join(), /--extra-ca file not found/);
   });
 });
 
@@ -225,6 +231,51 @@ describe("readEnv and urls", () => {
 
   test("every printed URL is on the loopback HTTPS origin", () => {
     for (const url of Object.values(urls())) assert.match(url, /^https:\/\/localhost:8443\//);
+    assert.equal(urls().workbench, "https://localhost:8443/workbench/");
+    assert.equal(urls().sandboxStatus, "https://localhost:8443/api/sandbox/status");
+  });
+});
+
+describe("the workbench sandbox", () => {
+  test("its overlay comes after the Lab's and before the local overrides, and exists", () => {
+    assert.deepEqual(COMPOSE_FILES, ["deploy/compose.yaml", "deploy/compose.lab.yaml", "deploy/compose.sandbox.yaml", "deploy/compose.local-lab.yaml"]);
+    for (const file of COMPOSE_FILES) assert.ok(readFileSync(join(ROOT, file), "utf8").length > 0, file);
+  });
+
+  test("its service token is appended only to an env file without one", () => {
+    assert.equal(sandboxSecret({ SANDBOX_SERVICE_TOKEN: "kept" }, () => assert.fail("no new token")), "");
+    const added = sandboxSecret({ LAB_RELAY_TOKEN: "x" }, () => "f".repeat(64));
+    assert.deepEqual(readEnv(added), { SANDBOX_SERVICE_TOKEN: "f".repeat(64) });
+    assert.match(sandboxSecret({}), /^\n# .*\nSANDBOX_SERVICE_TOKEN=[0-9a-f]{64}\n$/, "32 random bytes, hex");
+  });
+
+  test("new env files get one from deploy/make-secrets.sh", () => {
+    assert.match(readFileSync(join(ROOT, "deploy/make-secrets.sh"), "utf8"), /^SANDBOX_SERVICE_TOKEN=\$\(secret\)$/m);
+  });
+});
+
+describe("the source-failures profile", () => {
+  /** One top-level service's lines in a Compose file (two-space indented keys under `services:`). */
+  const service = (file, name) => {
+    const lines = readFileSync(join(ROOT, file), "utf8").split("\n");
+    const start = lines.indexOf(`  ${name}:`);
+    assert.ok(start >= 0, `${file} has ${name}`);
+    const end = lines.findIndex((line, i) => i > start && /^ {2}\S/.test(line));
+    return lines.slice(start, end < 0 ? undefined : end).join("\n");
+  };
+  const setting = (file, name, key) => service(file, name).match(new RegExp(`^ +${key}: \\$\\{${key}:-([a-z0-9]+)\\}$`, "m"))?.[1];
+
+  test("the hosted overlay defaults to retry with no local exercises, alike on the field station and every bench", () => {
+    assert.equal(setting("deploy/compose.lab.yaml", "field-station", "LAB_FAILURE_HANDLING"), "retry");
+    assert.equal(setting("deploy/compose.lab.yaml", "field-station", "LAB_LOCAL_EXERCISES"), "0");
+    for (const bench of ["lab-1", "lab-2", "lab-3"]) assert.equal(setting("deploy/compose.lab.yaml", bench, "LAB_FAILURE_HANDLING"), "retry", bench);
+  });
+
+  test("the local Lab runs quarantine and the local exercises on an ACL broker", () => {
+    assert.equal(setting("deploy/compose.local-lab.yaml", "kafka", "KAFKA_AUTHORIZATION"), "acl");
+    assert.equal(setting("deploy/compose.local-lab.yaml", "field-station", "LAB_FAILURE_HANDLING"), "quarantine");
+    assert.equal(setting("deploy/compose.local-lab.yaml", "field-station", "LAB_LOCAL_EXERCISES"), "1");
+    for (const bench of ["lab-1", "lab-2", "lab-3"]) assert.equal(setting("deploy/compose.local-lab.yaml", bench, "LAB_FAILURE_HANDLING"), "quarantine", bench);
   });
 });
 

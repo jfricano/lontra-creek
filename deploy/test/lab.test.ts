@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { createClient } from 'streamotter/client';
 import type { Client, SubscriptionState } from 'streamotter/client';
+import { randomBytes } from 'node:crypto';
 import http from 'node:http';
 import https from 'node:https';
 import type { LabAction, LabActionResult, LabFeedPage, LabLease, LabToken } from '../../apps/field-station/src/lab/contract.ts';
@@ -45,13 +46,19 @@ describe('the real Kafka Failure Lab', { skip: !API && 'LAB_API_ORIGIN not set' 
   });
   test('tokens stay on their own bench and edge management routes stay private', { skip: !API?.startsWith('https://') && 'Requires the three-bench Caddy deployment' }, async () => {
     const status = await api<{ benches: { bench: number }[] }>('status');
+    // S3: a development preview token of the right shape is refused on every bench, this one included.
+    for (const { bench } of status.benches) {
+      const preview = createClient<LabChannels>({ origin: token.gatewayOrigin, path: `/lab/${bench}/socket.io`, getToken: () => `sop_${randomBytes(32).toString('base64url')}` });
+      try { await assert.rejects(preview.subscribe('station', { channelVersion: 1, params: { stationId: 'LC-03' } }).ready({ timeoutMs: 5000 })); } finally { await preview.close(); }
+    }
     for (const other of status.benches.filter(b => b.bench !== token.bench)) {
       const foreign = createClient<LabChannels>({ origin: token.gatewayOrigin, path: `/lab/${other.bench}/socket.io`, getToken: () => token.token });
       try { await assert.rejects(foreign.subscribe('station', { channelVersion: 1, params: { stationId: 'LC-03' } }).ready({ timeoutMs: 5000 })); } finally { await foreign.close(); }
     }
     // Native verification bypasses Caddy; these edge assertions run in containers.
     if (API?.startsWith('https://')) {
-      for (const path of [...(process.env['LAB_SERVES_SITE'] === '1' ? [] : ['/lab/']), `/lab/${token.bench}/`, `/lab/${token.bench}/management/v1/health`, `/lab/${token.bench}/bench/v1/status`]) assert.equal((await fetch(`${API}${path}`)).status, 404);
+      // With failure handling the management API also has operator routes (0.2.0-rc.1, section 10.2 D4): never at the edge either.
+      for (const path of [...(process.env['LAB_SERVES_SITE'] === '1' ? [] : ['/lab/']), `/lab/${token.bench}/`, `/lab/${token.bench}/management/v1/health`, `/lab/${token.bench}/management/v1/failures`, `/lab/${token.bench}/management/v1/operator/status`, `/lab/${token.bench}/bench/v1/status`, `/lab/${token.bench}/bench/v1/incident`]) assert.equal((await fetch(`${API}${path}`)).status, 404, path);
       for (const headers of [{}, { origin: 'https://foreign.test' }]) assert.equal((await fetch(`${API}/lab/${token.bench}/socket.io/?EIO=4&transport=websocket`, { headers })).status, 403);
     }
   });
@@ -73,5 +80,21 @@ describe('the real Kafka Failure Lab', { skip: !API && 'LAB_API_ORIGIN not set' 
     await poll();const json=JSON.stringify(feed);assert.ok(!json.includes(token.token));for(const item of feed){assert.ok(!('subscriptionId' in item));assert.ok(!('requestId'in item));assert.ok(!('data'in item));if(item.kind==='trace'&&item.stage==='authorize')assert.ok(item.subscriber);}
     await api('lease/return','POST');await until(()=>state==='stale','lease revoked');
     const old=createClient<LabChannels>({origin:token.gatewayOrigin,path:token.gatewayPath,getToken:()=>token.token});try{await assert.rejects(old.subscribe('station',{channelVersion:1,params:{stationId:'LC-03'}}).ready({timeoutMs:5000}));}finally{await old.close();}
+  });
+  // S2's expiry half: a lease runs out (up to LAB_LEASE_SECONDS, 300 by default), so it runs only when asked for.
+  test('an expired lease closes its connection and its token is refused afterwards', { skip: process.env['LAB_EXPIRY_TEST'] !== '1' && 'LAB_EXPIRY_TEST=1 not set' }, async () => {
+    await until(async()=>{const status=await api<{benches:{state:string}[]}>('status');return status.benches.some(b=>b.state==='ready');},'ready bench',180_000);
+    // The suite's own lease, or a new one once an earlier test returned it.
+    const lease=await api<LabLease>('lease','POST',{}); assert.ok(lease.status==='ready'||lease.status==='active',lease.status);
+    const expiring=await api<LabToken>('lease/token','POST',{}); let expiringState: SubscriptionState='authorizing';
+    const keep=setInterval(()=>void api('lease').catch(()=>{}),5000);
+    const held=createClient<LabChannels>({origin:expiring.gatewayOrigin,path:expiring.gatewayPath,getToken:()=>expiring.token});
+    try {
+      const view=held.subscribe('station',{channelVersion:1,params:{stationId:'LC-03'}}); view.on('state',event=>{expiringState=event.state;}); await view.ready({timeoutMs:30_000});
+      await until(()=>expiringState!=='live','the connection closed at expiresAt',Date.parse(expiring.expiresAt)-Date.now()+20_000);
+      assert.ok(Date.now()>=Date.parse(expiring.expiresAt)-1000,'not before the lease ends');
+      const later=createClient<LabChannels>({origin:expiring.gatewayOrigin,path:expiring.gatewayPath,getToken:()=>expiring.token});
+      try{await assert.rejects(later.subscribe('station',{channelVersion:1,params:{stationId:'LC-03'}}).ready({timeoutMs:5000}));}finally{await later.close();}
+    } finally { clearInterval(keep); await held.close(); }
   });
 });

@@ -2,11 +2,15 @@
 # here; in CI, the test connects directly with a throwaway certificate.
 #
 #   /streamotter/*  the gateway (WebSocket upgrades and the browser's Origin pass through)
+#   /lab/N/socket.io/*, /sandbox/N/socket.io/*
+#                   Lab bench and workbench sandbox slot gateways, for the site's exact Origin only
 #   /api/*          the field station's site API
 #   anything else   404, including the field station's health check and internal API
 #
 # Environment: DEMO_HOST (default demo.streamotter.dev), HTTPS_PORT (default 443),
-# GATEWAY_UPSTREAM and FIELD_STATION_UPSTREAM (the compose service addresses), and
+# GATEWAY_UPSTREAM, FIELD_STATION_UPSTREAM, LAB_N_UPSTREAM, and SANDBOX_N_UPSTREAM (the
+# compose service addresses), SITE_ORIGIN (one exact origin, matched literally; default
+# https://streamotter.dev; the field station and sandbox refuse a list), and
 # ORIGIN_CERT_DIR (cert.pem and key.pem, default /etc/caddy/origin).
 {
 	# Certificates come from files (the Cloudflare origin certificate), not ACME,
@@ -54,6 +58,35 @@ https://{$DEMO_HOST:demo.streamotter.dev}:{$HTTPS_PORT:443} {
 		@foreignOrigin3 not header Origin {$SITE_ORIGIN:https://streamotter.dev}
 		respond @foreignOrigin3 403
 		reverse_proxy {$LAB_3_UPSTREAM:lab-3:7400}
+	}
+
+	# Workbench sandbox slot gateways: Socket.IO only; the sandbox API and slot management stay private.
+	handle /sandbox/1/socket.io/* {
+		@foreignSandbox1 not header Origin {$SITE_ORIGIN:https://streamotter.dev}
+		respond @foreignSandbox1 403
+		reverse_proxy {$SANDBOX_1_UPSTREAM:sandbox:7601}
+	}
+
+	handle /sandbox/2/socket.io/* {
+		@foreignSandbox2 not header Origin {$SITE_ORIGIN:https://streamotter.dev}
+		respond @foreignSandbox2 403
+		reverse_proxy {$SANDBOX_2_UPSTREAM:sandbox:7602}
+	}
+
+	handle /sandbox/3/socket.io/* {
+		@foreignSandbox3 not header Origin {$SITE_ORIGIN:https://streamotter.dev}
+		respond @foreignSandbox3 403
+		reverse_proxy {$SANDBOX_3_UPSTREAM:sandbox:7603}
+	}
+
+	# Sandbox candidates (config.validate, config.export) are up to 64 KB; every other /api body stays at 8 KB.
+	handle /api/sandbox/wb/v1/config/* {
+		request_body {
+			max_size 72KB
+		}
+		reverse_proxy {$FIELD_STATION_UPSTREAM:field-station:7402} {
+			header_up X-Client-IP {client_ip}
+		}
 	}
 
 	handle /api/* {

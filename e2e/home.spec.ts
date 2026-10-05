@@ -9,6 +9,7 @@
  */
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
+import capture from "../apps/site/public/recordings/workbench/capture.json" with { type: "json" };
 
 /** Each card's state chip, scoped to the live panel so it never matches the
  *  static state-name chips in the "no silent failures" section further down
@@ -91,19 +92,18 @@ test.describe("home page live panel", () => {
   });
 });
 
-test.describe("home page V1.1 panel (LC11-A01, A02, A40)", () => {
-  const release = (JSON.parse(readFileSync(new URL("../apps/site/package.json", import.meta.url), "utf8")) as { dependencies: { streamotter: string } }).dependencies.streamotter;
+test.describe("home page source-failure panel (LC11-A01, A02, A40)", () => {
+  const release = (JSON.parse(readFileSync(new URL("../node_modules/streamotter/package.json", import.meta.url), "utf8")) as { version: string }).version;
 
-  test("says V1.1 is published but not run here, says what runs today, and links to the Source failures track without borrowing a bench", async ({ page }) => {
+  test("describes the installed release's opt-in policies, keeps what this demo runs separate, and links to the Source failures track without borrowing a bench", async ({ page }) => {
     const lab: string[] = [];
     page.on("request", request => { const { pathname } = new URL(request.url()); if (pathname.startsWith("/api/lab/") && request.method() !== "GET") lab.push(pathname); });
     await page.goto("/");
     const panel = page.locator("[data-v11-panel]");
-    await expect(panel.locator(".eyebrow")).toHaveText(`StreamOtter V1.1 · in 0.2.0-rc.1, not in ${release}`);
-    await expect(panel).toContainText(`StreamOtter V1.1 is published as 0.2.0-rc.1, which this site doesn't use yet: it runs ${release}.`);
-    await expect(panel).not.toContainText("specified, not released");
-    await expect(panel).toContainText("The Failure Lab's Fouled sensor shows that on a leased bench, where the Lab is on.");
-    await expect(panel).toContainText(`In streamotter@${release}, which this site runs, a bad record pauses its source`);
+    await expect(panel.locator(".eyebrow")).toHaveText(`In streamotter@${release} · opt-in`);
+    await expect(panel).not.toContainText(/planned|specified, not released/i);
+    await expect(panel).toContainText("Without a policy, a bad record pauses its source");
+    await expect(panel).toContainText("asks this demo's backend which of them it can run");
     await expect(panel.getByRole("heading", { level: 3 })).toHaveText(["Preserve the record", "Continue only under control", "See each outcome"]);
     // The live hero is unchanged: the panel sits below it and doesn't replace it.
     await expect(page.locator("[data-live-creek] [data-card] [data-state]").first()).toHaveAttribute("data-state", "live", { timeout: 30_000 });
@@ -118,13 +118,22 @@ test.describe("home page V1.1 panel (LC11-A01, A02, A40)", () => {
   test("the explore cards carry the updated Lab summary", async ({ page }) => {
     await page.goto("/");
     const card = page.locator('#explore a[href="/lab/"]');
-    await expect(card).toContainText("The Source failures track also lists the quarantine exercises that wait for StreamOtter V1.1.");
+    await expect(card).toContainText("The Source failures track lists the quarantine exercises and whether this demo's backend can run each one.");
     await expect(page.locator("main")).not.toContainText(/four controlled failures/i);
   });
 });
 
+test("the workbench screenshot is captioned from its own capture, not the site's pin", async ({ page }) => {
+  await page.goto("/");
+  const capturedOn = new Date(capture.capturedAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
+  await expect(page.locator("[data-workbench-caption]")).toHaveText(`Recording · ${capturedOn} · streamotter@${capture.version} · local fixture project, not the hosted demo.`);
+  const shot = page.locator("#workbench-preview img.workbench-shot");
+  await expect(shot).toHaveAttribute("width", String(capture.images.preview.width));
+  await expect(shot).toHaveAttribute("height", String(capture.images.preview.height));
+});
+
 test("install commands name the pinned release, not npm's latest tag", async ({ page }) => {
-  const release = (JSON.parse(readFileSync(new URL("../apps/site/package.json", import.meta.url), "utf8")) as { dependencies: { streamotter: string } }).dependencies.streamotter;
+  const release = (JSON.parse(readFileSync(new URL("../node_modules/streamotter/package.json", import.meta.url), "utf8")) as { version: string }).version;
   await page.goto("/");
   await expect(page.locator("button[data-copy]")).toHaveAttribute("data-copy", `npm install streamotter@${release}`);
   await expect(page.locator("#start pre")).toContainText(`npm install streamotter@${release}`);

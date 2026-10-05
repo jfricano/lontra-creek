@@ -4,8 +4,12 @@
  *
  * Updates only change text inside nodes that already exist, so polling never moves
  * focus or closes the coordinates disclosure. The steps list keeps its scroll position.
+ * The next-intent button is one node: its label changes with the incident, it stays
+ * focusable (`aria-disabled`) while a request waits, and if the incident stops offering
+ * an intent while it has focus, focus moves to the text that says so. When the panel
+ * empties with focus inside it, focus moves to the panel's heading.
  */
-import type { LabIncidentView } from "../../../field-station/src/lab/contract.ts";
+import type { LabIncidentSummary, LabIncidentView } from "../../../field-station/src/lab/contract.ts";
 import type { CapabilityAnswer } from "./lab-catalog-model.ts";
 import { incidentView, type BrowserStep, type Mark } from "./lab-incident.ts";
 
@@ -21,7 +25,37 @@ export interface ApplicationView {
 export class IncidentPanel {
   readonly #root: HTMLElement;
   #shown = false;
-  constructor(root: HTMLElement) { this.#root = root; }
+  #incident: LabIncidentSummary | null = null;
+  #busy = false;
+  /** Null while the backend takes intents; otherwise its reason, shown instead of the button. */
+  #noIntents: string | null = "This backend doesn't accept intents.";
+  #act: ((incident: LabIncidentSummary, button: HTMLButtonElement) => void) | undefined;
+  constructor(root: HTMLElement) {
+    this.#root = root;
+    const button = this.#button;
+    button.addEventListener("click", () => {
+      if (this.#busy || this.#incident?.nextIntent == null) return;
+      this.#act?.(this.#incident, button);
+    });
+  }
+
+  get #button(): HTMLButtonElement { return this.#el("[data-lab-incident-act]") as HTMLButtonElement; }
+
+  /** The projection last rendered, or null when there is none. */
+  get incident(): LabIncidentSummary | null { return this.#incident; }
+
+  /** Called when the visitor presses the next-intent button, with the projection it was drawn from. */
+  onAct(handler: (incident: LabIncidentSummary, button: HTMLButtonElement) => void): void { this.#act = handler; }
+
+  /** While an intent waits for the bench, the button stays where it is but sends nothing, and is described by the operation line that says why as well as the line beside it. */
+  busy(on: boolean): void {
+    this.#busy = on;
+    this.#button.setAttribute("aria-disabled", String(on));
+    this.#button.setAttribute("aria-describedby", on ? "incident-operation incident-next" : "incident-next");
+  }
+
+  /** The operation line: what the bench reported for the visitor's latest request. */
+  operation(text: string): void { this.#el("[data-lab-operation]").textContent = text; }
 
   #el(selector: string): HTMLElement {
     const element = this.#root.querySelector<HTMLElement>(selector);
@@ -31,6 +65,8 @@ export class IncidentPanel {
 
   /** Why the panel is empty, from the capability summary. */
   explain(answer: CapabilityAnswer, leased: boolean): void {
+    const intents = answer.kind === "summary" ? answer.summary.features.intents : null;
+    this.#noIntents = intents?.available ? null : intents?.reason?.text ?? "This backend doesn't accept intents.";
     const feature = answer.kind === "summary" ? answer.summary.features.incidentProjection : null;
     this.#el("[data-lab-incident-reason]").textContent =
       answer.kind === "pending" ? "Until this backend reports that it supports incidents, this panel stays empty."
@@ -39,10 +75,25 @@ export class IncidentPanel {
       : leased ? "Nothing is held on your bench right now." : "Borrow a bench and start a scenario to see an incident here.";
   }
 
+  /** Empties the panel (no incident, or the lease ended or changed). Focus inside it moves to the panel's heading, never to the page. */
   clear(): void {
-    this.#shown = false;
+    this.#shown = false; this.#incident = null;
+    const body = this.#el("[data-lab-incident-body]");
+    const focused = body.contains(document.activeElement);
     this.#el("[data-lab-incident-empty]").hidden = false;
-    this.#el("[data-lab-incident-body]").hidden = true;
+    body.hidden = true;
+    this.#offer(null, "");
+    if (focused) this.#el("[data-lab-incident-title]").focus();
+  }
+
+  /** Shows the next-intent button with `label`, or hides it; a hidden button's focus moves to the text beside it. */
+  #offer(label: string | null, text: string): void {
+    const button = this.#button; const next = this.#el("[data-lab-incident-next]");
+    next.textContent = text;
+    if (label !== null) { if (button.textContent !== label) button.textContent = label; button.hidden = false; return; }
+    const focused = document.activeElement === button;
+    button.hidden = true;
+    if (focused) (next.closest("[hidden]") ? this.#el("[data-lab-incident-title]") : next).focus();
   }
 
   /** Renders a served projection; returns its one-sentence state, for the page to announce when it changes. */
@@ -65,7 +116,10 @@ export class IncidentPanel {
       const dd = this.#el(`[data-lab-incident-${key}]`); dd.hidden = value === null;
       if (value) mark(dd, value);
     }
-    this.#el("[data-lab-incident-next]").textContent = model.next;
+    this.#incident = view.incident;
+    // Offer the step only where the backend takes intents; otherwise name it and say why it can't be sent.
+    if (model.nextLabel !== null && this.#noIntents !== null) this.#offer(null, `${model.nextLabel}. ${this.#noIntents}`);
+    else this.#offer(model.nextLabel, model.next);
     this.#el("[data-lab-incident-detail-list]").replaceChildren(...model.detail.flatMap(([term, value]) => [node("dt", term), node("dd", value)]));
     const steps = this.#el("[data-lab-incident-steps]");
     steps.replaceChildren(...(model.gap ? [node("li", "Some earlier steps are missing here; they can't be reconstructed.", "lab-step-gap")] : []),

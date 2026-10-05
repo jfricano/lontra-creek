@@ -1,5 +1,7 @@
 # Deployment candidate and operator runbook
 
+> **October 4, 2026: this is the standalone layout's runbook** (`/srv/lontra`, `deploy/setup.sh`, `lontra-deploy`, `lontra-checkpoint`, `lontra-health`, the `Deploy demo` workflow). The hosted demo now runs on devops's shared host (`/srv/apps/lontra`, `/etc/apps/lontra/lontra.env`) with devops's activation procedure; don't run these scripts there. The [rollout plan](../docs/releases/0.2.0-rc.1/ROLLOUT_PLAN.md) governs the coordinated release, and [SHARED_HOST_READINESS.md](../docs/SHARED_HOST_READINESS.md) and [shared-host/BACKUP.md](shared-host/BACKUP.md) are the shared-host contract. The sections on Kafka authorization and the Compose overlays still describe the application's behavior on either layout.
+
 E5.1–E5.5 and E2.3, prepared September 27, 2026. This is a **review-ready implementation**,
 not a deployed system. The setup rehearsal must pass in GitHub Actions before
 server use. No accounts, environment protections, credentials, cloud resources,
@@ -7,7 +9,7 @@ registry publication, or public deployment were created by this change.
 
 The product/hosting decisions remain in [PLAN](../docs/PLAN.md),
 [deployment plan](../docs/DEPLOYMENT_PLAN.md), and
-[owner checklist](../docs/HOSTING.md). This file is the operator procedure and
+[owner checklist](../docs/HOSTING.md) (superseded for hosting by the rollout plan). This file is the operator procedure and
 verification record for the scripts, not a replacement hosting budget. Prices
 and entitlements in older planning documents must be rechecked by the owner
 before committing resources.
@@ -198,6 +200,43 @@ or production topics. Public bench deployment and any hosted quarantine
 exercise stay gated on the owner approving and running the migration below. Do
 not describe the hosted broker as Kafka least privilege until it has.
 
+## Workbench sandbox overlay (W9a)
+
+`compose.sandbox.yaml` adds the `sandbox` service (LC11-ADR-04, sandbox contract
+§§9–10): three synthetic workbench slots on the published StreamOtter seam, run
+from the same image with `node src/sandbox/sandbox-main.ts`. Its environment is
+`NODE_ENV`, `SANDBOX_SERVICE_TOKEN`, `SANDBOX_SLOTS`, and `SITE_ORIGIN` only, and
+the service checks that against an allowlist: any variable but `SANDBOX_*`,
+`SITE_ORIGIN`, `NODE_ENV`, and what the Node image and the container runtime set
+(`PATH`, `HOME`, `HOSTNAME`, `PWD`, `TERM`, `TZ`, `LANG`, `NODE_VERSION`,
+`YARN_VERSION`) stops it at startup, so no `FIELD_STATION_*` value, Kafka
+credential, or Lab token can reach it. It publishes no port. The field station reaches its API at
+`sandbox:7620` with the shared token; slot N's development gateway listens on
+`sandbox:760N`, and each slot's management handler listens on loopback inside
+the container only. `deploy/Caddyfile` routes `/sandbox/1/socket.io/*` through
+`/sandbox/3/socket.io/*` to those gateways for the site's exact Origin only
+(403 otherwise); every other `/sandbox/*` path falls through to 404. It also
+accepts sandbox candidate bodies up to 72 KB on
+`/api/sandbox/wb/v1/config/*`; every other `/api` body stays at 8 KB.
+
+The overlay is used by `npm run dev:lab` (docs/LOCAL_LAB.md). **It is not part of
+any host deployment**: `operations/deploy.sh`, `health.sh`, and `checkpoint.sh`
+do not add it, and enabling it on the host is a separate, owner-approved
+change. `Caddyfile.shared` and `compose.shared*.yaml` have no sandbox routes yet.
+
+`make-secrets.sh` writes `SANDBOX_SERVICE_TOKEN` into new env files only. A
+local Lab directory from before the sandbox needs it appended once (`npm run
+dev:lab` does this for its own `.local/` env file when missing):
+
+```sh
+printf 'SANDBOX_SERVICE_TOKEN=%s\n' "$(openssl rand -hex 32)" >> <env-file>
+```
+
+then recreate `field-station` and `sandbox` together so both read the same value.
+No host env file gets the token until the owner approves the sandbox there: no
+release layout runs the overlay, and the token belongs to that change, made the
+same way in a root-only session.
+
 ## Kafka authorization (LC11-ADR-03)
 
 **Requires the owner's explicit approval before it is run on the hosted
@@ -268,7 +307,7 @@ sudo /usr/local/sbin/lontra-deploy "$(sudo cat /srv/lontra/current.sha)"
    `stack.env` too before investigating.
 3. **Verify under `migrate`.**
    - `$compose logs kafka | grep 'Kafka authorization'` reports `migrate`,
-     13 grants with three benches (4 without the Lab), and the quarantine
+     19 grants with three benches (4 without the Lab), and the quarantine
      topics.
    - `$compose exec kafka grep -E '^(authorizer|allow|super)'
      /tmp/lontra-kafka.properties` shows the authorizer, `true`, and
@@ -287,7 +326,8 @@ sudo /usr/local/sbin/lontra-deploy "$(sudo cat /srv/lontra/current.sha)"
      the authorizer logs, which roll hourly: `$compose exec kafka sh -c "grep
      -h -E 'is Denied|DefaultAllow' /opt/kafka/logs/kafka-authorizer.log*"`.
      An `is Denied` line for `User:gateway`, `User:field-station`, or a
-     bench's own `lab-N.*` topics and `streamotter-lab-N-` groups is a missing
+     bench's own `lab-N.*` topics, `streamotter-lab-N-` groups, and
+     `streamotter-lontra-creek-lab-N-quarantine-read-` groups is a missing
      grant on a granted resource, already failing: stop and roll back. A
      `based on rule DefaultAllow` line for one of those users is an operation
      on a resource nobody is granted, which `acl` will deny: stop and roll
@@ -325,6 +365,19 @@ so returning to `acl` later needs no new bootstrap. To remove the ACLs
 entirely, run `kafka-acls.sh --remove --force` with the same resources while
 an authorizer is configured. Neither direction touches topic data, SCRAM
 users, or the world checkpoint.
+
+**A broker that already runs `acl` or `migrate` picks up added grants on its
+next start.** The bootstrap compares the listing with its table and adds only
+what is missing, so W9b's two grants per bench (`DescribeConfigs` on
+`lab-N.quarantine`, and `Read`/`Delete` on groups prefixed
+`streamotter-lontra-creek-lab-N-quarantine-read-`, Lab contract 10.9) need no
+operator step beyond starting Kafka once with this `kafka/start.sh` (a deploy
+that recreates the `kafka` service, or a restart of it in a maintenance
+window). Its log reports the additions: on `npm run dev:lab`, a running
+13-grant broker restarted with each grant in turn logged `16 grants, 3 added`,
+then `19 grants, 3 added`, and a further start adds nothing. Benches whose profile is `quarantine` need these grants before they
+start; with `retry` or `off` they are unused. A broker at `none` is
+unaffected.
 
 **Changing a grant later** (a new bench, renamed groups): the bootstrap only
 adds. Update `kafka/start.sh` and Lab contract 10.9 together, deploy, and

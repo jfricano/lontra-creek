@@ -1,0 +1,8 @@
+# Cloudflare Pages response headers. No page is framed or MIME-sniffed. /workbench/, which hosts
+# the published StreamOtter workbench, depends on this rule: its meta Content-Security-Policy
+# cannot carry frame-ancestors. Pages joins a header set by two matching rules with ", ", so each
+# of these is set here only.
+/*
+  X-Frame-Options: DENY
+  Content-Security-Policy: frame-ancestors 'none'
+  X-Content-Type-Options: nosniff

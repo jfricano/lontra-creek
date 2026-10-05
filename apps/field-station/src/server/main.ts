@@ -49,7 +49,7 @@ const places = new AddressCap();
 // Each bench study's publisher gate, coverage ledger, and served state (lab/studies.ts).
 // Scenario runs publish through it with kafka.scenario once W9b's scenarios exist.
 const studies = new LabStudies({ dataDir: config.dataDir, world: station, log });
-const lab = configuredLab(process.env, config.gatewayOrigin, places, studies);
+const lab = configuredLab(process.env, config.gatewayOrigin, places, studies, kafka.scenario);
 const sandbox = configuredSandbox(process.env, config.gatewayOrigin, places);
 const api = publicApi({ config, station, notebooks, log, lab: lab.pool, ...(sandbox ? { sandbox } : {}) });
 const internal = internalApi({ serviceToken: config.serviceToken, station, notebooks, labTokens: lab.tokens, studies });
@@ -60,8 +60,9 @@ await station.start();
 await lab.pool.initialize();
 const labTimer = setInterval(() => { void lab.pool.run(() => lab.pool.sweep()).catch(() => log("Lab maintenance failed; retrying.")); }, 5000);
 await sandbox?.initialize();
-// Every second, so the 1 s poll while a slot or study resets runs without visitor traffic.
-const sandboxTimer = sandbox && setInterval(() => { void sandbox.run(() => sandbox.sweep()).catch(() => log("Sandbox maintenance failed; retrying.")); }, SANDBOX_SWEEP_MS);
+// Every second, so the 1 s poll while a slot or study resets runs without visitor traffic. A sweep never waits
+// on the sandbox service and starts at most one status poll at a time, so a hung service cannot pile sweeps up.
+const sandboxTimer = sandbox && setInterval(() => { try { sandbox.sweep(); } catch { log("Sandbox maintenance failed; retrying."); } }, SANDBOX_SWEEP_MS);
 log(`Field station running: generation ${config.generation}, epoch ${station.epoch}, a tick every ${config.tickMs} ms.`);
 
 let stopping = false;

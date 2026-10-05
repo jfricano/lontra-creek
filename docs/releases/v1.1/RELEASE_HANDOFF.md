@@ -12,17 +12,17 @@ Nothing here merges, publishes or deploys anything: every one of those steps wai
 | --- | --- | --- |
 | [#40](https://github.com/jfricano/lontra-creek/pull/40) | All V1.1 slices that could be built without new StreamOtter APIs, independently reviewed ([REVIEW_FINDINGS.md](REVIEW_FINDINGS.md)) | After StreamOtter (#55, #20, #56), by Jason |
 | [#41](https://github.com/jfricano/lontra-creek/pull/41) | Renames `streamotter.app` to `streamotter.dev` (production gateway `allowedOrigins`, Caddy guards, site build origin, canonical URLs, social card) | With #40 or right after it, before the backend image is built. Without it, the production gateway refuses live views from streamotter.dev |
-| Phase 2 PR (not opened yet) | Moves both apps to `streamotter@0.2.0-rc.1`. It is built from the draft branch `feat/v1.1-source-failure-exercises` (stacked on #41), which also carries the workbench mount and its Pages `_headers` policy, the sandbox Compose overlay, the source-failure exercises and a release-pin guard, all against a pre-publish pack of 0.2.0-rc.1. Its scope needs its own review and devops reconciliation before merge | Only after 0.2.0-rc.1 is verified on npm; the branch's temporary pre-publish packages are replaced by the registry pin first |
+| Phase 2 PR ([#42](https://github.com/jfricano/lontra-creek/pull/42), draft) | Moves both apps to `streamotter@0.2.0-rc.1`. Its branch `feat/v1.1-source-failure-exercises` (now targeting `main`) also carries the workbench mount and its Pages `_headers` policy, the sandbox Compose overlay, the source-failure exercises and a release-pin guard. Since October 5 it installs 0.2.0-rc.1 from the npm registry, pinned exactly; the temporary pre-publish packages (`vendor/`) are removed. Its scope needs its own review and devops reconciliation before merge | After its checks pass and phase 1 acceptance finishes, by Jason |
 
 ## StreamOtter version consumed
 
 - **#40 and #41: `streamotter@0.1.0-rc.3`**, pinned exactly in `apps/field-station`, `apps/site` and `package-lock.json`. Publishing 0.2.0-rc.1 changes nothing in Lontra Creek until the pin PR merges.
-- **Phase 2 PR: `streamotter@0.2.0-rc.1`**, exact. The draft branch already builds against a pre-publish pack of StreamOtter `4e67ef8` (the #56 head) and handles the three unit tests that guard the bump:
-  1. The one-version check (LC11-A40) accepts the temporary pack now and an exact registry version after publish.
+- **Phase 2 PR: `streamotter@0.2.0-rc.1`**, exact, from the npm registry (published October 5, 2026, with provenance, on `latest`). The branch handles the three unit tests that guard the bump:
+  1. The one-version check (LC11-A40) accepts the exact registry version.
   2. The site describes V1.1 failure policies (`failureHandling`) as shipped instead of planned.
-  3. `apps/site/src/scripts/workbench-seam.ts` carries the WHC-1 host manifest's version and integrity hashes, taken from the pack.
+  3. `apps/site/src/scripts/workbench-seam.ts` carries the WHC-1 host manifest's version and integrity hashes, which match the published tarball.
 
-  What remains after publish: the exact registry pin, a lockfile regenerated from the registry, and re-pinning the workbench integrity hashes from the **published** tarball.
+  Done after publish: the exact registry pin, a lockfile regenerated from the registry, and the workbench integrity hashes checked against the **published** tarball.
   The phase 2 PR also re-runs the Lab threat model's §10.2 and checks S1–S6 against the new package (Lab contract R4).
 
 ## Unfinished integrations (none ship in this release)

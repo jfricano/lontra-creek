@@ -14,14 +14,14 @@ import { createServer, type Server } from 'node:http';
 import { isErrorCode, isPlainObject, PREVIEW_TOKEN_TTL_MS, streamError, utf8ByteLength, type Json, type ProjectConfig, type StreamError, type Trace } from 'streamotter/contracts';
 import type { SandboxOperation, SandboxReproBundle, SandboxReproDownload, SandboxRequest, SandboxResponse, SandboxRuntime, SandboxServiceSlot, SandboxServiceStatus, SlotId } from './contract.ts';
 import { validateCandidate, type EditableMaxima } from './editor.ts';
-import { checkInput, DOWNLOAD_BYTES, HOST_CONTRACT, invalid, isSandboxOperation, SANDBOX_OPERATIONS, SandboxFault } from './operations.ts';
+import { checkInput, DOWNLOAD_BYTES, HOST_CONTRACT, invalid, isSandboxOperation, SANDBOX_OPERATIONS, SandboxFault, TRACE_LIMIT } from './operations.ts';
 
-/** One study's synthetic project on one slot. W9a binds this to the published seam. */
+/** One study's synthetic project on one slot; seam.ts binds it to the published seam. */
 export interface SlotRuntime {
   /** The slot's server-owned project: synthetic fixture sources, server-chosen IDs, handlers, and principal. */
   readonly base: ProjectConfig;
-  /** The development principal previews use; the only one visitors may name. */
-  readonly principalRef: string;
+  /** The development principals previews use; the only ones visitors may name. */
+  readonly principalRefs: readonly string[];
   /** Server maxima for the editable limits (contract §5). */
   readonly maxima: EditableMaxima;
   /** One management operation on this runtime's own gateway. */
@@ -38,25 +38,30 @@ export interface SlotBackend {
   open(slot: SlotId): Promise<SlotRuntime>;
 }
 
-/**
- * The only production backend for streamotter@0.1.0-rc.3: it has no published
- * workbench seam (WHC-1 is defined, not released), so the sandbox reports
- * `seam-unavailable` and never emulates a runtime.
- */
-export function publishedBackend(): SlotBackend {
-  return { describe: () => ({ available: false, reason: 'seam-unavailable' }), open: async () => { throw new Error('No published workbench seam.'); } };
-}
+export interface SandboxSettings { serviceToken: string; slots: SlotId[]; host: string; port: number; siteOrigins: string[]; gatewayHost: string; portBase: number }
 
-/** The service's settings. Production and other services' secrets are refused, as for Lab benches. */
-export function sandboxEnvironment(env: NodeJS.ProcessEnv): { serviceToken: string; slots: SlotId[]; host: string; port: number } {
+/** What Node's image and the container runtime set; with SANDBOX_*, SITE_ORIGIN and NODE_ENV, the only variables the service runs with. */
+export const RUNTIME_ENV: readonly string[] = ['PATH', 'HOME', 'HOSTNAME', 'PWD', 'TERM', 'TZ', 'LANG', 'NODE_VERSION', 'YARN_VERSION'];
+/** The service's settings. Its environment is an allowlist: anything else, a production or Lab secret above all, stops it. */
+export function sandboxEnvironment(env: NodeJS.ProcessEnv): SandboxSettings {
   for (const key of Object.keys(env)) {
-    if (key.startsWith('FIELD_STATION_') || /^KAFKA_.*(PASSWORD|USERNAME)$/.test(key) || /^LAB_\w+_TOKEN$/.test(key)) throw new Error(`Production or Lab secret forbidden: ${key}`);
+    if (!/^SANDBOX_[A-Z0-9_]+$/.test(key) && key !== 'SITE_ORIGIN' && key !== 'NODE_ENV' && !RUNTIME_ENV.includes(key)) throw new Error(`Setting forbidden in the sandbox environment: ${key.slice(0, 64)}`);
   }
   const serviceToken = env['SANDBOX_SERVICE_TOKEN'];
   if (!serviceToken || serviceToken.length < 32) throw new Error('SANDBOX_SERVICE_TOKEN needs 32 characters.');
   const count = Number(env['SANDBOX_SLOTS'] ?? 3);
   if (![1, 2, 3].includes(count)) throw new Error('SANDBOX_SLOTS must be 1, 2, or 3.');
-  return { serviceToken, slots: Array.from({ length: count }, (_, i) => i + 1 as SlotId), host: env['SANDBOX_API_HOST'] ?? '0.0.0.0', port: Number(env['SANDBOX_API_PORT'] ?? 7620) };
+  const slots = Array.from({ length: count }, (_, i) => i + 1 as SlotId);
+  const origin = env['SITE_ORIGIN'] ?? (env['NODE_ENV'] === 'production' ? '' : 'https://localhost:8443');
+  if (!origin) throw new Error('SITE_ORIGIN is required in production.');
+  // Caddy routes a slot's Socket.IO only for SITE_ORIGIN, matched as one literal Origin, so the gateways allow exactly that one.
+  if (!URL.canParse(origin) || new URL(origin).origin !== origin) throw new Error(`SITE_ORIGIN must be one exact origin; got ${origin.slice(0, 80)}.`);
+  const siteOrigins = [origin];
+  const port = (key: string, fallback: number): number => { const n = Number(env[key] ?? fallback); if (!Number.isSafeInteger(n) || n < 1 || n > 65_535) throw new Error(`${key} must be a port number.`); return n; };
+  const apiPort = port('SANDBOX_API_PORT', 7620); const portBase = port('SANDBOX_GATEWAY_PORT_BASE', 7600);
+  if (portBase + 3 > 65_535) throw new Error('SANDBOX_GATEWAY_PORT_BASE leaves no room for three slots.');
+  if (slots.some(slot => portBase + slot === apiPort)) throw new Error(`SANDBOX_GATEWAY_PORT_BASE ${portBase} puts a slot gateway on the sandbox API port ${apiPort}.`);
+  return { serviceToken, slots, host: env['SANDBOX_API_HOST'] ?? '0.0.0.0', port: apiPort, siteOrigins, gatewayHost: env['SANDBOX_GATEWAY_HOST'] ?? '0.0.0.0', portBase };
 }
 
 interface Study { id: string; startedAt: number; cursors: Map<string, string | null>; previews: Set<string>; tokens: Set<string>; counts: Partial<Record<SandboxOperation, number>>; }
@@ -71,6 +76,8 @@ interface Slot {
   tail: Promise<unknown>;
 }
 const CURSORS_PER_STUDY = 256;
+/** Traces in a reproduction bundle: the native page maximum. */
+const REPRO_TRACES = 500;
 const iso = (n: number): string => new Date(n).toISOString();
 const PATHS = /(?:^|[\s"'=:(])(?:\/(?:etc|home|root|var|tmp|usr|opt|srv|mnt|run|proc|Users|private)\/|file:|[A-Za-z]:\\)/;
 
@@ -114,6 +121,12 @@ export class SandboxService {
     return described.available
       ? { bootId: this.bootId, availability: 'available', runtime: described.runtime, operations: SANDBOX_OPERATIONS.filter(op => described.operations.includes(op)), slots }
       : { bootId: this.bootId, availability: 'unavailable', reason: described.reason, runtime: null, operations: [], slots };
+  }
+
+  /** Healthy while the seam is available and at least one slot can serve (ready, leased, or resetting); `slots` counts those. */
+  health(): { healthy: boolean; availability: SandboxServiceStatus['availability']; slots: number } {
+    const status = this.status(); const slots = status.slots.filter(slot => slot.state === 'ready' || slot.state === 'leased' || slot.state === 'resetting').length;
+    return { healthy: status.availability === 'available' && slots > 0, availability: status.availability, slots };
   }
 
   async lease(id: SlotId, input: { leaseId: string; studyId: string; expiresAt: string }): Promise<SandboxServiceStatus> {
@@ -188,7 +201,7 @@ export class SandboxService {
       case 'source-checks': this.#source(runtime, (input as { sourceId: string }).sourceId); break;
       case 'sources.resume': case 'dev.fixtures.advance': this.#source(runtime, (input as { sourceId: string }).sourceId, true); break;
       case 'preview-sessions': {
-        if ((input as { fixturePrincipalRef: string }).fixturePrincipalRef !== runtime.principalRef) throw invalid('Only this sandbox\'s own principal can preview.');
+        if (!runtime.principalRefs.includes((input as { fixturePrincipalRef: string }).fixturePrincipalRef)) throw invalid('Only this sandbox\'s own principals can preview.');
         const session = await runtime.call('preview-sessions', input as SandboxRequest<'preview-sessions'>);
         study.previews.add(session.previewSessionId); study.tokens.add(session.token);
         const end = Math.min(Date.parse(session.expiresAt) || this.#now() + PREVIEW_TOKEN_TTL_MS, slot.lease?.expiresAt ?? this.#now());
@@ -199,14 +212,15 @@ export class SandboxService {
         if (!study.previews.has(previewSessionId)) throw invalid('previewSessionId was not minted in this study.');
         const result = await runtime.call('dev.disconnect', { previewSessionId }); study.previews.delete(previewSessionId); return result;
       }
-      case 'dev.principals': { const result = await runtime.call('dev.principals', null); return { items: result.items.filter(item => item.ref === runtime.principalRef) }; }
+      case 'dev.principals': { const result = await runtime.call('dev.principals', null); return { items: result.items.filter(item => runtime.principalRefs.includes(item.ref)) }; }
       case 'traces': {
         const { cursor, ...rest } = input as SandboxRequest<'traces'>;
         if (rest.sourceId !== undefined) this.#source(runtime, rest.sourceId);
         if (rest.channel !== undefined && !Object.hasOwn(runtime.base.channels, rest.channel)) throw invalid('channel must be one of this sandbox\'s channels.');
         let native: string | null | undefined;
         if (cursor !== undefined) { native = study.cursors.get(cursor); if (native === undefined) throw new SandboxFault('stale-study', 'The trace cursor is not from this study.', { wbCode: 'TRACE_CURSOR_EXPIRED', wbStatus: 410 }); }
-        const page = await runtime.call('traces', { ...rest, ...(native ? { cursor: native } : {}) });
+        // The workbench asks for up to 500; a page serves at most TRACE_LIMIT, which WHC-1 §5 lets a host narrow.
+        const page = await runtime.call('traces', { ...rest, ...(rest.limit !== undefined ? { limit: Math.min(rest.limit, TRACE_LIMIT) } : {}), ...(native ? { cursor: native } : {}) });
         let nextCursor: string | null = null;
         if (page.nextCursor !== null) { nextCursor = randomUUID(); study.cursors.set(nextCursor, page.nextCursor); if (study.cursors.size > CURSORS_PER_STUDY) study.cursors.delete(study.cursors.keys().next().value!); }
         return { items: page.items, nextCursor };
@@ -227,16 +241,13 @@ export class SandboxService {
     const slot = this.#slot(id); const study = this.#current(slot, request.leaseId, request.studyId); const runtime = slot.runtime;
     const described = this.#backend.describe();
     if (!slot.lease!.claimed || !runtime || !described.available || slot.state !== 'leased') throw new SandboxFault('no-lease');
-    // At most 500 traces, oldest first; more is flagged rather than fetched.
+    // The newest 500 traces, oldest first. A native page without a cursor is the newest `limit` traces, and a cursor
+    // only reaches newer ones, so older traces cannot be fetched: a full page is flagged as possibly truncated.
     const traces: SandboxReproBundle['traces'] = []; let unavailable = false; let truncated = false;
     try {
-      let cursor: string | undefined;
-      for (let i = 0; ; i++) {
-        const page = await runtime.call('traces', { limit: 100, ...(cursor ? { cursor } : {}) });
-        if (i === 5) { truncated = page.items.length > 0; break; }
-        for (const t of page.items as readonly Trace[]) traces.push({ at: t.at, stage: t.stage, outcome: t.outcome, ...(t.sourceId ? { sourceId: t.sourceId } : {}), ...(t.channel ? { channel: t.channel } : {}), ...(t.errorCode ? { errorCode: t.errorCode } : {}) });
-        if (!page.nextCursor || page.items.length < 100) break; cursor = page.nextCursor;
-      }
+      const page = await runtime.call('traces', { limit: REPRO_TRACES });
+      for (const t of page.items as readonly Trace[]) traces.push({ at: t.at, stage: t.stage, outcome: t.outcome, ...(t.sourceId ? { sourceId: t.sourceId } : {}), ...(t.channel ? { channel: t.channel } : {}), ...(t.errorCode ? { errorCode: t.errorCode } : {}) });
+      truncated = page.items.length >= REPRO_TRACES;
     } catch { unavailable = true; }
     if (slot.study !== study || slot.runtime !== runtime) throw new SandboxFault('stale-study');
     const base = runtime.base;
@@ -266,7 +277,11 @@ export class SandboxService {
       if (method !== 'POST') return { status: 404, body: { error: 'Not found.' } };
       if (action === 'claim') return { status: 200, body: this.claim(slot, { leaseId: body['leaseId'], studyId: body['studyId'] }) };
       if (action === 'reset') return { status: 202, body: this.reset(slot, { leaseId: body['leaseId'], studyId: body['studyId'] }) };
-      if (action === 'return') return { status: 202, body: this.return(slot, { leaseId: body['leaseId'] ?? null }) };
+      if (action === 'return') {
+        // Reclaiming whatever is on the slot takes an explicit null; a body without a lease ID is refused.
+        if (!Object.hasOwn(body, 'leaseId') || body['leaseId'] !== null && typeof body['leaseId'] !== 'string') throw invalid('Invalid lease.');
+        return { status: 202, body: this.return(slot, { leaseId: body['leaseId'] }) };
+      }
       if (action === 'repro') return { status: 200, body: await this.repro(slot, { leaseId: body['leaseId'], studyId: body['studyId'] }) };
       return { status: 200, body: { ok: true, data: await this.operate(slot, { leaseId: body['leaseId'], studyId: body['studyId'], op: body['op'], input: body['input'] ?? null }) } };
     } catch (error) {
@@ -283,7 +298,10 @@ export class SandboxService {
     return createServer(async (request, response) => {
       const send = (status: number, value: unknown) => { response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); response.end(JSON.stringify(value)); };
       const url = new URL(request.url ?? '/', 'http://sandbox.invalid');
-      if (url.pathname === '/healthz') return send(200, { availability: this.status().availability });
+      if (url.pathname === '/healthz') {
+        if (request.method !== 'GET') { response.setHeader('allow', 'GET'); return send(405, { error: 'Method not allowed.' }); }
+        const health = this.health(); return send(health.healthy ? 200 : 503, { availability: health.availability, slots: health.slots });
+      }
       const provided = Buffer.from(request.headers.authorization ?? '');
       if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return send(401, { error: 'Unauthorized.' });
       try {

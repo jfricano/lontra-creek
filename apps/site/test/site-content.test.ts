@@ -16,7 +16,7 @@ import {
 } from "../src/planned-failure-handling.ts";
 import { RELEASE_VERSION } from "../src/release-facts.ts";
 import { serviceLines } from "../src/scripts/release-service.ts";
-import { PAGES, RELEASE, SITE } from "../src/site.ts";
+import { INSTALL_COMMAND, PAGES, RELEASE, SITE } from "../src/site.ts";
 
 const SRC = new URL("../src/", import.meta.url).pathname;
 
@@ -33,6 +33,16 @@ test("one library version everywhere: the site pin, the field station pin, the l
   assert.equal(RELEASE_VERSION, RELEASE);
   // An exact pin, not a range.
   assert.match(RELEASE, /^\d+\.\d+\.\d+(-[\w.]+)?$/);
+});
+
+test("install commands name the pinned release, not npm's latest tag", () => {
+  // npm's latest tag moved past this release; an unpinned command would install a newer one.
+  assert.equal(INSTALL_COMMAND, `npm install streamotter@${RELEASE}`);
+  for (const file of sources(join(SRC, "pages"))) assert.doesNotMatch(readFileSync(file, "utf8"), /npm install streamotter(?!@)/, file);
+});
+
+test("no page says StreamOtter V1.1 is unreleased: 0.2.0-rc.1 publishes it, though this site doesn't run it", () => {
+  for (const file of sources(SRC)) assert.doesNotMatch(readFileSync(file, "utf8"), /specified, not released|planned, not installed|planned for StreamOtter V1\.1|When a StreamOtter release ships/i, file);
 });
 
 test("the installed validator rejects failureHandling, so V1.1 policies stay labeled as planned", () => {

@@ -4,6 +4,12 @@ import site from "../package.json" with { type: "json" };
 export const RELEASE = site.dependencies.streamotter;
 
 /**
+ * The install command the site shows. Pinned to the exact release, because an unversioned
+ * `npm install streamotter` installs npm's `latest` tag, which need not be this release.
+ */
+export const INSTALL_COMMAND = `npm install streamotter@${RELEASE}`;
+
+/**
  * StreamOtter's headline: the home page's h1, the footer, and the link cards. The README,
  * npm, and launch posts open with the longer positioning line instead: "Kafka state in the
  * browser that's either live or visibly stale, never silently wrong."

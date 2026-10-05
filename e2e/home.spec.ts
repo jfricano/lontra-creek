@@ -75,13 +75,14 @@ test.describe("home page live panel", () => {
 test.describe("home page V1.1 panel (LC11-A01, A02, A40)", () => {
   const release = (JSON.parse(readFileSync(new URL("../apps/site/package.json", import.meta.url), "utf8")) as { dependencies: { streamotter: string } }).dependencies.streamotter;
 
-  test("labels V1.1 as planned, says what runs today, and links to the Source failures track without borrowing a bench", async ({ page }) => {
+  test("says V1.1 is published but not run here, says what runs today, and links to the Source failures track without borrowing a bench", async ({ page }) => {
     const lab: string[] = [];
     page.on("request", request => { const { pathname } = new URL(request.url()); if (pathname.startsWith("/api/lab/") && request.method() !== "GET") lab.push(pathname); });
     await page.goto("/");
     const panel = page.locator("[data-v11-panel]");
-    await expect(panel.locator(".eyebrow")).toHaveText(`Planned for StreamOtter V1.1 · not in ${release}`);
-    await expect(panel).toContainText("specified, not released");
+    await expect(panel.locator(".eyebrow")).toHaveText(`StreamOtter V1.1 · in 0.2.0-rc.1, not in ${release}`);
+    await expect(panel).toContainText(`StreamOtter V1.1 is published as 0.2.0-rc.1, which this site doesn't use yet: it runs ${release}.`);
+    await expect(panel).not.toContainText("specified, not released");
     await expect(panel).toContainText(`In streamotter@${release}, which this site runs, a bad record pauses its source`);
     await expect(panel.getByRole("heading", { level: 3 })).toHaveText(["Preserve the record", "Continue only under control", "See each outcome"]);
     // The live hero is unchanged: the panel sits below it and doesn't replace it.
@@ -100,4 +101,12 @@ test.describe("home page V1.1 panel (LC11-A01, A02, A40)", () => {
     await expect(card).toContainText("The Source failures track also lists the quarantine exercises that wait for StreamOtter V1.1.");
     await expect(page.locator("main")).not.toContainText(/four controlled failures/i);
   });
+});
+
+test("install commands name the pinned release, not npm's latest tag", async ({ page }) => {
+  const release = (JSON.parse(readFileSync(new URL("../apps/site/package.json", import.meta.url), "utf8")) as { dependencies: { streamotter: string } }).dependencies.streamotter;
+  await page.goto("/");
+  await expect(page.locator("button[data-copy]")).toHaveAttribute("data-copy", `npm install streamotter@${release}`);
+  await expect(page.locator("#start pre")).toContainText(`npm install streamotter@${release}`);
+  await expect(page.locator("main")).not.toContainText(/npm install streamotter(?!@)/);
 });

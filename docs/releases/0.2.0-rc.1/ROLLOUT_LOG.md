@@ -147,7 +147,7 @@ Capture each item as a screenshot or recording with a visible timestamp, and kee
 - [ ] *credentialed_session*: the home live panel connects (the session cookie is set on `demo.streamotter.dev`), and revisions advance.
 - [ ] *live_websocket_revisions*: revisions keep advancing for at least 30 s over a WebSocket (DevTools → Network → WS shows frames).
 - [ ] *disconnect_freeze_recovery*: open a second tab on the same page. In the first, click **Drop my connection**: its revisions and study clock stay frozen for at least 5 s while the second tab keeps advancing. Click **Restore**: the first tab shows a fresh snapshot and advances again.
-- [ ] *privacy_isolation*: the den location stays withheld (the researcher-only notice shows, as in the 2026-10-02 browser acceptance), and no other visitor's session data is visible. devops's scripted check of the same name passed on the backend at 05:13; repeat it with the browser proof.
+- [ ] *privacy_isolation*: on Field Station chapter 4 ("The protected holt"), a volunteer's **Request Holt A** is refused with no holt data and no grid reference; after switching to researcher in chapter 5, Holt A's name and grid reference appear. (On the home panel an otter's reach reads "withheld" only while it is at its den, so it alternates with place names; that is expected and is not the privacy check.)
 - [ ] *origin_denial*, from a terminal:
 
   ```sh
@@ -200,8 +200,8 @@ From jason's dev-ops workspace, over the pinned SSH config and host alias named 
 | 2 | Preview static checks | Passed: pages load, Lab and sandbox read as unavailable, `/robots.txt` and `/sitemap.xml` name streamotter.dev (checked by jason in his browser; this session's network policy blocks pages.dev) | 2026-10-05 13:40 | jason |
 | 3 | Production run ID / run SHA | [`37318760521`](https://github.com/jfricano/lontra-creek/actions/runs/37318760521) on `d6e426a`, GitHub deployment `6860558503` (environment `production`); success. Wrangler uploaded 0 new files (all 67 already uploaded), so production serves the same files as the checked preview. | 2026-10-05 13:41–13:42 | jason dispatched and approved `production` |
 | 3 | Production deployment ID | `3873885c` (https://3873885c.streamotter-site.pages.dev), Pages branch `main`, replacing `01aa1aed` | 2026-10-05 13:42:23 | from the run log |
-| 4 | Six acceptance checks | | | |
-| 4 | Redirects, canonical, robots, sitemap | | | |
+| 4 | Six acceptance checks | jason in his browser on streamotter.dev: credentialed session and live revisions confirmed; Drop my connection froze one tab while the other advanced, and Restore brought fresh data; Lab and sandbox read as unavailable. Privacy: the otter card's "withheld" reach alternates with place names as an otter enters and leaves its den, which is expected; the den-denial check is Field Station chapter 4 (pending). Origin `curl` checks pending. | 2026-10-05 13:48 | jason |
+| 4 | Redirects, canonical, robots, sitemap | www → apex 301 keeps path and query: confirmed | 2026-10-05 13:48 | jason |
 | 4 | Evidence bundle SHA256 | | | |
 | 6 | `accept` result; accepted source after | | | |
 

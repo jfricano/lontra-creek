@@ -7,7 +7,7 @@ import { after, before, describe, test } from "node:test";
 import { advanceTo, createWorld, currentEmissions, seedFrom } from "@lontra-creek/sim";
 import { verifyToken } from "../src/identity.ts";
 import { readConfig, type ServerConfig } from "../src/server/config.ts";
-import { internalApi, publicApi, RateLimiter } from "../src/server/http.ts";
+import { addressKey, internalApi, publicApi, RateLimiter } from "../src/server/http.ts";
 import { Notebooks } from "../src/server/notebooks.ts";
 import { PublishQueue, type OutgoingRecord, type Publisher } from "../src/server/queue.ts";
 import { FieldStation, SEED } from "../src/server/station.ts";
@@ -383,6 +383,11 @@ describe("the field station's HTTP APIs", () => {
     for (let i = 0; i < 7; i++) statuses.push((await fetch(`${apiOrigin}/api/status`, { headers: { "x-client-ip": "203.0.113.9" } })).status);
     assert.deepEqual(statuses, [200, 200, 200, 200, 200, 429, 429]);
     assert.equal((await fetch(`${apiOrigin}/api/status`, { headers: { "x-client-ip": "203.0.113.10" } })).status, 200);
+    // One IPv6 /64 is one client: a host can't get fresh budgets by changing its interface ID.
+    const sixes: number[] = [];
+    for (let i = 0; i < 7; i++) sixes.push((await fetch(`${apiOrigin}/api/status`, { headers: { "x-client-ip": `2001:db8:7:9::${i + 1}` } })).status);
+    assert.deepEqual(sixes, [200, 200, 200, 200, 200, 429, 429]);
+    assert.equal((await fetch(`${apiOrigin}/api/status`, { headers: { "x-client-ip": "2001:db8:7:a::1" } })).status, 200);
   });
 
   test("a visitor logs sightings in their own notebook, and only there", async () => {
@@ -427,6 +432,17 @@ describe("the field station's HTTP APIs", () => {
     const status = await (await fetch(`${apiOrigin}/api/status`, { headers: { "x-client-ip": "203.0.113.11" } })).json() as Record<string, unknown>;
     assert.deepEqual(status, { mode: "kafka", tick: 10, studyDay: 1, studyTime: "05:50", generation: 1, kafka: "connected", pending: 0 });
   });
+});
+
+test("client addresses are counted by IPv4 address or IPv6 /64", () => {
+  assert.equal(addressKey("203.0.113.9"), "203.0.113.9");
+  assert.equal(addressKey("::ffff:203.0.113.9"), "203.0.113.9");
+  assert.equal(addressKey("2001:db8:7:9::1"), "2001:db8:7:9::/64");
+  assert.equal(addressKey("2001:0DB8:0007:0009:aaaa:bbbb:cccc:dddd"), "2001:db8:7:9::/64");
+  assert.equal(addressKey("2001:db8::1"), "2001:db8:0:0::/64");
+  assert.equal(addressKey("::1"), "0:0:0:0::/64");
+  assert.equal(addressKey("fe80::1%eth0"), "fe80:0:0:0::/64");
+  assert.equal(addressKey("unknown"), "unknown");
 });
 
 describe("configuration from the environment", () => {

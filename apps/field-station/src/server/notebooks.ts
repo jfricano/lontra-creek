@@ -29,6 +29,8 @@ export type Entry = Notebook["entries"][number];
 export const NOTEBOOK_RETENTION_MS = 2 * 60 * 60 * 1_000;
 export const SIGHTING_INTERVAL_MS = 1_000;
 const MAX_OPEN_NOTEBOOKS = 5_000;
+/** Open notebooks one client address (an IPv4 address or an IPv6 /64) may hold, so one host can't fill the global cap. */
+export const MAX_OPEN_NOTEBOOKS_PER_CLIENT = 20;
 
 export interface Sighting {
   otterId: string;
@@ -52,6 +54,8 @@ interface Book {
   /** When the owner's session ends, in epoch milliseconds. */
   expiresAt: number;
   lastWriteAt: number;
+  /** The client address that opened it, when known (not for notebooks rebuilt from the topic). */
+  client?: string;
 }
 
 /** The record published for a notebook: a field record, plus when it expires. */
@@ -104,6 +108,12 @@ export class Notebooks {
     return open;
   }
 
+  #openFrom(client: string): number {
+    let open = 0;
+    for (const book of this.#books.values()) if (book.data.status === "open" && book.client === client) open += 1;
+    return open;
+  }
+
   /**
    * Rebuilds notebooks from field.notebooks record values, keeping each one's
    * highest revision, then closes any whose session has ended meanwhile.
@@ -134,15 +144,16 @@ export class Notebooks {
   }
 
   /** Adds a sighting to the owner's notebook and queues it for publishing. */
-  add(observerId: string, expiresAt: number, sighting: Sighting, at: StudyStamp): { revision: string; entries: number } {
+  add(observerId: string, expiresAt: number, sighting: Sighting, at: StudyStamp, client?: string): { revision: string; entries: number } {
     if (!this.#ready) throw new NotebookError(503, "Notebooks are still loading; try again in a moment.");
     const now = this.#now();
     let book = this.#books.get(observerId);
     if (book !== undefined && book.data.status === "expired") throw new NotebookError(410, "This notebook has closed with its session.");
     if (book !== undefined && now - book.lastWriteAt < SIGHTING_INTERVAL_MS) throw new NotebookError(429, "One sighting a second, please.");
     if (book === undefined) {
+      if (client !== undefined && this.#openFrom(client) >= MAX_OPEN_NOTEBOOKS_PER_CLIENT) throw new NotebookError(429, "Too many notebooks are open from your network; try again when one closes.");
       if (this.openCount >= MAX_OPEN_NOTEBOOKS) throw new NotebookError(503, "The field station has too many open notebooks; try again later.");
-      book = { data: { observerId, status: "open", entries: [] }, revision: 0n, expiresAt, lastWriteAt: 0 };
+      book = { data: { observerId, status: "open", entries: [] }, revision: 0n, expiresAt, lastWriteAt: 0, ...(client === undefined ? {} : { client }) };
       this.#books.set(observerId, book);
     }
     const entry: Entry = { at, ...sighting } as Entry;

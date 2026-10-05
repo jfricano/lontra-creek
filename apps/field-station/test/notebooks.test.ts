@@ -3,7 +3,7 @@ import { describe, test } from "node:test";
 import { validateValue, type Json, type SourceRecord } from "streamotter/contracts";
 import { createKafkaHandlers } from "../src/kafka-handlers.ts";
 import { projectConfig } from "../src/project.ts";
-import { NotebookError, Notebooks, NOTEBOOK_RETENTION_MS, parseSighting, type Sighting } from "../src/server/notebooks.ts";
+import { MAX_OPEN_NOTEBOOKS_PER_CLIENT, NotebookError, Notebooks, NOTEBOOK_RETENTION_MS, parseSighting, type Sighting } from "../src/server/notebooks.ts";
 import { PublishQueue, type OutgoingRecord, type Publisher } from "../src/server/queue.ts";
 
 class Recorder implements Publisher {
@@ -48,6 +48,19 @@ describe("notebooks", () => {
   test("nothing is written until notebooks are loaded from the topic", () => {
     const { notebooks } = setup();
     assert.throws(() => notebooks.add("volunteer-aaaa1111", SESSION_ENDS, pebble, at), refusal(503));
+  });
+
+  test("one client address can't hold more than its share of open notebooks", () => {
+    const { notebooks, clock } = setup();
+    notebooks.load([]);
+    for (let i = 0; i < MAX_OPEN_NOTEBOOKS_PER_CLIENT; i++) notebooks.add(`volunteer-${i}`, SESSION_ENDS, pebble, at, "2001:db8:7:9::/64");
+    assert.throws(() => notebooks.add("volunteer-next", SESSION_ENDS, pebble, at, "2001:db8:7:9::/64"), refusal(429));
+    notebooks.add("volunteer-elsewhere", SESSION_ENDS, pebble, at, "203.0.113.9");
+    clock.now += 1_000;
+    notebooks.add("volunteer-0", SESSION_ENDS, pebble, { day: 3, time: "06:16" }, "2001:db8:7:9::/64"); // an open notebook keeps taking sightings
+    clock.now = SESSION_ENDS;
+    notebooks.expire();
+    notebooks.add("volunteer-later", SESSION_ENDS + 60_000, pebble, at, "2001:db8:7:9::/64"); // closed notebooks free the share
   });
 
   test("an unknown notebook is empty and open at revision 0", () => {

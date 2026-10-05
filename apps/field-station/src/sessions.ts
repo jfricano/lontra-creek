@@ -67,7 +67,7 @@ export function badgeFor(options: { cookieHeader: string | undefined; role: Role
   let session = readSession(options.cookieHeader, options.secret, now);
   let setCookie: string | null = null;
   if (session === null || session.role !== options.role) {
-    session = { subject: `${options.role}-${randomUUID().slice(0, 8)}`, role: options.role, exp: now + SESSION_SECONDS * 1_000 };
+    session = { subject: `${options.role}-${randomUUID()}`, role: options.role, exp: now + SESSION_SECONDS * 1_000 };
     const payload = Buffer.from(JSON.stringify(session)).toString("base64url");
     setCookie = [
       `${SESSION_COOKIE}=${payload}.${sign(payload, options.secret)}`,

@@ -354,6 +354,8 @@ describe("the field station's HTTP APIs", () => {
     assert.match(cookie, /^lc_session=[^;]+; Path=\/api; HttpOnly; SameSite=Strict; Max-Age=1800$/);
     const firstBody = await first.json() as { token: string; badge: { subject: string } };
     assert.equal(verifyToken(firstBody.token, config.secret)?.subject, firstBody.badge.subject);
+    // The subject owns a notebook, so it carries a full random UUID: two sessions must never share one.
+    assert.match(firstBody.badge.subject, /^volunteer-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 
     const again = await fetch(`${apiOrigin}/api/badge`, { method: "POST", headers: { cookie: cookie.split(";")[0]!, "x-client-ip": "198.51.100.7" }, body: JSON.stringify({ role: "volunteer" }) });
     assert.equal(((await again.json()) as { badge: { subject: string } }).badge.subject, firstBody.badge.subject);

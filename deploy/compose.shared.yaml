@@ -12,12 +12,20 @@ services:
     environment:
       # Bounded test starting point, never padding to evade idle reclamation.
       KAFKA_HEAP_OPTS: -Xms512m -Xmx1536m
+    healthcheck:
+      # Each check starts a JVM, about 3 CPU-seconds: every 10 s that is most of a 0.35 CPU cap.
+      interval: 60s
   field-station:
     cgroup_parent: ${LONTRA_CGROUP_PARENT:?set LONTRA_CGROUP_PARENT to the installed lontra.slice}
     cpus: 0.18
     mem_limit: 448m
     memswap_limit: 448m
     pids_limit: 128
+    healthcheck:
+      # Without a matching checkpoint (a new volume, a FIELD_GENERATION bump) the station
+      # replays every tick since FIELD_EPOCH first: about 2 weeks of study a minute at 0.18 CPU.
+      # Checks still pass as soon as it has caught up.
+      start_period: 900s
   gateway:
     cgroup_parent: ${LONTRA_CGROUP_PARENT:?set LONTRA_CGROUP_PARENT to the installed lontra.slice}
     cpus: 0.15

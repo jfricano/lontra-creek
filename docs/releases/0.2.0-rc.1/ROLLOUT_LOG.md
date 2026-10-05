@@ -13,7 +13,7 @@ Execution moved from devops (Codex) to Claude on 2026-10-05 at jason's request, 
 | Backend image | Published and verified | 03:45 |
 | Backend activation | Candidate running and healthy; first attempt failed and was recovered (see Incident) | 05:13 |
 | Adapter journal | `awaiting-public-acceptance`; accepted pointer is still the previous release | 05:13 |
-| Pages (streamotter.dev) | **Not deployed in this phase.** `site.yml` has never run; production is still the 2026-10-02 build | 05:25 |
+| Pages (streamotter.dev) | Production `3873885c` from `d6e426a` (run `37318760521`); preview `da0f5524` passed first | 2026-10-05 13:42 |
 | Browser proof on streamotter.dev | **Outstanding** | |
 | Adapter `accept` | **Not run.** Phase one is not accepted. | |
 | #42 (phase two) | Draft, unmerged, all 12 checks green on `61184c1` | 04:31 |
@@ -198,8 +198,8 @@ From jason's dev-ops workspace, over the pinned SSH config and host alias named 
 | 2 | Preview run ID / run SHA (retry) | `37317070125` attempt 2 on `d6e426a`, after jason rolled the token and re-saved it in `preview` and `production`; success. Wrangler 3.90.0 `pages deploy apps/site/dist --project-name=streamotter-site --branch=staging`: 67 files (25 new, 42 already uploaded). Its "uncommitted changes" warning comes from the action installing wrangler into the checkout, not from the site source. | 2026-10-05 13:35–13:36 | jason approved `preview` |
 | 2 | Preview deployment ID / URL | `da0f5524`: https://da0f5524.streamotter-site.pages.dev ; alias https://staging.streamotter-site.pages.dev | 2026-10-05 13:36:29 | from the run log |
 | 2 | Preview static checks | Passed: pages load, Lab and sandbox read as unavailable, `/robots.txt` and `/sitemap.xml` name streamotter.dev (checked by jason in his browser; this session's network policy blocks pages.dev) | 2026-10-05 13:40 | jason |
-| 3 | Production run ID / run SHA | | | |
-| 3 | Production deployment ID | | | |
+| 3 | Production run ID / run SHA | [`37318760521`](https://github.com/jfricano/lontra-creek/actions/runs/37318760521) on `d6e426a`, GitHub deployment `6860558503` (environment `production`); success. Wrangler uploaded 0 new files (all 67 already uploaded), so production serves the same files as the checked preview. | 2026-10-05 13:41–13:42 | jason dispatched and approved `production` |
+| 3 | Production deployment ID | `3873885c` (https://3873885c.streamotter-site.pages.dev), Pages branch `main`, replacing `01aa1aed` | 2026-10-05 13:42:23 | from the run log |
 | 4 | Six acceptance checks | | | |
 | 4 | Redirects, canonical, robots, sitemap | | | |
 | 4 | Evidence bundle SHA256 | | | |

@@ -1,0 +1,25 @@
+---
+/** A declaration's tagged notes (Returns, Throws, Default, See also), examples, and deprecation. */
+import { Code } from "astro:components";
+import type { ApiExample, ApiNote } from "../../api-reference/build.ts";
+interface Props { notes: readonly ApiNote[]; examples?: readonly ApiExample[]; deprecatedHtml?: string | null }
+const { notes, examples = [], deprecatedHtml = null } = Astro.props;
+---
+{deprecatedHtml !== null && <div class="notice api-deprecated"><p><strong>Deprecated.</strong></p><Fragment set:html={deprecatedHtml} /></div>}
+{notes.length > 0 && <dl class="api-notes">{notes.map(note => <div><dt>{note.label}</dt><dd class="api-doc" set:html={note.html} /></div>)}</dl>}
+{examples.map((example, index) => (
+  <figure class="api-example">
+    <figcaption>{examples.length > 1 ? `Example ${index + 1}` : "Example"}</figcaption>
+    {"code" in example ? <Code code={example.code} lang={example.lang as "ts"} theme="night-owl" /> : <div class="api-doc" set:html={example.html} />}
+  </figure>
+))}
+<style>
+.api-notes { display: grid; gap: 10px; margin: 0; }
+.api-notes div { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 12px; }
+.api-notes dt { font-weight: 700; color: var(--ink-2); }
+.api-notes dd { margin: 0; }
+.api-example { margin: 0; display: grid; gap: 8px; }
+.api-example figcaption { font-weight: 700; color: var(--ink-2); }
+.api-deprecated { display: grid; gap: 8px; border-left-color: var(--failed); }
+@media (max-width: 560px) { .api-notes div { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
+</style>

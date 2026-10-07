@@ -1,0 +1,62 @@
+---
+import reference from "virtual:lontra/api-reference";
+import ApiPage from "../../../../layouts/ApiPage.astro";
+import Notes from "../../../../components/api/Notes.astro";
+import Signature from "../../../../components/api/Signature.astro";
+import type { ApiMember, ApiSymbol } from "../../../../api-reference/build.ts";
+import { KIND_LABELS } from "../../../../api-reference/labels.ts";
+
+export function getStaticPaths() {
+  return reference.symbols.map(symbol => ({ params: { module: symbol.module, symbol: symbol.segment }, props: { symbol } }));
+}
+interface Props { symbol: ApiSymbol }
+const { symbol } = Astro.props;
+const label = KIND_LABELS[symbol.kind];
+const [home, ...others] = symbol.importPaths;
+const importLine = `import ${symbol.typeOnly ? "type " : ""}{ ${symbol.name} } from "${home}";`;
+const groups: { title: string; members: ApiMember[] }[] = [
+  { title: "Constructor", members: symbol.members.filter(member => member.kind === "constructor") },
+  { title: "Call signatures", members: symbol.members.filter(member => member.kind === "call") },
+  { title: "Properties", members: symbol.members.filter(member => member.kind === "property" || member.kind === "accessor" || member.kind === "index") },
+  { title: "Methods", members: symbol.members.filter(member => member.kind === "method") }
+].filter(group => group.members.length > 0);
+const description = symbol.summaryText || `The ${label.toLowerCase()} ${symbol.name}, exported from ${home}.`;
+---
+<ApiPage title={symbol.name} eyebrow={label} description={description} ledeHtml={symbol.summaryHtml || undefined} module={symbol.module} current={symbol.href}>
+  <section class="api-overview" aria-label="Declaration">
+    {symbol.codeHtml && <pre class="api-code"><code set:html={symbol.codeHtml} /></pre>}
+    {symbol.signatures.map(signature => <Signature signature={signature} />)}
+    {symbol.bodyHtml && <div class="api-doc" set:html={symbol.bodyHtml} />}
+    <Notes notes={symbol.notes} examples={symbol.examples} deprecatedHtml={symbol.deprecatedHtml} />
+    <div class="api-import">
+      <pre class="api-code"><code>{importLine}</code></pre>
+      {others.length > 0 && <p>Also exported from {others.map((path, index) => <>{index > 0 && (index === others.length - 1 ? " and " : ", ")}<code>{path}</code></>)}.</p>}
+      {symbol.sourceUrl && <p><a href={symbol.sourceUrl}>View source on GitHub ↗</a></p>}
+    </div>
+  </section>
+  {groups.map(group => (
+    <section aria-labelledby={`group-${group.title.toLowerCase().replace(/\s+/g, "-")}`}>
+      <h2 id={`group-${group.title.toLowerCase().replace(/\s+/g, "-")}`}>{group.title}</h2>
+      {group.members.map(member => (
+        <div class="api-member" id={member.anchor}>
+          <h3><a class="api-anchor" href={`#${member.anchor}`}><code>{member.kind === "index" ? "[index signature]" : member.kind === "call" ? "call signature" : member.name}</code></a></h3>
+          {member.codeHtml && <pre class="api-code"><code set:html={member.codeHtml} /></pre>}
+          {member.docHtml && <div class="api-doc" set:html={member.docHtml} />}
+          {member.signatures.map(signature => <Signature signature={signature} />)}
+          <Notes notes={member.notes} deprecatedHtml={member.deprecatedHtml} />
+          {member.inheritedFrom && <p class="api-inherited">Inherited from <code set:html={member.inheritedFrom} />.</p>}
+        </div>
+      ))}
+    </section>
+  ))}
+</ApiPage>
+<style>
+.api-overview { display: grid; gap: 16px; margin-top: 0 !important; }
+.api-import { display: grid; gap: 8px; color: var(--ink-2); }
+.api-import p { margin: 0; }
+.api-member { display: grid; gap: 12px; padding-top: 20px; border-top: 1px solid var(--line); scroll-margin-top: 24px; }
+.api-member h3 code { background: none; padding: 0; font-size: 1.02rem; }
+.api-anchor { text-decoration: none; color: var(--ink); }
+.api-anchor:hover { text-decoration: underline; }
+.api-inherited { margin: 0; color: var(--ink-3); font-size: .92rem; }
+</style>

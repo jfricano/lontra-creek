@@ -1,0 +1,92 @@
+---
+/**
+ * A page of the API reference: the reference header, a sidebar of import paths and the current
+ * path's exports, and the page's content. The lede is the symbol's own summary, as HTML built by
+ * src/api-reference/build.ts from escaped text.
+ */
+import Base from "./Base.astro";
+import reference from "virtual:lontra/api-reference";
+import { API_ROOT } from "../api-reference/modules.ts";
+interface Props {
+  title: string;
+  description: string;
+  ledeHtml?: string;
+  eyebrow: string;
+  /** The import path whose exports the sidebar lists, by slug. */
+  module?: string | undefined;
+  /** The href of this page's symbol, marked current in the sidebar. */
+  current?: string | undefined;
+}
+const { title, description, ledeHtml, eyebrow, module, current } = Astro.props;
+const shown = reference.modules.find(entry => entry.slug === module);
+const here = (href: string) => (href === current || href === Astro.url.pathname ? "page" : undefined);
+---
+<Base title={`${title} · StreamOtter API`} description={description}>
+  <div class="wrap api">
+    <nav class="api-crumbs" aria-label="Breadcrumb">
+      <a href="/docs/">Docs</a><span aria-hidden="true">/</span><a href={API_ROOT} aria-current={here(API_ROOT)}>API reference</a>{shown && <><span aria-hidden="true">/</span><a href={shown.href} aria-current={here(shown.href)}>{shown.importPath}</a></>}
+    </nav>
+    <div class="api-layout">
+      <article class="api-main">
+        <header class="api-head">
+          <p class="eyebrow">{eyebrow} <span>· v{reference.release}</span></p>
+          <h1>{title}</h1>
+          {ledeHtml ? <p class="lede" set:html={ledeHtml} /> : <p class="lede">{description}</p>}
+        </header>
+        <slot />
+      </article>
+      <aside class="api-side" aria-label="API reference contents">
+        <nav aria-labelledby="api-side-paths">
+          <p class="eyebrow" id="api-side-paths">Import paths</p>
+          <ul>{reference.modules.map(entry => <li><a href={entry.href} aria-current={here(entry.href)}><code set:html={entry.importPath.split("/").join("/<wbr>")} /></a></li>)}</ul>
+        </nav>
+        {shown && (
+          <nav class="api-side-exports" aria-labelledby="api-side-exports">
+            <p class="eyebrow" id="api-side-exports">In {shown.importPath}</p>
+            <ul>{shown.exports.map(entry => <li><a href={entry.href} aria-current={entry.href === current ? "page" : undefined}><code>{entry.name}</code></a></li>)}</ul>
+          </nav>
+        )}
+      </aside>
+    </div>
+  </div>
+</Base>
+<style>
+.api { padding-block: 32px 80px; }
+.api-crumbs { display: flex; flex-wrap: wrap; gap: 8px; font-size: .92rem; color: var(--ink-3); margin-bottom: 28px; }
+.api-crumbs a[aria-current="page"] { color: var(--ink-2); text-decoration: none; }
+.api-layout { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 48px; align-items: start; }
+.api-head { display: grid; gap: 16px; margin-bottom: 32px; }
+.api-head .eyebrow span { text-transform: none; }
+.api-head h1 { font-size: clamp(2rem, 4.4vw, 3.2rem); overflow-wrap: anywhere; }
+.api-head .lede { overflow-wrap: anywhere; }
+.api-side { position: sticky; top: 24px; max-height: calc(100vh - 48px); overflow-y: auto; display: grid; gap: 24px; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.api-side ul { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; }
+.api-side a { display: block; padding: 3px 6px; border-radius: 6px; text-decoration: none; color: var(--ink-2); overflow-wrap: anywhere; }
+.api-side nav:first-child a { overflow-wrap: normal; }
+.api-side a:hover { background: var(--surface-2); color: var(--ink); }
+.api-side a[aria-current="page"] { background: var(--surface-2); color: var(--ink); font-weight: 700; }
+.api-side code { background: none; padding: 0; font-size: .84rem; }
+@media (max-width: 900px) {
+  .api-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .api-side { position: static; max-height: none; }
+  .api-side-exports ul { max-height: 320px; overflow-y: auto; }
+}
+.api :global(.api-code) { margin: 0; padding: 16px 18px; border-radius: var(--radius); background: var(--code-bg); color: var(--code-ink); font: 400 .86rem/1.65 var(--mono); overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.api :global(.api-code code) { font-size: inherit; background: none; padding: 0; }
+.api :global(.api-code a) { color: #8fd0ff; text-decoration: none; border-bottom: 1px dotted currentColor; }
+.api :global(.api-code a:hover) { border-bottom-style: solid; }
+.api :global(.api-code .kw) { color: #c792ea; }
+.api :global(.api-code .lit) { color: #ecc48d; }
+.api :global(.api-doc) { display: grid; gap: 12px; max-width: 75ch; min-width: 0; overflow-wrap: anywhere; }
+.api :global(.api-doc :is(ul, ol)) { margin: 0; padding-left: 1.3em; display: grid; gap: 4px; }
+.api :global(.api-doc pre) { overflow: auto; padding: 16px 18px; background: var(--code-bg); color: var(--code-ink); border-radius: var(--radius); }
+.api :global(.api-doc pre code) { background: none; padding: 0; }
+.api :global(section) { margin-block: 36px; display: grid; gap: 16px; }
+.api :global(h2) { font-size: clamp(1.5rem, 3vw, 2rem); }
+@media (prefers-color-scheme: dark) {
+  .api :global(.api-code) { border: 1px solid var(--line); }
+}
+@media (forced-colors: active) {
+  .api :global(.api-code a) { border-bottom: 1px solid; }
+}
+</style>

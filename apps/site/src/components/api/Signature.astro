@@ -1,0 +1,32 @@
+---
+/** One call signature: its code, description, parameters, and notes. */
+import type { ApiSignature } from "../../api-reference/build.ts";
+import Notes from "./Notes.astro";
+interface Props { signature: ApiSignature }
+const { signature } = Astro.props;
+---
+<div class="api-signature">
+  <pre class="api-code"><code set:html={signature.codeHtml} /></pre>
+  {signature.docHtml && <div class="api-doc" set:html={signature.docHtml} />}
+  {signature.parameters.length > 0 && (
+    <div class="table-scroll">
+      <table class="api-params">
+        <thead><tr><th scope="col">Parameter</th><th scope="col">Type</th><th scope="col">Description</th></tr></thead>
+        <tbody>{signature.parameters.map(parameter => (
+          <tr><th scope="row"><code>{parameter.rest ? "..." : ""}{parameter.name}{parameter.optional ? "?" : ""}</code></th><td><code class="api-type" set:html={parameter.typeHtml} /></td><td class="api-doc" set:html={parameter.html} /></tr>
+        ))}</tbody>
+      </table>
+    </div>
+  )}
+  <Notes notes={signature.notes} examples={signature.examples} />
+</div>
+<style>
+.api-signature { display: grid; gap: 14px; }
+.api-params { width: 100%; border-collapse: collapse; text-align: left; font-size: .94rem; }
+.api-params th, .api-params td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.api-params thead th { background: var(--surface-2); }
+.api-params tbody th { font-weight: 400; white-space: nowrap; }
+.api-type { overflow-wrap: break-word; }
+.api-type :global(a) { text-decoration: none; }
+.table-scroll { overflow-x: auto; }
+</style>

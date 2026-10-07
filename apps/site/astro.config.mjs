@@ -1,4 +1,5 @@
 import { defineConfig } from "astro/config";
+import apiReference from "./integrations/api-reference.mjs";
 import workbenchAssets from "./integrations/workbench-assets.mjs";
 
 // LONTRA_SITE_PORT and LONTRA_API_PORT (see README.md, Develop) let a whole dev
@@ -22,8 +23,9 @@ const API_PORT = parsePort("LONTRA_API_PORT", 7402);
 export default defineConfig({
   site: "https://streamotter.dev",
   server: { host: "127.0.0.1", port: SITE_PORT },
-  // Serves the pinned published workbench at /workbench/assets/<version>/ (sandbox contract §4).
-  integrations: [workbenchAssets()],
+  // Serves the pinned published workbench at /workbench/assets/<version>/ (sandbox contract §4),
+  // and builds /docs/api/ from the installed release's declarations.
+  integrations: [workbenchAssets(), apiReference()],
   // /workbench/'s policy allows only 'self' scripts, styles and fonts, so no page's CSS,
   // bundled script, or font is inlined (Astro inlines small scripts under Vite's
   // assetsInlineLimit, and Vite small fonts as data: URLs; other assets keep the default).

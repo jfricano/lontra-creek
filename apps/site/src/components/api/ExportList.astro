@@ -1,0 +1,42 @@
+---
+/** Exports grouped by kind, each with its one-line summary. `filterable` marks rows for the index's filter. */
+import type { ApiExport, ApiKind } from "../../api-reference/build.ts";
+import { KIND_GROUPS } from "../../api-reference/labels.ts";
+interface Props { exports: readonly (ApiExport & { importPaths?: readonly string[] })[]; headingLevel?: 2 | 3; filterable?: boolean }
+const { exports, headingLevel = 2, filterable = false } = Astro.props;
+const Heading = `h${headingLevel}`;
+const groups = KIND_GROUPS.map(group => ({ ...group, items: exports.filter(entry => group.kinds.includes(entry.kind as ApiKind)) })).filter(group => group.items.length > 0);
+---
+{groups.map(group => (
+  <section class="api-group" data-api-group>
+    <Heading>{group.label}</Heading>
+    <ul class="api-exports">
+      {group.items.map(entry => (
+        <li data-api-name={filterable ? `${entry.name} ${entry.summaryText}`.toLowerCase() : undefined}>
+          <div class="api-name"><a href={entry.href}><code>{entry.name}</code></a>{entry.reexport && <span class="api-badge">re-export</span>}</div>
+          <div class="api-desc">
+            {entry.summaryHtml ? <p set:html={entry.summaryHtml} /> : <p class="muted">No description.</p>}
+            {entry.importPaths && <p class="api-paths">{entry.importPaths.map(path => <code>{path}</code>)}</p>}
+          </div>
+        </li>
+      ))}
+    </ul>
+  </section>
+))}
+<style>
+.api-exports { list-style: none; margin: 0; padding: 0; display: grid; border-top: 1px solid var(--line); }
+.api-exports li { display: grid; grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr); gap: 4px 20px; padding: 12px 0; border-bottom: 1px solid var(--line); align-items: baseline; }
+.api-name { display: grid; gap: 4px; align-content: start; }
+.api-name a { overflow-wrap: anywhere; font-weight: 700; text-decoration: none; }
+.api-name code { background: none; padding: 0; font-size: .92rem; }
+.api-desc { display: grid; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+/* The index's filter hides rows and emptied groups; their display rules would otherwise win. */
+.api-exports li[hidden], .api-group[hidden] { display: none !important; }
+.api-exports p { margin: 0; color: var(--ink-2); }
+.api-badge { font: 600 .7rem/1.2 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.api-paths { display: flex; flex-wrap: wrap; gap: 6px; font-size: .86rem; }
+.muted { color: var(--ink-3); }
+@media (max-width: 640px) {
+  .api-exports li { grid-template-columns: minmax(0, 1fr); }
+}
+</style>

@@ -1,0 +1,23 @@
+---
+import reference from "virtual:lontra/api-reference";
+import ApiPage from "../../../../layouts/ApiPage.astro";
+import ExportList from "../../../../components/api/ExportList.astro";
+import type { ApiModule } from "../../../../api-reference/build.ts";
+
+export function getStaticPaths() {
+  return reference.modules.map(module => ({ params: { module: module.slug }, props: { module } }));
+}
+interface Props { module: ApiModule }
+const { module } = Astro.props;
+const own = module.exports.filter(entry => !entry.reexport).length;
+const sample = module.exports.find(entry => !entry.reexport && entry.kind === "function") ?? module.exports[0];
+---
+<ApiPage title={module.importPath} eyebrow={module.title} description={module.description} module={module.slug}>
+  <section aria-labelledby="import">
+    <h2 id="import">Import</h2>
+    {sample && <pre class="api-code"><code>{`import { ${sample.name} } from "${module.importPath}";`}</code></pre>}
+    <p class="api-intro">The same exports are published as <code>{module.scopedImport}</code>. {own === module.exports.length ? "Every export here is declared here." : `Of its ${module.exports.length} exports, ${module.exports.length - own} are re-exported from the entry point that declares them, and link there.`}</p>
+  </section>
+  <ExportList exports={module.exports} />
+</ApiPage>
+<style>.api-intro { max-width: 75ch; color: var(--ink-2); }</style>

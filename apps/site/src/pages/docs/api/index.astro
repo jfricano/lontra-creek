@@ -1,0 +1,68 @@
+---
+import reference from "virtual:lontra/api-reference";
+import ApiPage from "../../../layouts/ApiPage.astro";
+import ExportList from "../../../components/api/ExportList.astro";
+import { LINKS } from "../../../site.ts";
+
+// Every documented symbol once, under its own name, with every path that exports it.
+const all = reference.symbols.map(symbol => ({
+  name: symbol.name, kind: symbol.kind, href: symbol.href, summaryHtml: symbol.summaryHtml, summaryText: symbol.summaryText,
+  reexport: false, importPaths: symbol.importPaths
+})).sort((a, b) => a.name.localeCompare(b.name, "en"));
+const stable = reference.release.includes("-") ? null : reference.release;
+---
+<ApiPage title="API reference" eyebrow="StreamOtter API" description={`Every export of streamotter@${reference.release}, generated from the type declarations and doc comments the package ships with.`}>
+  <section aria-labelledby="paths">
+    <h2 id="paths">Import paths</h2>
+    <p class="api-intro">Install <code>streamotter</code> and import from its entry points. Each is also published on its own, as the scoped package shown, for an app that needs only that part, such as a frontend that installs only <code>@streamotter/client</code>.</p>
+    <div class="reference-grid">
+      {reference.modules.map(module => (
+        <article class="reference-card">
+          <h3><a href={module.href}><code>{module.importPath}</code></a></h3>
+          <p class="api-card-title">{module.title}</p>
+          <p>{module.description}</p>
+          <p class="api-card-meta">{module.exports.length} exports · also <code>{module.scopedImport}</code></p>
+        </article>
+      ))}
+    </div>
+  </section>
+  <section aria-labelledby="all">
+    <h2 id="all">All exports</h2>
+    <div class="api-filter">
+      <label for="api-filter">Filter by name or description</label>
+      <input id="api-filter" type="search" autocomplete="off" spellcheck="false" data-api-filter aria-describedby="api-filter-count" />
+      <p id="api-filter-count" class="api-filter-count" aria-live="polite" data-api-filter-count>{all.length} exports</p>
+    </div>
+    <ExportList exports={all} headingLevel={3} filterable />
+  </section>
+  <section aria-labelledby="about">
+    <h2 id="about">About this reference</h2>
+    <p class="api-intro">This reference describes exactly the release this site runs{stable === null ? ", a release candidate whose API may still change" : ""}. It is generated when the site is built, from the declarations and doc comments in the published package, so it can't drift from the code. Behavior that types can't express, such as ordering, recovery, and the wire protocol, is specified in the <a href={`${LINKS.github}/blob/v${reference.release}/docs/V1_API.md`}>V1 API specification</a>.</p>
+  </section>
+</ApiPage>
+<script>
+  import { applyApiFilter } from "../../../scripts/api-filter.ts";
+  const input = document.querySelector<HTMLInputElement>("[data-api-filter]");
+  const count = document.querySelector<HTMLElement>("[data-api-filter-count]");
+  if (input && count) {
+    const update = () => {
+      const shown = applyApiFilter(document, input.value);
+      count.textContent = `${shown} ${shown === 1 ? "export" : "exports"}${input.value.trim() ? ` match “${input.value.trim()}”` : ""}`;
+    };
+    input.addEventListener("input", update);
+    if (input.value) update();
+  }
+</script>
+<style>
+.api-intro { max-width: 75ch; color: var(--ink-2); }
+.reference-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; }
+.reference-card { display: grid; gap: 8px; align-content: start; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.reference-card h3 code { background: none; padding: 0; font-size: .95rem; }
+.reference-card p { margin: 0; color: var(--ink-2); }
+.api-card-title { font-weight: 700; color: var(--ink) !important; }
+.api-card-meta { font-size: .86rem; }
+.api-filter { display: grid; gap: 8px; max-width: 32rem; }
+.api-filter label { font-weight: 700; }
+.api-filter input { font: inherit; background: var(--surface); color: var(--ink); border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px 12px; }
+.api-filter-count { margin: 0; color: var(--ink-3); font-size: .9rem; }
+</style>

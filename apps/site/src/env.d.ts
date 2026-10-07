@@ -17,3 +17,9 @@ declare module "virtual:lontra/workbench-host" {
   const manifest: import("streamotter/contracts").WorkbenchHostManifest | null;
   export default manifest;
 }
+
+/** The API reference's pages, built from the installed streamotter package (integrations/api-reference.mjs). */
+declare module "virtual:lontra/api-reference" {
+  const reference: import("./api-reference/build.ts").ApiReference;
+  export default reference;
+}

@@ -6,7 +6,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     test.setTimeout(90_000);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
-    for (const route of ["/", "/field-station/", "/lab/", "/docs/", "/releases/", "/when-it-breaks/", "/playground/", "/workbench/"]) {
+    for (const route of ["/", "/field-station/", "/lab/", "/docs/", "/docs/api/", "/docs/api/client/createClient/", "/docs/api/contracts/Source/", "/releases/", "/when-it-breaks/", "/playground/", "/workbench/"]) {
       await page.goto(route);
       if (route === "/") await expect(page.locator("[data-card] [data-state]").first()).toHaveAttribute("data-state", "live", { timeout: 30_000 });
       if (route === "/field-station/") await expect(page.locator("[data-walk-state]")).toHaveText("live", { timeout: 30_000 });

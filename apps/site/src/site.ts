@@ -95,7 +95,7 @@ export const PAGES: readonly Page[] = [
     href: "/docs/",
     label: "Docs",
     question: "How do I build with it?",
-    summary: "The guides and the API reference, where they're maintained: on GitHub and npm.",
+    summary: "The API reference for this release, generated from the package, and the guides and specifications on GitHub.",
     ready: true
   },
   {

@@ -10,7 +10,7 @@ export const GAME = {
   /** The npm release that ships `streamotter/react`. */
   hooksRelease: "1.1.0",
   channels: [
-    { channel: "den", params: "holtId: A", what: "Whether Holt A's pups are home or out. Nothing else: no grid reference, and nothing about the adults." },
+    { channel: "den", params: "holtId: A", what: "Whether Holt A's pups are home or out. Nothing else: no reach or grid reference, and nothing about the adults." },
     { channel: "reach", params: "reachId: beaver-flats", what: "The Beaver Flats camera trap. A new frame is the trap firing." },
     { channel: "creekOverview", params: "watershed: lontra", what: "Republished every field tick (two seconds), so it is the game's clock; it also sets daylight and weather." }
   ]

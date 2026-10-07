@@ -64,6 +64,7 @@ describe("the benches' feed", () => {
     assert.deepEqual(topics.map(config => config.topic), bench(1).topics);
     assert.ok(topics.every(config => config.numPartitions === 3));
     assert.ok(!CREEK_TOPICS.includes("field.holts"));
+    assert.ok(!CREEK_TOPICS.includes("field.dens"), "the den view stays off benches, like holts");
     assert.deepEqual(withBenchCopies([{ topic: "field.holts", key: "holt:A", value: "protected" }], ["lab-1."]), [{ topic: "field.holts", key: "holt:A", value: "protected" }]);
   });
 });

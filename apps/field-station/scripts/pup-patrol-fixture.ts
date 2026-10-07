@@ -39,14 +39,19 @@ function records(emissions: Emission[]): FieldRecord[] {
 function eventful(world: WorldState): boolean {
   const copy = restore(serialize(world));
   let frames = 0;
-  const pups = new Set<string>();
+  // The pups go out and then come home again, in that order, inside the window.
+  let wentOut = false;
+  let cameHome = false;
   for (let i = 0; i < TICKS; i++) {
     for (const emission of step(copy)) {
       if (emission.key === "reach:beaver-flats") frames += 1;
-      if (emission.key === "den:A") pups.add((emission.data as { pups: string }).pups);
+      if (emission.key !== "den:A") continue;
+      const pups = (emission.data as { pups: string }).pups;
+      if (pups === "out") wentOut = true;
+      else if (pups === "in-den" && wentOut) cameHome = true;
     }
   }
-  return frames >= 5 && pups.has("out") && pups.has("in-den");
+  return frames >= 5 && cameHome;
 }
 
 export function pupPatrolFixture(): PupPatrolFixture {

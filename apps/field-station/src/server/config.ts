@@ -5,6 +5,7 @@
  */
 import { fieldStationSecret, serviceToken } from "../identity.ts";
 import { MAX_BENCHES } from "../lab/benches.ts";
+import { gameOrigins as readGameOrigins } from "../game-origin.ts";
 import { GATEWAY_PATH } from "../project.ts";
 
 export interface KafkaSettings {
@@ -78,10 +79,8 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   }
 
   // Optional, and unlike SITE_ORIGIN never matched by Caddy: the game reaches only the gateway and three /api routes.
-  const gameOrigins = list(env["GAME_ORIGIN"] ?? (production ? "" : "http://localhost:5173,http://127.0.0.1:5173"));
-  if (production && (gameOrigins.length > 1 || gameOrigins.some(origin => !URL.canParse(origin) || new URL(origin).origin !== origin))) {
-    throw new Error("GAME_ORIGIN must be one exact origin in production, such as https://lontracreek.dev, or unset.");
-  }
+  // The gateway's handlers read the same switch (game-origin.ts).
+  const gameOrigins = readGameOrigins(env, production);
   if (gameOrigins.some(origin => siteOrigins.includes(origin))) throw new Error("GAME_ORIGIN must differ from SITE_ORIGIN.");
 
   const labBenches = integer(env, "FIELD_LAB_BENCHES", 0, 0);

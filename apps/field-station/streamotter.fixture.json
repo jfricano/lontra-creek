@@ -83,7 +83,9 @@
   "gateway": {
     "allowedOrigins": [
       "http://localhost:4321",
-      "http://127.0.0.1:4321"
+      "http://127.0.0.1:4321",
+      "http://localhost:5173",
+      "http://127.0.0.1:5173"
     ],
     "host": "127.0.0.1",
     "path": "/streamotter/socket.io",
@@ -354,10 +356,6 @@
           ],
           "type": "string"
         },
-        "name": {
-          "maxLength": 40,
-          "type": "string"
-        },
         "pups": {
           "enum": [
             "in-den",
@@ -365,24 +363,10 @@
             "none"
           ],
           "type": "string"
-        },
-        "reachId": {
-          "enum": [
-            "alder-spring",
-            "cedar-riffle",
-            "kestrel-bend",
-            "beaver-flats",
-            "slate-canyon",
-            "heron-marsh",
-            "confluence"
-          ],
-          "type": "string"
         }
       },
       "required": [
         "holtId",
-        "name",
-        "reachId",
         "pups"
       ],
       "type": "object"

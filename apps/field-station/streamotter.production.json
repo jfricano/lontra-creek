@@ -376,10 +376,6 @@
           ],
           "type": "string"
         },
-        "name": {
-          "maxLength": 40,
-          "type": "string"
-        },
         "pups": {
           "enum": [
             "in-den",
@@ -387,24 +383,10 @@
             "none"
           ],
           "type": "string"
-        },
-        "reachId": {
-          "enum": [
-            "alder-spring",
-            "cedar-riffle",
-            "kestrel-bend",
-            "beaver-flats",
-            "slate-canyon",
-            "heron-marsh",
-            "confluence"
-          ],
-          "type": "string"
         }
       },
       "required": [
         "holtId",
-        "name",
-        "reachId",
         "pups"
       ],
       "type": "object"

@@ -6,8 +6,10 @@
  *
  * Den sites are protected. While an otter is in a holt, its public view withholds
  * where it is; only the restricted holt channel has the location. The public den
- * view says only whether a holt's pups are home: no grid reference, and nothing
- * about the adults, so it can't place an otter that the otter view withholds.
+ * view says only whether a holt's pups are home: no reach, no grid reference, and
+ * nothing about the adults, so it can't place an otter that the otter view
+ * withholds. (Whether the pups are out is already public: the mother's otter view
+ * says when they are with her.)
  */
 import type { Species } from "./cameras.ts";
 import { studyTime, type Daylight } from "./clock.ts";
@@ -81,10 +83,9 @@ export interface HoltView {
 /** A holt's pups: home, out with their mother, or none (a holt without a litter). */
 export type PupsAtDen = "in-den" | "out" | "none";
 
+/** Deliberately minimal: a holt's reach would place a denning otter, so it isn't here. */
 export interface DenView {
   holtId: HoltId;
-  name: string;
-  reachId: ReachId;
   pups: PupsAtDen;
 }
 
@@ -255,12 +256,11 @@ function holtView(world: WorldState, id: HoltId): HoltView {
 }
 
 function denView(world: WorldState, id: HoltId): DenView {
-  const holt = HOLTS.find(candidate => candidate.id === id)!;
   const litter = OTTERS.find(profile => profile.den === id && profile.pups.length > 0);
   const pups: PupsAtDen = litter === undefined
     ? "none"
     : litter.pups.every(pup => world.holts[id].occupants.includes(pup)) ? "in-den" : "out";
-  return { holtId: id, name: holt.name, reachId: holt.reach, pups };
+  return { holtId: id, pups };
 }
 
 function overviewView(world: WorldState): OverviewView {

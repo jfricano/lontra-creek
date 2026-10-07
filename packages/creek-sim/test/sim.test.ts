@@ -225,11 +225,14 @@ describe("the public den view", () => {
       const holtA = views.find(v => v.key === "holt:A")!.data as HoltView;
       const denA = views.find(v => v.key === "den:A")!.data as DenView;
       const denB = views.find(v => v.key === "den:B")!.data as DenView;
-      assert.deepEqual(Object.keys(denA).sort(), ["holtId", "name", "pups", "reachId"]);
+      assert.deepEqual(Object.keys(denA).sort(), ["holtId", "pups"]);
+      assert.deepEqual(Object.keys(denB).sort(), ["holtId", "pups"]);
       assert.equal(denA.pups, holtA.occupants.includes("Sprout") ? "in-den" : "out");
       assert.equal(denA.pups === "out", world.otters["LO-07"].pupsWithHer);
       assert.equal(denB.pups, "none");
-      for (const den of [denA, denB]) assert.doesNotMatch(JSON.stringify(den), /LC \d{4}|Pebble|Birch|Juniper|occupants|gridRef/);
+      // Nothing that places the den: no grid reference, no adult, and no reach (a denning otter's reach is withheld).
+      const placing = new RegExp(["LC \\d{4}", "Pebble", "Birch", "Juniper", "occupants", "gridRef", "reach", ...REACHES.map(reach => reach.id)].join("|"));
+      for (const den of [denA, denB]) assert.doesNotMatch(JSON.stringify(den), placing);
       seen.add(denA.pups);
     });
     assert.deepEqual([...seen].sort(), ["in-den", "out"]);

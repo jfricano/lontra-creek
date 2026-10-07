@@ -516,14 +516,14 @@ describe("configuration from the environment", () => {
     assert.deepEqual(readConfig({ SITE_ORIGIN: "http://127.0.0.1:4321,http://localhost:4321" }).siteOrigins, ["http://127.0.0.1:4321", "http://localhost:4321"]);
   });
 
-  test("the game's origin is optional, one exact origin in production, and never the site's", () => {
+  test("the game's origin is off unless set, and in production can only be the one the gateway allows", () => {
     assert.deepEqual(readConfig(production).gameOrigins, []);
     assert.deepEqual(readConfig({ ...production, GAME_ORIGIN: "" }).gameOrigins, []);
     assert.deepEqual(readConfig({ ...production, GAME_ORIGIN: "https://lontracreek.dev" }).gameOrigins, ["https://lontracreek.dev"]);
-    for (const origin of ["https://lontracreek.dev,https://example.com", "https://lontracreek.dev/", "lontracreek.dev"]) {
-      assert.throws(() => readConfig({ ...production, GAME_ORIGIN: origin }), /GAME_ORIGIN must be one exact origin/, origin);
+    for (const origin of ["https://lontracreek.dev,https://example.com", "https://lontracreek.dev/", "lontracreek.dev", "https://staging.lontracreek.dev", "https://streamotter.dev"]) {
+      assert.throws(() => readConfig({ ...production, GAME_ORIGIN: origin }), /GAME_ORIGIN must be https:\/\/lontracreek\.dev/, origin);
     }
-    assert.throws(() => readConfig({ ...production, GAME_ORIGIN: "https://streamotter.dev" }), /must differ from SITE_ORIGIN/);
+    assert.throws(() => readConfig({ SITE_ORIGIN: "http://localhost:5173" }), /must differ from SITE_ORIGIN/);
     assert.deepEqual(readConfig({}).gameOrigins, ["http://localhost:5173", "http://127.0.0.1:5173"]);
   });
 

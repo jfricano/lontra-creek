@@ -92,9 +92,7 @@
       "channel": "den",
       "data": {
         "holtId": "A",
-        "name": "Holt A",
-        "pups": "in-den",
-        "reachId": "beaver-flats"
+        "pups": "in-den"
       },
       "params": {
         "holtId": "A"
@@ -1215,9 +1213,7 @@
         "channel": "den",
         "data": {
           "holtId": "A",
-          "name": "Holt A",
-          "pups": "out",
-          "reachId": "beaver-flats"
+          "pups": "out"
         },
         "params": {
           "holtId": "A"
@@ -2779,9 +2775,7 @@
         "channel": "den",
         "data": {
           "holtId": "A",
-          "name": "Holt A",
-          "pups": "in-den",
-          "reachId": "beaver-flats"
+          "pups": "in-den"
         },
         "params": {
           "holtId": "A"
@@ -3580,9 +3574,7 @@
         "channel": "den",
         "data": {
           "holtId": "A",
-          "name": "Holt A",
-          "pups": "out",
-          "reachId": "beaver-flats"
+          "pups": "out"
         },
         "params": {
           "holtId": "A"
@@ -3943,9 +3935,7 @@
         "channel": "den",
         "data": {
           "holtId": "A",
-          "name": "Holt A",
-          "pups": "in-den",
-          "reachId": "beaver-flats"
+          "pups": "in-den"
         },
         "params": {
           "holtId": "A"

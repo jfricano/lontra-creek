@@ -29,6 +29,8 @@ export const SITE_ORIGIN = "https://streamotter.dev";
  * on the demo host (the Lab, the sandbox, notebooks) accepts it.
  */
 export const GAME_ORIGIN = "https://lontracreek.dev";
+/** The game's Vite dev server, allowed by the development gateways (see game-origin.ts). */
+export const GAME_DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"];
 export const GATEWAY_PATH = "/streamotter/socket.io";
 const SITE_DEV_ORIGINS = ["http://localhost:4321", "http://127.0.0.1:4321"];
 
@@ -135,10 +137,9 @@ const SCHEMAS: Record<string, Schema> = {
     lastExit: studyStamp
   }),
   // The public den view (Pup Patrol): whether a holt's pups are home, and nothing that locates the den or its adults.
+  // Public, so deliberately minimal: a holt's reach would place a denning otter.
   DenStatus: object({
     holtId: oneOf(HOLTS.map(holt => holt.id)),
-    name: text(40),
-    reachId: oneOf(REACHES.map(reach => reach.id)),
     pups: oneOf(["in-den", "out", "none"])
   }),
   NotebookParams: object({ observerId }),
@@ -210,8 +211,9 @@ function notebooksSource(environment: Environment): Source {
 function gateway(environment: Environment): ProjectConfig["gateway"] {
   const path = GATEWAY_PATH;
   // In production the gateway listens on the compose network; only Caddy publishes a port.
+  // GAME_ORIGIN is always listed; the handlers refuse it while the deployment's GAME_ORIGIN switch is off (game-origin.ts).
   if (environment === "production") return { host: "0.0.0.0", port: 7400, path, allowedOrigins: [SITE_ORIGIN, GAME_ORIGIN] };
-  return { host: "127.0.0.1", port: 7400, path, allowedOrigins: SITE_DEV_ORIGINS };
+  return { host: "127.0.0.1", port: 7400, path, allowedOrigins: [...SITE_DEV_ORIGINS, ...GAME_DEV_ORIGINS] };
 }
 
 function connections(environment: Environment): Record<string, KafkaConnection> {

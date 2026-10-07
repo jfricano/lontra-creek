@@ -13,6 +13,15 @@ export const GAME = {
     { channel: "den", params: "holtId: A", what: "Whether Holt A's pups are home or out. Nothing else: no reach or grid reference, and nothing about the adults." },
     { channel: "reach", params: "reachId: beaver-flats", what: "The Beaver Flats camera trap. A new frame is the trap firing." },
     { channel: "creekOverview", params: "watershed: lontra", what: "Republished every field tick (two seconds), so it is the game's clock; it also sets daylight and weather." }
+  ],
+  /** What each subscription or connection state does to a round, as the game's src/components/Round.tsx has it. */
+  states: [
+    { state: "synchronizing", source: "useSubscription", game: "Before the first snapshot: \"Tuning the receiver…\". The round's clock hasn't started." },
+    { state: "live", source: "useSubscription", game: "All three live and the connection connected: the round plays." },
+    { state: "stale", source: "useSubscription", game: "The field freezes in grey where it was last known and the clock stops: \"Lost the receiver\". Nothing moves on a guess." },
+    { state: "resync-required", source: "useSubscription", game: "Still paused, with a Re-tune button that calls that subscription's resync()." },
+    { state: "reconnecting", source: "useConnectionState", game: "The signal bars drop and the round pauses, as for a stale channel." },
+    { state: "live again", source: "useSubscription", game: "The fresh snapshot wins: the pups go where the den view says, and trap frames taken while paused don't count." }
   ]
 } as const;
 

@@ -30,7 +30,7 @@
 
 ### The explainer page
 
-- `/pup-patrol/` on streamotter.dev, linked from the Docs page's "On this site" (not a new navigation item). It introduces the game (how to play, why it's here), says what it reads and what to watch for, and links to lontracreek.dev. It shows the hooks code only when the release the site pins has them (`hooksIn(RELEASE)` in `apps/site/src/pup-patrol.ts`): before `1.0.0` it says they arrive in `1.0.0`; for a `1.0.0` prerelease it shows them labeled as a preview.
+- `/pup-patrol/` on streamotter.dev, linked from the Docs page's "On this site" (not a new navigation item). It explains how the game uses StreamOtter (one provider, a `useSubscription` per channel tied to the round, subscription and connection states as game states, two-second ticks driving the canvas, and the new `den` channel), what to watch for, and how to play, and links to lontracreek.dev. It shows the hooks code only when the release the site pins has them (`hooksIn(RELEASE)` in `apps/site/src/pup-patrol.ts`): before `1.0.0` it says they arrive in `1.0.0`; for a `1.0.0` prerelease it shows them labeled as a preview.
 
 ## Tests
 

@@ -2,7 +2,7 @@
 
 **Status: built on branch `feat/pup-patrol-92ggxb`, not merged.** Lontra Creek's main is frozen until the phase-two site is in production, and demo rollouts wait for the owner. Written October 6, 2026 (Pacific).
 
-[Pup Patrol](https://github.com/orca-solutions/pup-patrol) is the demo game for StreamOtter's React hooks (StreamOtter V1.3, npm `1.1.0`): its own repository, served from lontracreek.dev, reading this demo's creek. Its plan is in that repository (`docs/PLAN.md`, moved from StreamOtter PR #68), with the design in `docs/DESIGN.md`. This page covers what changes here.
+[Pup Patrol](https://github.com/orca-solutions/pup-patrol) is the demo game for StreamOtter's React hooks, which ship in npm `1.0.0`, the public launch (the owner folded the V1.3 hooks into 1.0.0 on October 6, 2026, Pacific): its own repository, served from lontracreek.dev, reading this demo's creek. Its plan is in that repository (`docs/PLAN.md`, moved from StreamOtter PR #68), with the design in `docs/DESIGN.md`. This page covers what changes here.
 
 ## Release notes
 
@@ -30,7 +30,7 @@
 
 ### The explainer page
 
-- `/pup-patrol/` on streamotter.dev, linked from the Docs page's "On this site" (not a new navigation item). It says what the game reads and what to watch for, and links to lontracreek.dev. It shows the hooks code only when the release the site pins has them (`hooksIn(RELEASE)` in `apps/site/src/pup-patrol.ts`): before `1.1.0` it says they arrive in `1.1.0`; for a `1.1.0` prerelease it shows them labeled as a preview.
+- `/pup-patrol/` on streamotter.dev, linked from the Docs page's "On this site" (not a new navigation item). It introduces the game (how to play, why it's here), says what it reads and what to watch for, and links to lontracreek.dev. It shows the hooks code only when the release the site pins has them (`hooksIn(RELEASE)` in `apps/site/src/pup-patrol.ts`): before `1.0.0` it says they arrive in `1.0.0`; for a `1.0.0` prerelease it shows them labeled as a preview.
 
 ## Tests
 
@@ -44,7 +44,7 @@
 ## Before it goes live
 
 1. Phase two in production and the main freeze lifted; the owner merges.
-2. `streamotter@1.1.0` on npm; the site and field station pins move to it in the same release (the explainer then shows the hooks).
+2. `streamotter@1.0.0` on npm with the hooks; the site and field station pins move to it (the explainer then shows the hooks).
 3. The game deployed to lontracreek.dev (Cloudflare Pages and DNS, owner's go).
 4. The image rolled out through the shared-host procedure. Rolling it out alone changes nothing for the game; `GAME_ORIGIN=https://lontracreek.dev` in `/etc/apps/lontra/lontra.env` (and a restart of the field station and gateway) turns it on, once the game is live at step 3.
 5. Hosted acceptance: a round on lontracreek.dev against demo.streamotter.dev, including a real connection drop.

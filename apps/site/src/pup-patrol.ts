@@ -7,8 +7,8 @@
 
 export const GAME = {
   url: "https://lontracreek.dev",
-  /** The npm release that ships `streamotter/react`. */
-  hooksRelease: "1.1.0",
+  /** The npm release that ships `streamotter/react` (the hooks ship in 1.0.0, the public launch). */
+  hooksRelease: "1.0.0",
   channels: [
     { channel: "den", params: "holtId: A", what: "Whether Holt A's pups are home or out. Nothing else: no reach or grid reference, and nothing about the adults." },
     { channel: "reach", params: "reachId: beaver-flats", what: "The Beaver Flats camera trap. A new frame is the trap firing." },
@@ -23,8 +23,8 @@ function parse(version: string): { core: [number, number, number]; prerelease: b
 }
 
 /**
- * Whether a StreamOtter release has the hooks: "shipped" from 1.1.0, "preview" for a
- * 1.1.0 prerelease, "not yet" before that.
+ * Whether a StreamOtter release has the hooks: "shipped" from 1.0.0, "preview" for a
+ * 1.0.0 prerelease, "not yet" before that.
  */
 export function hooksIn(release: string): "shipped" | "preview" | "not yet" {
   const { core, prerelease } = parse(release);

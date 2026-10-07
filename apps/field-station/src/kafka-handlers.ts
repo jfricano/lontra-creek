@@ -106,6 +106,7 @@ export function createKafkaHandlers(options: KafkaHandlerOptions): HandlerRegist
       otter: channel("otter"),
       reach: channel("reach"),
       holt: channel("holt"),
+      den: channel("den"),
       notebook: channel("notebook")
     }
   };

@@ -27,6 +27,8 @@ export interface ServerConfig {
   generation: number;
   /** Origins allowed to call /api with credentials. */
   siteOrigins: string[];
+  /** Origins of the Pup Patrol game: /api/config, /api/status and a volunteer /api/badge only, without credentials. */
+  gameOrigins: string[];
   /** What /api/config tells the site: where browsers reach the gateway. */
   gatewayOrigin: string;
   gatewayPath: string;
@@ -75,6 +77,13 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     throw new Error("SITE_ORIGIN must be one exact origin in production, such as https://streamotter.dev.");
   }
 
+  // Optional, and unlike SITE_ORIGIN never matched by Caddy: the game reaches only the gateway and three /api routes.
+  const gameOrigins = list(env["GAME_ORIGIN"] ?? (production ? "" : "http://localhost:5173,http://127.0.0.1:5173"));
+  if (production && (gameOrigins.length > 1 || gameOrigins.some(origin => !URL.canParse(origin) || new URL(origin).origin !== origin))) {
+    throw new Error("GAME_ORIGIN must be one exact origin in production, such as https://lontracreek.dev, or unset.");
+  }
+  if (gameOrigins.some(origin => siteOrigins.includes(origin))) throw new Error("GAME_ORIGIN must differ from SITE_ORIGIN.");
+
   const labBenches = integer(env, "FIELD_LAB_BENCHES", 0, 0);
   if (labBenches > MAX_BENCHES) throw new RangeError(`FIELD_LAB_BENCHES must be at most ${MAX_BENCHES}.`);
 
@@ -92,6 +101,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     tickMs: integer(env, "FIELD_TICK_MS", 2_000, 100),
     generation: integer(env, "FIELD_GENERATION", 1, 1),
     siteOrigins,
+    gameOrigins,
     gatewayOrigin: env["GATEWAY_PUBLIC_ORIGIN"] ?? (production ? required("GATEWAY_PUBLIC_ORIGIN") : "http://127.0.0.1:7400"),
     gatewayPath: GATEWAY_PATH,
     host: env["FIELD_HOST"] ?? "127.0.0.1",

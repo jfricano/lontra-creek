@@ -25,6 +25,26 @@ describe("configuration", () => {
     assert.equal(result.status, 0, result.stderr);
   });
 
+  test("the committed Pup Patrol fixture matches the simulation", () => {
+    const result = spawnSync(process.execPath, [join(appDir, "scripts/pup-patrol-fixture.ts"), "--check"], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+  });
+
+  test("every Pup Patrol fixture record is valid for its channel, and the window shows every game state", async () => {
+    const { pupPatrolFixture } = await import("../scripts/pup-patrol-fixture.ts");
+    const fixture = pupPatrolFixture();
+    const records = [...fixture.initial, ...fixture.ticks.flat()];
+    for (const record of records) {
+      const channel = record.channel as keyof AppChannels;
+      assert.ok(["den", "reach", "creekOverview"].includes(channel), channel);
+      assert.equal(validateValue(payloadSchema(channel as "den"), record.data), null, `${channel} ${record.revision}`);
+    }
+    const pups = new Set(records.filter(record => record.channel === "den").map(record => (record.data as { pups: string }).pups));
+    assert.deepEqual([...pups].sort(), ["in-den", "out"]);
+    assert.ok(fixture.ticks.filter(tick => tick.some(record => record.channel === "reach")).length >= 5);
+    assert.equal(fixture.ticks.filter(tick => tick.some(record => record.channel === "creekOverview")).length, fixture.ticks.length);
+  });
+
   for (const [environment, file] of Object.entries(CONFIG_FILES)) {
     test(`the published CLI accepts ${file}`, () => {
       const result = spawnSync(process.execPath, [cli, "validate", "--config", join(appDir, file)], { encoding: "utf8" });

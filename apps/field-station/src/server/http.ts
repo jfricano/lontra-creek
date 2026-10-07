@@ -3,7 +3,8 @@
  *
  * Public, behind Caddy at /api: where the gateway is, sign-in badges, the study's
  * status, and sightings for the visitor's own notebook, with CORS for the site's
- * origin and credentials, and a request budget per client. GET /healthz is for the
+ * origin and credentials, and a request budget per client. Pup Patrol's origin gets
+ * CORS without credentials on three routes only (GAME_ROUTES). GET /healthz is for the
  * container's health check; Caddy doesn't route it.
  *
  * Internal, on the compose network only: GET /internal/views/:channel/:id, the
@@ -28,6 +29,13 @@ import { StudyClosedError, type LabStudies } from '../lab/studies.ts';
 import type { SandboxPool } from '../sandbox/leases.ts';
 import { sandboxRoute } from '../sandbox/routes.ts';
 import { labCapabilities, parseIntent } from '../lab/capabilities.ts';
+
+/**
+ * What Pup Patrol (config.gameOrigins) may call: where the gateway is, the study's status, and a
+ * volunteer badge it holds in memory. It sends no cookie and gets none, so the Lab, the sandbox and
+ * notebooks, which are tied to the site's session cookie, stay the site's alone.
+ */
+const GAME_ROUTES: ReadonlySet<string> = new Set(["GET /api/config", "GET /api/status", "POST /api/badge"]);
 
 type Headers = Record<string, string>;
 
@@ -140,6 +148,9 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
         cors["access-control-allow-origin"] = origin;
         cors["access-control-allow-credentials"] = "true";
       }
+      const fromGame = origin !== undefined && config.gameOrigins.includes(origin);
+      const method = request.method === "OPTIONS" ? request.headers["access-control-request-method"] ?? "" : request.method;
+      if (fromGame && GAME_ROUTES.has(`${method} ${url.pathname}`)) cors["access-control-allow-origin"] = origin;
       if (request.method === "OPTIONS") {
         if (cors["access-control-allow-origin"] === undefined) return send(response, 403, { error: "Origin not allowed." }, cors);
         response.writeHead(204, { ...cors, "access-control-allow-methods": "GET, POST", "access-control-allow-headers": url.pathname.startsWith("/api/sandbox/wb/") ? "content-type, x-streamotter-workbench" : "content-type", "access-control-max-age": "600" });
@@ -217,6 +228,11 @@ export function publicApi(options: { config: ServerConfig; station: FieldStation
       if (request.method === "POST" && url.pathname === "/api/badge") {
         // Browsers send Origin on every POST; refusing others keeps other sites from minting badges with a visitor's cookie.
         if (origin !== undefined && cors["access-control-allow-origin"] === undefined) return send(response, 403, { error: "Origin not allowed." }, cors);
+        if (fromGame) {
+          // Always a new volunteer, and no cookie: the game keeps the token for its round.
+          const result = badgeFor({ cookieHeader: undefined, role: "volunteer", secret: config.secret, secure: config.production });
+          return send(response, 200, { badge: result.badge, token: result.token.token, expiresAt: result.token.expiresAt }, cors);
+        }
         const body = await readJson(request);
         const role: Role = body["role"] === "researcher" ? "researcher" : "volunteer";
         const before = readSession(request.headers.cookie, config.secret);

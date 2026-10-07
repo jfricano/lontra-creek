@@ -11,6 +11,17 @@
       "source": "field",
       "version": 1
     },
+    "den": {
+      "delivery": {
+        "kind": "state",
+        "overflow": "resync"
+      },
+      "handlersRef": "den",
+      "paramsSchema": "HoltParams",
+      "payloadSchema": "DenStatus",
+      "source": "field",
+      "version": 1
+    },
     "holt": {
       "delivery": {
         "kind": "state",
@@ -89,7 +100,8 @@
   },
   "gateway": {
     "allowedOrigins": [
-      "https://streamotter.dev"
+      "https://streamotter.dev",
+      "https://lontracreek.dev"
     ],
     "host": "0.0.0.0",
     "path": "/streamotter/socket.io",
@@ -351,6 +363,49 @@
         "weather",
         "stations",
         "otters"
+      ],
+      "type": "object"
+    },
+    "DenStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "holtId": {
+          "enum": [
+            "A",
+            "B"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 40,
+          "type": "string"
+        },
+        "pups": {
+          "enum": [
+            "in-den",
+            "out",
+            "none"
+          ],
+          "type": "string"
+        },
+        "reachId": {
+          "enum": [
+            "alder-spring",
+            "cedar-riffle",
+            "kestrel-bend",
+            "beaver-flats",
+            "slate-canyon",
+            "heron-marsh",
+            "confluence"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "holtId",
+        "name",
+        "reachId",
+        "pups"
       ],
       "type": "object"
     },
@@ -894,6 +949,7 @@
         "field.telemetry",
         "field.cameras",
         "field.holts",
+        "field.dens",
         "creek.overview"
       ]
     },

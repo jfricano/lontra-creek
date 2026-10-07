@@ -1,0 +1,36 @@
+---
+import {Code} from "astro:components";
+import ReferencePage from "../layouts/ReferencePage.astro";
+import {GAME, HOOKS_EXCERPT, hooksIn} from "../pup-patrol.ts";
+import {RELEASE} from "../site.ts";
+const hooks=hooksIn(RELEASE);
+---
+<ReferencePage title="Pup Patrol" description="A sixty-second game on Lontra Creek's live channels: herd Sprout and Skipper home before the Beaver Flats camera trap fires. It is the demo for StreamOtter's React hooks.">
+  <section>
+    <p>You are Pebble (LO-07). Her pups wander out of Holt A toward a camera trap, and you nudge them home. Nothing about the pups or the trap is scripted by the game: the pups come out when the field station says they're out, and the trap fires when its camera does, through the same Kafka topics and gateway as the <a href="/field-station/">field station walkthrough</a>. The game runs on its own site.</p>
+    <p><a class="button button-primary" href={GAME.url}>Play Pup Patrol at lontracreek.dev ↗</a></p>
+    {hooks==="not yet" && <p class="notice" data-hooks="not-yet">Pup Patrol is built on <code>streamotter/react</code>, StreamOtter's React hooks, which arrive in <code>streamotter@{GAME.hooksRelease}</code>. This site describes <code>streamotter@{RELEASE}</code>, which doesn't have them, so the code is shown here when the release does.</p>}
+    {hooks==="preview" && <p class="notice" data-hooks="preview">This page describes <code>streamotter@{RELEASE}</code>, a prerelease of the {GAME.hooksRelease} hooks. The API below can still change before {GAME.hooksRelease}.</p>}
+  </section>
+  <section aria-labelledby="channels-title">
+    <h2 id="channels-title">What it reads</h2>
+    <p>Three public channels, one subscription each, for as long as a round is on screen. The game sends nothing back.</p>
+    <div class="table-scroll" tabindex="0" role="region" aria-labelledby="channels-title"><table><thead><tr><th scope="col">Channel</th><th scope="col">Params</th><th scope="col">What it's for</th></tr></thead><tbody>{GAME.channels.map(row=><tr><th scope="row"><code>{row.channel}</code></th><td><code>{row.params}</code></td><td>{row.what}</td></tr>)}</tbody></table></div>
+    <p>The <code>den</code> view is public because it says so little. Where Holt A is stays on the researchers-only <code>holt</code> channel, as the <a href="/field-station/#chapter-4">protected den chapter</a> shows.</p>
+  </section>
+  {hooks!=="not yet" && <section aria-labelledby="hooks-title" data-hooks="code">
+    <h2 id="hooks-title">The hooks it uses</h2>
+    <p>One <code>StreamOtterProvider</code> around the page, with a fresh token from this demo's field station for every connection, and these calls in the round:</p>
+    <Code code={HOOKS_EXCERPT} lang="tsx" theme="night-owl" />
+    <p>React owns the data; a canvas owns the frames. Each update re-renders the round, which hands the change to the game in an effect. A <code>requestAnimationFrame</code> loop tweens the pups between the two-second field ticks without going through React per frame.</p>
+  </section>}
+  <section aria-labelledby="watch-title">
+    <h2 id="watch-title">What to watch for</h2>
+    <ul>
+      <li><strong>Turn off your network mid-round.</strong> The signal bars drop, the field freezes in grey on the last known creek, and the round pauses: "Lost the receiver". Nothing moves on a guess.</li>
+      <li><strong>Turn it back on.</strong> The fresh snapshot resets the pups to where the creek says they are, and the clock picks up where it stopped. Frames the trap took while you were away don't count against you.</li>
+      <li><strong>Open "Under the hood".</strong> Three subscriptions, their states and revisions. The round re-renders several times a second with new params objects and the subscriptions don't change; when the round ends they unmount and the count goes to zero.</li>
+    </ul>
+    <p>When this demo's backend is down, the game says so and replays a recording of the creek, labeled as a recording.</p>
+  </section>
+</ReferencePage>

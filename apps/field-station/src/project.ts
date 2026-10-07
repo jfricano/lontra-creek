@@ -23,6 +23,12 @@ export type Environment = "fixture" | "local-kafka" | "production";
 export const PROJECT_ID = "lontra-creek";
 export const CHANNEL_VERSION = 1 as const;
 export const SITE_ORIGIN = "https://streamotter.dev";
+/**
+ * Pup Patrol, the hooks demo game (its own repository, served from lontracreek.dev). It reads
+ * the public creek through the gateway and asks /api/badge for a volunteer token; nothing else
+ * on the demo host (the Lab, the sandbox, notebooks) accepts it.
+ */
+export const GAME_ORIGIN = "https://lontracreek.dev";
 export const GATEWAY_PATH = "/streamotter/socket.io";
 const SITE_DEV_ORIGINS = ["http://localhost:4321", "http://127.0.0.1:4321"];
 
@@ -128,6 +134,13 @@ const SCHEMAS: Record<string, Schema> = {
     lastEntry: studyStamp,
     lastExit: studyStamp
   }),
+  // The public den view (Pup Patrol): whether a holt's pups are home, and nothing that locates the den or its adults.
+  DenStatus: object({
+    holtId: oneOf(HOLTS.map(holt => holt.id)),
+    name: text(40),
+    reachId: oneOf(REACHES.map(reach => reach.id)),
+    pups: oneOf(["in-den", "out", "none"])
+  }),
   NotebookParams: object({ observerId }),
   Notebook: object({
     observerId,
@@ -146,7 +159,8 @@ const CHANNELS: Record<ChannelName, { paramsSchema: string; payloadSchema: strin
   station: { paramsSchema: "StationParams", payloadSchema: "GaugeReading" },
   otter: { paramsSchema: "OtterParams", payloadSchema: "OtterStatus" },
   reach: { paramsSchema: "ReachParams", payloadSchema: "CameraTrap" },
-  holt: { paramsSchema: "HoltParams", payloadSchema: "HoltStatus" }
+  holt: { paramsSchema: "HoltParams", payloadSchema: "HoltStatus" },
+  den: { paramsSchema: "HoltParams", payloadSchema: "DenStatus" }
 };
 
 const LOCAL_KAFKA: KafkaConnection = { brokers: ["127.0.0.1:19092"], tls: false };
@@ -196,7 +210,7 @@ function notebooksSource(environment: Environment): Source {
 function gateway(environment: Environment): ProjectConfig["gateway"] {
   const path = GATEWAY_PATH;
   // In production the gateway listens on the compose network; only Caddy publishes a port.
-  if (environment === "production") return { host: "0.0.0.0", port: 7400, path, allowedOrigins: [SITE_ORIGIN] };
+  if (environment === "production") return { host: "0.0.0.0", port: 7400, path, allowedOrigins: [SITE_ORIGIN, GAME_ORIGIN] };
   return { host: "127.0.0.1", port: 7400, path, allowedOrigins: SITE_DEV_ORIGINS };
 }
 
@@ -235,6 +249,7 @@ export function projectConfig(environment: Environment): ProjectConfig<AppChanne
       otter: channel("otter"),
       reach: channel("reach"),
       holt: channel("holt"),
+      den: channel("den"),
       notebook: {
         version: CHANNEL_VERSION,
         source: "notebooks",

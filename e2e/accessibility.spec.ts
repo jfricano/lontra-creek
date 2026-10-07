@@ -2,7 +2,7 @@ import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 for (const scheme of ["light", "dark"] as const) {
-  for (const route of ["/", "/field-station/", "/lab/", "/when-it-breaks/", "/releases/", "/docs/", "/this-page-does-not-exist-anywhere-on-the-site"]) {
+  for (const route of ["/", "/field-station/", "/lab/", "/when-it-breaks/", "/releases/", "/docs/", "/pup-patrol/", "/this-page-does-not-exist-anywhere-on-the-site"]) {
     test(`${route} has no serious or critical axe violations in ${scheme}`, async ({ page }) => {
       await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
       await page.goto(route);

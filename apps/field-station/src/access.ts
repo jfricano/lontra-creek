@@ -1,7 +1,8 @@
 /**
  * Who may read what, shared by the fixture and Kafka handlers. Den sites are for
  * researchers, as real studies restrict them; a notebook is for its owner alone;
- * everything else is open to any signed-in visitor.
+ * everything else, including the public den view (pups home or out, no location),
+ * is open to any signed-in visitor.
  */
 import type { Principal } from "streamotter/contracts";
 import { isResearcher } from "./identity.ts";

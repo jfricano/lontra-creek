@@ -133,7 +133,8 @@ Operator env names, without secret values:
 
 - Image/state/origins: `LONTRA_IMAGE`, `LONTRA_SECRETS`, `FIELD_EPOCH`,
   `FIELD_GENERATION`, `FIELD_TICK_MS`, `SITE_ORIGIN`, `GATEWAY_PUBLIC_ORIGIN`,
-  `DEMO_HOST`. `LONTRA_CGROUP_PARENT=lontra.slice` requires the installed shared slice.
+  `DEMO_HOST`, and optionally `GAME_ORIGIN` (Pup Patrol's origin, default
+  `https://lontracreek.dev`; empty turns the game's API access off). `LONTRA_CGROUP_PARENT=lontra.slice` requires the installed shared slice.
   The Kafka heap is set in `compose.shared.yaml`, not from `KAFKA_HEAP_OPTS`; change it there.
   `LONTRA_CONFIG_DIR` is written by the root deploy
   script, not supplied by SSH callers. `PUBLIC_FIELD_STATION_ORIGIN` is a static

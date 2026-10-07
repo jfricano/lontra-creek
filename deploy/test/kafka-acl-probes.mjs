@@ -30,7 +30,7 @@ const role = process.argv[2];
 const env = process.env;
 const benches = (env['KAFKA_PROBE_BENCHES'] ?? '1,2,3').split(',').map(Number);
 const DENIED = new Set(['TOPIC_AUTHORIZATION_FAILED', 'GROUP_AUTHORIZATION_FAILED', 'CLUSTER_AUTHORIZATION_FAILED', 'TRANSACTIONAL_ID_AUTHORIZATION_FAILED']);
-const WORLD = ['field.gauges', 'field.telemetry', 'field.cameras', 'field.holts', 'creek.overview'];
+const WORLD = ['field.gauges', 'field.telemetry', 'field.cameras', 'field.holts', 'field.dens', 'creek.overview'];
 const NOTEBOOKS = 'field.notebooks';
 const run = randomUUID().slice(0, 8);
 
@@ -177,7 +177,7 @@ try {
     await probe(`read ${quarantine} in a quarantine-read group`, 'allowed', () => consume(quarantine, evidenceGroup));
     await probe('delete that quarantine-read group', 'allowed', deleteGroup(evidenceGroup));
     await probe(`describe ${mine}field.gauges's configuration`, 'denied', describeConfigs(`${mine}field.gauges`));
-    for (const topic of WORLD.filter(topic => topic !== 'field.holts').map(topic => `${mine}${topic}`)) await probe(`write ${topic} (its own source)`, 'denied', () => produce(topic));
+    for (const topic of WORLD.filter(topic => topic !== 'field.holts' && topic !== 'field.dens').map(topic => `${mine}${topic}`)) await probe(`write ${topic} (its own source)`, 'denied', () => produce(topic));
     await probe(`read ${mine}field.gauges in another bench's group`, 'denied', () => consume(`${mine}field.gauges`, `streamotter-lab-${number % 3 + 1}-acl-probe-${run}`));
     await probe(`read ${mine}field.gauges in the production gateway's group`, 'denied', () => consume(`${mine}field.gauges`, 'streamotter-lontra-creek-field'));
     for (const topic of [...WORLD, NOTEBOOKS]) {

@@ -273,7 +273,7 @@ describe("the field station's HTTP APIs", () => {
   }
 
   before(async () => {
-    config = { ...readConfig({ FIELD_STATION_SERVICE_TOKEN: token }), siteOrigins: ["https://streamotter.dev"], gatewayOrigin: "https://demo.streamotter.dev" };
+    config = { ...readConfig({ FIELD_STATION_SERVICE_TOKEN: token }), siteOrigins: ["https://streamotter.dev"], gameOrigins: ["https://lontracreek.dev"], gatewayOrigin: "https://demo.streamotter.dev" };
     const queue = new PublishQueue(publisher, () => undefined);
     field = new FieldStation({ queue, dataDir: await dataDir(), epoch: EPOCH, tickMs: TICK_MS, generation: 1, now: time.now, log: () => undefined });
     notebooks = new Notebooks({ queue, tenantId: "lontra-creek", now: time.now, log: () => undefined });
@@ -331,6 +331,39 @@ describe("the field station's HTTP APIs", () => {
     assert.equal(other.headers.get("access-control-allow-origin"), null);
     const forged = await fetch(`${apiOrigin}/api/badge`, { method: "POST", headers: { origin: "https://elsewhere.example", "content-type": "application/json" }, body: "{}" });
     assert.equal(forged.status, 403);
+  });
+
+  test("the game's origin gets config, status and a volunteer badge without credentials, and nothing else", async () => {
+    const game = (path: string, init: RequestInit & { ip: string }) =>
+      fetch(`${apiOrigin}${path}`, { ...init, headers: { origin: "https://lontracreek.dev", "x-client-ip": init.ip, ...init.headers } });
+
+    const configured = await game("/api/config", { ip: "198.51.100.60" });
+    assert.equal(configured.headers.get("access-control-allow-origin"), "https://lontracreek.dev");
+    assert.equal(configured.headers.get("access-control-allow-credentials"), null);
+    const status = await game("/api/status", { ip: "198.51.100.60" });
+    assert.equal(status.headers.get("access-control-allow-origin"), "https://lontracreek.dev");
+
+    const preflight = await game("/api/badge", { method: "OPTIONS", ip: "198.51.100.61", headers: { "access-control-request-method": "POST" } });
+    assert.equal(preflight.status, 204);
+    // A researcher badge is the site's to give: the game's request for one still gets a volunteer, and no cookie.
+    const badge = await game("/api/badge", { method: "POST", ip: "198.51.100.61", headers: { "content-type": "application/json", cookie: "ignored=1" }, body: JSON.stringify({ role: "researcher" }) });
+    assert.equal(badge.status, 200);
+    assert.equal(badge.headers.get("set-cookie"), null);
+    const body = await badge.json() as { badge: { role: string; subject: string }; token: string };
+    assert.equal(body.badge.role, "volunteer");
+    assert.equal(typeof body.token, "string");
+    const second = await (await game("/api/badge", { method: "POST", ip: "198.51.100.61", headers: { "content-type": "application/json" }, body: "{}" })).json() as { badge: { subject: string } };
+    assert.notEqual(second.badge.subject, body.badge.subject);
+
+    const notebook = await game("/api/notebook/sightings", { method: "POST", ip: "198.51.100.62", headers: { "content-type": "application/json" }, body: "{}" });
+    assert.equal(notebook.status, 403);
+    const notebookPreflight = await game("/api/notebook/sightings", { method: "OPTIONS", ip: "198.51.100.62", headers: { "access-control-request-method": "POST" } });
+    assert.equal(notebookPreflight.status, 403);
+    const lab = await game("/api/lab/lease", { method: "POST", ip: "198.51.100.63", headers: { "content-type": "application/json" }, body: "{}" });
+    assert.equal(lab.status, 403);
+    assert.equal(lab.headers.get("access-control-allow-origin"), null);
+    const labStatus = await game("/api/lab/status", { ip: "198.51.100.63" });
+    assert.equal(labStatus.headers.get("access-control-allow-origin"), null);
   });
 
   test("a malformed request from the site's origin gets a 400 the page can read", async () => {
@@ -481,6 +514,17 @@ describe("configuration from the environment", () => {
       assert.throws(() => readConfig({ ...production, SITE_ORIGIN: origin }), /one exact origin/, origin);
     }
     assert.deepEqual(readConfig({ SITE_ORIGIN: "http://127.0.0.1:4321,http://localhost:4321" }).siteOrigins, ["http://127.0.0.1:4321", "http://localhost:4321"]);
+  });
+
+  test("the game's origin is optional, one exact origin in production, and never the site's", () => {
+    assert.deepEqual(readConfig(production).gameOrigins, []);
+    assert.deepEqual(readConfig({ ...production, GAME_ORIGIN: "" }).gameOrigins, []);
+    assert.deepEqual(readConfig({ ...production, GAME_ORIGIN: "https://lontracreek.dev" }).gameOrigins, ["https://lontracreek.dev"]);
+    for (const origin of ["https://lontracreek.dev,https://example.com", "https://lontracreek.dev/", "lontracreek.dev"]) {
+      assert.throws(() => readConfig({ ...production, GAME_ORIGIN: origin }), /GAME_ORIGIN must be one exact origin/, origin);
+    }
+    assert.throws(() => readConfig({ ...production, GAME_ORIGIN: "https://streamotter.dev" }), /must differ from SITE_ORIGIN/);
+    assert.deepEqual(readConfig({}).gameOrigins, ["http://localhost:5173", "http://127.0.0.1:5173"]);
   });
 
   test("development needs nothing", () => {

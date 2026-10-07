@@ -12,6 +12,10 @@ import { CreekCanvas, type Lane } from "./creek-canvas.ts";
 
 const BASEFLOW_LC02 = 61;
 
+// Why each moment matters, so the demo makes its point without the docs.
+const WHY_DROPPED = `<span class="lc-why"><b>Why it matters:</b> a dashboard that keeps showing the last value it got looks current even after its connection dies. StreamOtter marks each view stale once it can no longer vouch for that view.</span>`;
+const WHY_RESTORED = `<span class="lc-why"><b>Why it matters:</b> each view is current again as soon as its fresh snapshot lands. The app's snapshot handler supplies that state, so there's nothing to replay or catch up on.</span>`;
+
 export async function mountLiveCreek(root: HTMLElement): Promise<void> {
   const log = createSdkLog($(root, "[data-log]"), $(root, "[data-announce]"));
   const connection = $(root, "[data-connection]");
@@ -76,7 +80,7 @@ export async function mountLiveCreek(root: HTMLElement): Promise<void> {
   const notes = new Map<string, string>();
   function renderNotes(): void {
     if (notes.size === 0) return;
-    note.innerHTML = `<b>Back with fresh snapshots.</b> ${[...notes.values()].join(" · ")}. Revisions in between weren't replayed: StreamOtter V1 delivers the current state, not history.`;
+    note.innerHTML = `<b>Back with fresh snapshots.</b> ${[...notes.values()].join(" · ")}. Revisions in between weren't replayed.${WHY_RESTORED}`;
   }
 
   function card<K extends ChannelName>(element: HTMLElement, label: string, lane: number, channel: K, params: ChannelParams<K>): Card {
@@ -134,7 +138,7 @@ export async function mountLiveCreek(root: HTMLElement): Promise<void> {
     drop.disabled = true;
     restore.disabled = false;
     notes.clear();
-    note.innerHTML = "<b>You're in Slate Canyon: no signal.</b> This page's connection to the gateway is cut. The creek keeps moving; your views say they're stale.";
+    note.innerHTML = "<b>You're in Slate Canyon: no signal.</b> This page's connection to the gateway is cut. The creek keeps moving; your views say they're stale." + WHY_DROPPED;
     log.write([{ tone: "w", text: "network" }, " cut by you"], "Connection cut");
     restore.focus();
   });

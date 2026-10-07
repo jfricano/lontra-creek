@@ -84,7 +84,7 @@ export const SCENARIOS: Record<LabScenarioId, LabScenarioEntry> = {
     establishes: "A separate client stops acknowledging frames. Its receipt timeout disconnects it; your own view keeps flowing."
   },
   "relay-restart": {
-    id: "relay-restart", story: null, title: "Relay restart", delivery: null, controls: "control-relay-restart",
+    id: "relay-restart", story: null, title: "Gateway restart", delivery: null, controls: "control-relay-restart",
     establishes: "Restart your gateway. The SDK reconnects and takes a fresh snapshot; intermediate states are not replayed."
   }
 };

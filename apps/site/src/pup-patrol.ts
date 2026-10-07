@@ -44,18 +44,83 @@ export function hooksIn(release: string): "shipped" | "preview" | "not yet" {
   return prerelease ? "preview" : "shipped";
 }
 
-/** How the game reads the creek, as it is in the game's src/creek.ts. Shown once the pinned release has the hooks. */
-export const HOOKS_EXCERPT = `import { createStreamOtterHooks, StreamOtterProvider } from "streamotter/react";
+/**
+ * The game's own code, excerpted from the pup-patrol repository (file named in each
+ * block's first comment). The hooks excerpts are shown once the pinned release has the
+ * hooks; DEN_EXCERPT is this demo's own code and is always shown.
+ */
+export const CODE = {
+  provider: `// src/App.tsx: one client for the page, live mode only.
+<StreamOtterProvider options={{ origin: config.gatewayOrigin, path: config.gatewayPath, getToken }}>
+  {page}
+</StreamOtterProvider>
+
+// src/backend.ts: a fresh volunteer badge for every connection, kept in memory.
+export async function getToken({ signal }: { signal: AbortSignal }): Promise<string> {
+  const response = await fetch(\`\${API_ORIGIN}/api/badge\`, { method: "POST", signal });
+  if (!response.ok) throw new Error(\`The field station refused a badge (\${response.status}).\`);
+  const body = await response.json() as { token?: unknown };
+  if (typeof body.token !== "string") throw new Error("The field station sent no token.");
+  return body.token;
+}`,
+  subscriptions: `// src/streamotter.ts: the hooks, typed from the generated channel types.
+import { createStreamOtterHooks } from "streamotter/react";
 import type { AppChannels } from "./generated/streamotter.generated.ts";
 
 export const { useSubscription, useConnectionState } = createStreamOtterHooks<AppChannels>();
 
-// In the round, on every render. New params objects each time; the hooks compare
-// them by value, so the subscriptions stay the same ones all round.
+// src/creek.ts: called by the round on every render. New params objects each time;
+// the hooks compare them by value, so the subscriptions stay the same ones all round.
 const den = useSubscription("den", { channelVersion: 1, params: { holtId: "A" } });
 const reach = useSubscription("reach", { channelVersion: 1, params: { reachId: "beaver-flats" } });
 const overview = useSubscription("creekOverview", { channelVersion: 1, params: { watershed: "lontra" } });
-const connection = useConnectionState();
+const connection = useConnectionState();`,
+  states: `// src/creek.ts: anything not live is a problem, and any problem pauses the round.
+const problems = [
+  ...connection === "connected" ? [] : [\`connection: \${connection}\`],
+  ...entries.filter(entry => !entry.result.live).map(entry => \`\${LABELS[entry.channel]}: \${entry.result.state}\`)
+];
+const live = problems.length === 0;
 
-// Anything not live pauses the round on the last known creek.
-const live = connection === "connected" && den.live && reach.live && overview.live;`;
+// The Re-tune button: each resync-required subscription's own resync().
+for (const entry of needsResync) entry.result.resync().catch(() => undefined);
+
+// src/components/Round.tsx (simplified): pause on a stale creek or a hidden tab; resume from the fresh snapshot.
+useEffect(() => {
+  if (!active) pause(game);
+  else if (game.phase === "paused" && feed.ready) resync(game, feed.den.pups);
+}, [active, feed.ready]);`,
+  ticks: `// src/components/Round.tsx (simplified): React hands each creek change to the game in an effect.
+useEffect(() => {
+  if (active) fieldTick(game, feed.overviewRevision);   // a new overview revision is a field tick
+}, [feed.overviewRevision]);
+useEffect(() => {
+  if (active) setPups(game, feed.den.pups);             // out, or called home
+}, [feed.den?.pups]);
+
+// The canvas, outside React: ease toward the tick's targets and draw, every frame.
+const loop = (now: number): void => {
+  step(game, now - last, input);
+  draw(ctx, game, scene);
+  last = now;
+  frame = requestAnimationFrame(loop);
+};`
+} as const;
+
+/** The den view, as this demo's simulation publishes it (packages/creek-sim/src/views.ts). */
+export const DEN_EXCERPT = `/** Deliberately minimal: a holt's reach would place a denning otter, so it isn't here. */
+export interface DenView {
+  holtId: HoltId;
+  pups: "in-den" | "out" | "none";
+}
+
+function denView(world: WorldState, id: HoltId): DenView {
+  const litter = OTTERS.find(profile => profile.den === id && profile.pups.length > 0);
+  const pups = litter === undefined
+    ? "none"
+    : litter.pups.every(pup => world.holts[id].occupants.includes(pup)) ? "in-den" : "out";
+  return { holtId: id, pups };
+}`;
+
+/** Kept for the channel check in the tests: the round's three subscriptions. */
+export const HOOKS_EXCERPT = CODE.subscriptions;

@@ -56,7 +56,7 @@ Each workstream ends with its tests green in CI. Do them in this order; 1–4 ne
 Done ([#1](https://github.com/jfricano/lontra-creek/pull/1)).
 
 - `src/project.ts` has a `production` environment and writes `streamotter.production.json`.
-  - Gateway: host `0.0.0.0`, port 7400, path `/streamotter/socket.io`, `allowedOrigins: ["https://streamotter.dev"]`.
+  - Gateway: host `0.0.0.0`, port 7400, path `/streamotter/socket.io`, `allowedOrigins: ["https://streamotter.dev"]` (and `https://lontracreek.dev` since Pup Patrol, gated by `GAME_ORIGIN`).
   - Connection `field`: brokers `["kafka:9094"]`, `tls: { caFile: "/etc/lontra/kafka/ca.pem" }`, SASL `scram-sha-512` with `{ env: "KAFKA_GATEWAY_USERNAME" }` / `{ env: "KAFKA_GATEWAY_PASSWORD" }`.
   - Source `field`: the `field.*` / `creek.overview` topics (five, and `field.dens` since Pup Patrol), group `streamotter-lontra-creek-field`, `startFrom: "latest"`, generation `field-prod-1`. The `notebooks` source (`field.notebooks`, its own group, so a notebook problem can't pause the creek) arrives with the notebook channel in workstream 2.
   - Limits: `maxConnections: 300` and `maxSubscriptionsPerConnection: 12`, the starting values from PLAN.md, to be measured on the real host.

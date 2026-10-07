@@ -1,12 +1,12 @@
 /**
  * Pup Patrol, the demo game for StreamOtter's React hooks: its own repository, served
- * from lontracreek.dev, reading this demo's public creek channels. The explainer page
+ * from lontracreek.com, reading this demo's public creek channels. The explainer page
  * (/pup-patrol/) shows the hooks only once the release this site pins has them, per the
  * site's rule that every claim matches the pinned release.
  */
 
 export const GAME = {
-  url: "https://lontracreek.dev",
+  url: "https://lontracreek.com",
   /** The npm release that ships `streamotter/react` (the hooks ship in 1.0.0, the public launch). */
   hooksRelease: "1.0.0",
   channels: [

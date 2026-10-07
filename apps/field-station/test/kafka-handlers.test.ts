@@ -79,9 +79,9 @@ describe("the Kafka handlers", () => {
   });
 
   test("authenticate refuses an origin the deployment has switched off, whatever the badge", async () => {
-    const off = createKafkaHandlers({ secret, serviceToken: token, internalOrigin: "http://field-station:7410", refusedOrigins: ["https://lontracreek.dev"] });
+    const off = createKafkaHandlers({ secret, serviceToken: token, internalOrigin: "http://field-station:7410", refusedOrigins: ["https://lontracreek.com"] });
     const badge: Badge = { subject: "volunteer-game", role: "volunteer", name: "Volunteer" };
-    assert.equal(await off.authenticate({ ...context, token: issueToken(badge, { secret, ttlSeconds: 60 }).token, origin: "https://lontracreek.dev" }), null);
+    assert.equal(await off.authenticate({ ...context, token: issueToken(badge, { secret, ttlSeconds: 60 }).token, origin: "https://lontracreek.com" }), null);
     assert.equal((await off.authenticate({ ...context, token: issueToken(badge, { secret, ttlSeconds: 60 }).token, origin: "https://streamotter.dev" }))?.subject, "volunteer-game");
   });
 
@@ -155,7 +155,7 @@ describe("the Kafka handlers", () => {
     assert.deepEqual(kafkaHandlerOptions(production).refusedOrigins, [GAME_ORIGIN]);
     assert.deepEqual(kafkaHandlerOptions({ ...production, GAME_ORIGIN: "" }).refusedOrigins, [GAME_ORIGIN]);
     assert.deepEqual(kafkaHandlerOptions({ ...production, GAME_ORIGIN }).refusedOrigins, []);
-    assert.throws(() => kafkaHandlerOptions({ ...production, GAME_ORIGIN: "https://staging.lontracreek.dev" }), /GAME_ORIGIN must be/);
+    assert.throws(() => kafkaHandlerOptions({ ...production, GAME_ORIGIN: "https://staging.lontracreek.com" }), /GAME_ORIGIN must be/);
     assert.deepEqual(kafkaHandlerOptions({}).refusedOrigins, [], "development refuses nothing");
   });
 

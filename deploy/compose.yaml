@@ -75,7 +75,7 @@ services:
       FIELD_TICK_MS: ${FIELD_TICK_MS:-2000}
       FIELD_GENERATION: ${FIELD_GENERATION:-1}
       SITE_ORIGIN: ${SITE_ORIGIN:-https://streamotter.dev}
-      # Pup Patrol's switch, off unless set: GAME_ORIGIN=https://lontracreek.dev in lontra.env turns
+      # Pup Patrol's switch, off unless set: GAME_ORIGIN=https://lontracreek.com in lontra.env turns
       # on its three /api routes here and its socket handshakes at the gateway (game-origin.ts).
       GAME_ORIGIN: ${GAME_ORIGIN:-}
       GATEWAY_PUBLIC_ORIGIN: ${GATEWAY_PUBLIC_ORIGIN:-https://demo.streamotter.dev}

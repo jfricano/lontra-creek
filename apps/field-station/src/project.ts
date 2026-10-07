@@ -24,11 +24,11 @@ export const PROJECT_ID = "lontra-creek";
 export const CHANNEL_VERSION = 1 as const;
 export const SITE_ORIGIN = "https://streamotter.dev";
 /**
- * Pup Patrol, the hooks demo game (its own repository, served from lontracreek.dev). It reads
+ * Pup Patrol, the hooks demo game (its own repository, served from lontracreek.com). It reads
  * the public creek through the gateway and asks /api/badge for a volunteer token; nothing else
  * on the demo host (the Lab, the sandbox, notebooks) accepts it.
  */
-export const GAME_ORIGIN = "https://lontracreek.dev";
+export const GAME_ORIGIN = "https://lontracreek.com";
 /** The game's Vite dev server, allowed by the development gateways (see game-origin.ts). */
 export const GAME_DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"];
 export const GATEWAY_PATH = "/streamotter/socket.io";

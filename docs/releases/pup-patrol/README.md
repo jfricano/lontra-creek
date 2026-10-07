@@ -2,7 +2,7 @@
 
 **Status: built on branch `feat/pup-patrol-92ggxb`, not merged.** Lontra Creek's main is frozen until the phase-two site is in production, and demo rollouts wait for the owner. Written October 6, 2026 (Pacific).
 
-[Pup Patrol](https://github.com/orca-solutions/pup-patrol) is the demo game for StreamOtter's React hooks, which ship in npm `1.0.0`, the public launch (the owner folded the V1.3 hooks into 1.0.0 on October 6, 2026, Pacific): its own repository, served from lontracreek.dev, reading this demo's creek. Its plan is in that repository (`docs/PLAN.md`, moved from StreamOtter PR #68), with the design in `docs/DESIGN.md`. This page covers what changes here.
+[Pup Patrol](https://github.com/orca-solutions/pup-patrol) is the demo game for StreamOtter's React hooks, which ship in npm `1.0.0`, the public launch (the owner folded the V1.3 hooks into 1.0.0 on October 6, 2026, Pacific): its own repository, served from lontracreek.com, reading this demo's creek. Its plan is in that repository (`docs/PLAN.md`, moved from StreamOtter PR #68), with the design in `docs/DESIGN.md`. This page covers what changes here.
 
 ## Release notes
 
@@ -17,8 +17,8 @@
 
 ### A second allowed origin, for the game, off until switched on
 
-- `GAME_ORIGIN` is Pup Patrol's switch, read by both the field station and the gateway's handlers (`apps/field-station/src/game-origin.ts`). Unset or empty is off. In production it can only be `https://lontracreek.dev`, because that is the game origin the gateway's baked config allows; anything else refuses to start.
-- `streamotter.production.json`: the gateway's `allowedOrigins` is `https://streamotter.dev` and `https://lontracreek.dev`. While the switch is off, the handlers refuse every handshake from the game's origin (`refusedOrigins` in `kafka-handlers.ts`), so the baked origin opens nothing.
+- `GAME_ORIGIN` is Pup Patrol's switch, read by both the field station and the gateway's handlers (`apps/field-station/src/game-origin.ts`). Unset or empty is off. In production it can only be `https://lontracreek.com`, because that is the game origin the gateway's baked config allows; anything else refuses to start.
+- `streamotter.production.json`: the gateway's `allowedOrigins` is `https://streamotter.dev` and `https://lontracreek.com`. While the switch is off, the handlers refuse every handshake from the game's origin (`refusedOrigins` in `kafka-handlers.ts`), so the baked origin opens nothing.
 - Field station, when the switch is on: CORS, without credentials, on `GET /api/config`, `GET /api/status` and `POST /api/badge` only. A badge for the game is always a new volunteer and sets no cookie; the game keeps the token in memory (the plan's recommended session handling). The Lab, the workbench sandbox and notebooks still accept only `SITE_ORIGIN`, which stays one exact origin.
 - `deploy/compose.yaml` passes `GAME_ORIGIN` to both services, default empty (off). `docs/SHARED_HOST_READINESS.md` lists it. Caddy needs no change: only the Lab and sandbox routes match `Origin` there.
 - Development: `GAME_ORIGIN` defaults to the game's Vite dev server (`http://localhost:5173`, `http://127.0.0.1:5173`), and the development gateways (`streamotter.json`, `streamotter.fixture.json`, `npm run dev`, `npm run dev:kafka`) allow it, so the game can run against a local backend.
@@ -30,7 +30,7 @@
 
 ### The explainer page
 
-- `/pup-patrol/` on streamotter.dev, linked from the Docs page's "On this site" (not a new navigation item). It explains how the game uses StreamOtter (one provider, a `useSubscription` per channel tied to the round, subscription and connection states as game states, two-second ticks driving the canvas, and the new `den` channel), what to watch for, and how to play, and links to lontracreek.dev. It shows the hooks code only when the release the site pins has them (`hooksIn(RELEASE)` in `apps/site/src/pup-patrol.ts`): before `1.0.0` it says they arrive in `1.0.0`; for a `1.0.0` prerelease it shows them labeled as a preview.
+- `/pup-patrol/` on streamotter.dev, linked from the Docs page's "On this site" (not a new navigation item). It explains how the game uses StreamOtter (one provider, a `useSubscription` per channel tied to the round, subscription and connection states as game states, two-second ticks driving the canvas, and the new `den` channel), what to watch for, and how to play, and links to lontracreek.com. It shows the hooks code only when the release the site pins has them (`hooksIn(RELEASE)` in `apps/site/src/pup-patrol.ts`): before `1.0.0` it says they arrive in `1.0.0`; for a `1.0.0` prerelease it shows them labeled as a preview.
 
 ## Tests
 
@@ -45,6 +45,6 @@
 
 1. Phase two in production and the main freeze lifted; the owner merges.
 2. `streamotter@1.0.0` on npm with the hooks; the site and field station pins move to it (the explainer then shows the hooks).
-3. The game deployed to lontracreek.dev (Cloudflare Pages and DNS, owner's go).
-4. The image rolled out through the shared-host procedure. Rolling it out alone changes nothing for the game; `GAME_ORIGIN=https://lontracreek.dev` in `/etc/apps/lontra/lontra.env` (and a restart of the field station and gateway) turns it on, once the game is live at step 3.
-5. Hosted acceptance: a round on lontracreek.dev against demo.streamotter.dev, including a real connection drop.
+3. The game deployed to lontracreek.com (Cloudflare Pages and DNS, owner's go).
+4. The image rolled out through the shared-host procedure. Rolling it out alone changes nothing for the game; `GAME_ORIGIN=https://lontracreek.com` in `/etc/apps/lontra/lontra.env` (and a restart of the field station and gateway) turns it on, once the game is live at step 3.
+5. Hosted acceptance: a round on lontracreek.com against demo.streamotter.dev, including a real connection drop.

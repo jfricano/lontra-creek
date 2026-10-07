@@ -273,7 +273,7 @@ describe("the field station's HTTP APIs", () => {
   }
 
   before(async () => {
-    config = { ...readConfig({ FIELD_STATION_SERVICE_TOKEN: token }), siteOrigins: ["https://streamotter.dev"], gameOrigins: ["https://lontracreek.dev"], gatewayOrigin: "https://demo.streamotter.dev" };
+    config = { ...readConfig({ FIELD_STATION_SERVICE_TOKEN: token }), siteOrigins: ["https://streamotter.dev"], gameOrigins: ["https://lontracreek.com"], gatewayOrigin: "https://demo.streamotter.dev" };
     const queue = new PublishQueue(publisher, () => undefined);
     field = new FieldStation({ queue, dataDir: await dataDir(), epoch: EPOCH, tickMs: TICK_MS, generation: 1, now: time.now, log: () => undefined });
     notebooks = new Notebooks({ queue, tenantId: "lontra-creek", now: time.now, log: () => undefined });
@@ -335,13 +335,13 @@ describe("the field station's HTTP APIs", () => {
 
   test("the game's origin gets config, status and a volunteer badge without credentials, and nothing else", async () => {
     const game = (path: string, init: RequestInit & { ip: string }) =>
-      fetch(`${apiOrigin}${path}`, { ...init, headers: { origin: "https://lontracreek.dev", "x-client-ip": init.ip, ...init.headers } });
+      fetch(`${apiOrigin}${path}`, { ...init, headers: { origin: "https://lontracreek.com", "x-client-ip": init.ip, ...init.headers } });
 
     const configured = await game("/api/config", { ip: "198.51.100.60" });
-    assert.equal(configured.headers.get("access-control-allow-origin"), "https://lontracreek.dev");
+    assert.equal(configured.headers.get("access-control-allow-origin"), "https://lontracreek.com");
     assert.equal(configured.headers.get("access-control-allow-credentials"), null);
     const status = await game("/api/status", { ip: "198.51.100.60" });
-    assert.equal(status.headers.get("access-control-allow-origin"), "https://lontracreek.dev");
+    assert.equal(status.headers.get("access-control-allow-origin"), "https://lontracreek.com");
 
     const preflight = await game("/api/badge", { method: "OPTIONS", ip: "198.51.100.61", headers: { "access-control-request-method": "POST" } });
     assert.equal(preflight.status, 204);
@@ -519,9 +519,9 @@ describe("configuration from the environment", () => {
   test("the game's origin is off unless set, and in production can only be the one the gateway allows", () => {
     assert.deepEqual(readConfig(production).gameOrigins, []);
     assert.deepEqual(readConfig({ ...production, GAME_ORIGIN: "" }).gameOrigins, []);
-    assert.deepEqual(readConfig({ ...production, GAME_ORIGIN: "https://lontracreek.dev" }).gameOrigins, ["https://lontracreek.dev"]);
-    for (const origin of ["https://lontracreek.dev,https://example.com", "https://lontracreek.dev/", "lontracreek.dev", "https://staging.lontracreek.dev", "https://streamotter.dev"]) {
-      assert.throws(() => readConfig({ ...production, GAME_ORIGIN: origin }), /GAME_ORIGIN must be https:\/\/lontracreek\.dev/, origin);
+    assert.deepEqual(readConfig({ ...production, GAME_ORIGIN: "https://lontracreek.com" }).gameOrigins, ["https://lontracreek.com"]);
+    for (const origin of ["https://lontracreek.com,https://example.com", "https://lontracreek.com/", "lontracreek.com", "https://staging.lontracreek.com", "https://streamotter.dev"]) {
+      assert.throws(() => readConfig({ ...production, GAME_ORIGIN: origin }), /GAME_ORIGIN must be https:\/\/lontracreek\.com/, origin);
     }
     assert.throws(() => readConfig({ SITE_ORIGIN: "http://localhost:5173" }), /must differ from SITE_ORIGIN/);
     assert.deepEqual(readConfig({}).gameOrigins, ["http://localhost:5173", "http://127.0.0.1:5173"]);

@@ -8,7 +8,7 @@ const hooks=hooksIn(RELEASE);
 <ReferencePage title="Pup Patrol" description="A sixty-second game on Lontra Creek's live channels, built to show StreamOtter's React hooks at work: herd Sprout and Skipper home before the Beaver Flats camera trap fires.">
   <section>
     <p>You are Pebble (LO-07), the river otter who dens at Holt A. Her pups wander out toward a camera trap, and you nudge them home before it fires. The game scripts none of it: the pups come out when the field station says they're out, and the trap fires when its camera does, through the same Kafka topics and gateway as the <a href="/field-station/">field station walkthrough</a>. This page explains how the game uses StreamOtter to do that.</p>
-    <p><a class="button button-primary" href={GAME.url}>Play Pup Patrol at lontracreek.dev ↗</a></p>
+    <p><a class="button button-primary" href={GAME.url}>Play Pup Patrol at lontracreek.com ↗</a></p>
   </section>
 
   <section aria-labelledby="how-title">
@@ -17,7 +17,7 @@ const hooks=hooksIn(RELEASE);
     {hooks==="preview" && <p class="notice" data-hooks="preview">This page describes <code>streamotter@{RELEASE}</code>, a prerelease of {GAME.hooksRelease}. The hooks can still change before {GAME.hooksRelease}.</p>}
 
     <h3>One connection for the page</h3>
-    <p>A <code>StreamOtterProvider</code> wraps the page and owns one StreamOtter client. Its <code>getToken</code> asks this demo's field station for a fresh volunteer badge every time the client connects, and keeps it in memory: no cookie crosses from lontracreek.dev. The game only reads; it never sends anything to Kafka.</p>
+    <p>A <code>StreamOtterProvider</code> wraps the page and owns one StreamOtter client. Its <code>getToken</code> asks this demo's field station for a fresh volunteer badge every time the client connects, and keeps it in memory: no cookie crosses from lontracreek.com. The game only reads; it never sends anything to Kafka.</p>
     {hooks!=="not yet" && <Code code={CODE.provider} lang="tsx" theme="night-owl" />}
 
     <h3>A subscription per channel, for as long as a round is on screen</h3>

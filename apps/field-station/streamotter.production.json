@@ -101,7 +101,7 @@
   "gateway": {
     "allowedOrigins": [
       "https://streamotter.dev",
-      "https://lontracreek.dev"
+      "https://lontracreek.com"
     ],
     "host": "0.0.0.0",
     "path": "/streamotter/socket.io",

@@ -338,7 +338,7 @@ At most one a second per lease (field station, 429 `too-many-actions` with `Retr
 - **Relay tokens.** Each bench has its own, `LAB_BENCH_N_RELAY_TOKEN`, held only by that bench's API (which calls the control API) and that bench's own `lab-N-kafka` proxy (which verifies the call) — no other bench, the field station, or any other process holds it, consistent with M9's per-bench isolation (section 10.5). The E2.0 spike used one token, `LAB_RELAY_TOKEN`, shared by every proxy; E2.1 and E2.3 replace it with this per-bench form.
 - **The principal**: `subject` `lab-<leaseId>`, `sessionId` the lease ID, `tenantId` the study's tenant, `expiresAt` the lease's end, and `claims` `{ role: "volunteer", bench: N }`. StreamOtter closes a connection when its principal expires (`ClientSession`, `src/runtime/session.ts`), so a lease's connections end on time even if nothing else does. Each lease is a new subject, so nothing carries over between visitors.
 - **Ending a lease on the socket.** Reset clears the current lease (new handshakes fail), then calls `gateway.revoke({ kind: "subject", … })`, which closes the old lease's connections with a non-retryable `UNAUTHENTICATED`. The SDK then reports connection `auth-required` and its views `stale` with `UNAUTHENTICATED`; the page closes its client and shows why the lease ended. At natural expiry the gateway closes the connection first; the SDK asks for a token, the page's `getToken` fails with 409 `no-lease`, and the client ends in the same state.
-- **On the page**: a client for the bench, separate from any other on the page, whose `getToken` asks the field station for a bench token. The SDK asks again 30 seconds before `expiresAt` and after a relay restart; while the lease is current it gets a token for the same lease.
+- **On the page**: a client for the bench, separate from any other on the page, whose `getToken` asks the field station for a bench token. The SDK asks again 30 seconds before `expiresAt` and after a gateway restart; while the lease is current it gets a token for the same lease.
 
   ```ts
   const lab = await labToken(); // POST /api/lab/lease/token
@@ -980,7 +980,7 @@ One scenario, one implementation: a scenario listed in both tracks has one set o
 | `unavailable-evidence` | LC11-S09 Unavailable evidence | Source failures | Local and CI only | Quarantine, durable failure journal (`quarantine`, `LAB_LOCAL_EXERCISES`) |
 | `relay-cut` | Flash flood takes the relay | Connections and clients | Existing | Runs: `relay.*` |
 | `slow-client` | Laptop on a satellite link | Connections and clients | Existing | Runs: `satellite.start` |
-| `relay-restart` | Relay restart | Connections and clients | Existing | Runs: `gateway.restart` |
+| `relay-restart` | Gateway restart | Connections and clients | Existing | Runs: `gateway.restart` |
 
 The native capability is what the capability summary names in a `library-lacks-capability` reason (companion plan section 4); the profile is what a `deployment-restricted` reason refers to. The hosted broker runs without Kafka authorization today, so hosted benches use profile `retry` and offer only `calibration-blip` among the new scenarios; local `npm run dev:lab` and CI use `quarantine` with `LAB_LOCAL_EXERCISES=1`. Offering the rest on the hosted Lab needs the owner-approved authorization migration (section 10.7, R2).
 

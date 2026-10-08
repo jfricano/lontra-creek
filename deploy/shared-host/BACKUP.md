@@ -29,9 +29,14 @@ and `LONTRA_IMAGE=<retained immutable release image reference>`. No shell expans
 quoting, or sourcing is performed by the hook. The release directory and immutable config files may be 0755/0644 beneath the
 private app ancestor; they must remain root-owned with no group/world write.
 Required files are `compose.yaml`, `compose.shared.yaml`, `Caddyfile.shared`,
-`start-caddy-shared.sh`, and `kafka/start.sh`. With `lab.enabled`, also include `compose.lab.yaml` and
-`compose.shared.lab.yaml`. Compose applies base, optional Lab, shared, optional
-shared Lab in that order.
+`start-caddy-shared.sh`, and `kafka/start.sh`; `compose.offline.yaml` is hashed when present.
+A Lab release takes one of two layouts:
+
+- **Shared-host adapter (dev-ops `release` stage):** `compose.lab.yaml`, `compose.shared.lab.yaml` and `profile.env`, no `lab.enabled` marker (that adapter forbids it). `profile.env` is passed last as an env file and is hashed with the overlays.
+- **Marker layout:** `lab.enabled` with both overlays and no `profile.env`.
+
+Any other combination (one overlay, a stray `profile.env`, the marker together with `profile.env`) is refused before Docker runs. Compose applies base, optional Lab, shared, optional shared Lab in that order.
+Snapshot also refuses while `/srv/apps/lontra/activation-transaction.json` exists: a pending activation or Lab provisioning transaction must be accepted or recovered first.
 The Compose project is `lontra-creek`; its running `field-station` must use the
 specified image and a named volume mounted at `/var/lib/lontra`.
 Shared activation/deployment must acquire `/srv/apps/lontra/deploy.lock` too, created root:root 0600: the hooks refuse a lock file group or others can read (a plain `exec 9>…` under umask 022 makes it 0644).

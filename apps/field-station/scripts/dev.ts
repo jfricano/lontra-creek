@@ -41,7 +41,7 @@ const { createGateway } = await import("streamotter/gateway");
 const { startManagementServer } = await import("streamotter/gateway/management");
 const { development, fixtureTickSizes, handlers } = await import("../src/fixture-handlers.ts");
 const { fieldStationSecret } = await import("../src/identity.ts");
-const { projectConfig } = await import("../src/project.ts");
+const { GAME_DEV_ORIGINS, projectConfig } = await import("../src/project.ts");
 const { badgeFor } = await import("../src/sessions.ts");
 
 const fixtureConfig = projectConfig("fixture");
@@ -52,7 +52,8 @@ const config = {
   gateway: {
     ...fixtureConfig.gateway,
     port: GATEWAY_PORT,
-    allowedOrigins: [`http://127.0.0.1:${SITE_PORT}`, `http://localhost:${SITE_PORT}`]
+    // The site, and Pup Patrol's Vite dev server (the field station's development GAME_ORIGIN default).
+    allowedOrigins: [`http://127.0.0.1:${SITE_PORT}`, `http://localhost:${SITE_PORT}`, ...GAME_DEV_ORIGINS]
   }
 };
 const gatewayOrigin = `http://${config.gateway.host}:${config.gateway.port}`;

@@ -19,7 +19,7 @@ export interface FieldRecord {
   data: Json;
 }
 
-const CHANNEL_NAMES: ReadonlySet<string> = new Set<RecordChannel>(["creekOverview", "station", "otter", "reach", "holt", "notebook"]);
+const CHANNEL_NAMES: ReadonlySet<string> = new Set<RecordChannel>(["creekOverview", "station", "otter", "reach", "holt", "den", "notebook"]);
 
 /** The topic each channel's records are published to, one topic per channel. */
 export function topicFor(channel: RecordChannel): string {

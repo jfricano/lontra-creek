@@ -3,11 +3,11 @@ import type { FailureHandlingConfig, Json, KafkaConnection, Limits, Principal, P
 import { TransientMappingError, type ChannelHandlers, type HandlerRegistry } from 'streamotter/gateway';
 import type { AppChannels } from '../generated/streamotter.generated.ts';
 import { fromRecord, topicFor, viewPath } from '../records.ts';
-import { projectConfig } from '../project.ts';
+import { projectConfig, SITE_ORIGIN } from '../project.ts';
 import { bench } from './benches.ts';
 import type { FeedEvent } from './feed.ts';
 import type { BenchFailureProfile, BenchSnapshot, LabScenarioId, RecoveryAssessment } from './contract.ts';
-export type LabChannels = Omit<AppChannels, 'notebook' | 'holt'>;
+export type LabChannels = Omit<AppChannels, 'notebook' | 'holt' | 'den'>;
 export type BenchChannels = LabChannels;
 export interface BenchOptions { host?: string; port?: number; brokers?: readonly string[]; caFile?: string; consumerGroup?: string; allowedOrigins?: readonly string[]; /** The study's source generation, `lab-N-<studyId>` (study.ts). */ generation?: string; /** LAB_FAILURE_HANDLING; `off` when omitted. */ profile?: BenchFailureProfile; }
 /** The quarantine writer copies a whole source record plus its envelope, so the quarantine topic must accept this plus about 80 KiB; the broker default does. */
@@ -50,9 +50,9 @@ export function benchConfig(number: number, options: BenchOptions = {}): Project
   const b = bench(number); const production = projectConfig('production'); const field = production.connections['field']; const source = production.sources['field'];
   if (!field || field.tls === false || source?.kind !== 'kafka') throw new Error('Production Kafka over TLS is required.');
   const connection: KafkaConnection = { brokers: [...(options.brokers ?? [`${b.proxyHost}:${b.proxyPort}`])], tls: { caFile: options.caFile ?? field.tls.caFile ?? '/etc/lontra/kafka/ca.pem' }, sasl: { mechanism: 'scram-sha-512', username: { env: 'KAFKA_LAB_USERNAME' }, password: { env: 'KAFKA_LAB_PASSWORD' } } };
-  const { notebook: _n, holt: _h, ...channels } = production.channels;
+  const { notebook: _n, holt: _h, den: _d, ...channels } = production.channels;
   const failureHandling = failureHandlingFor(number, options.profile ?? 'off');
-  return { configVersion: 1, projectId: b.projectId, gateway: { host: options.host ?? '0.0.0.0', port: options.port ?? 7400, path: b.gatewayPath, allowedOrigins: [...(options.allowedOrigins ?? production.gateway.allowedOrigins)] }, connections: { field: connection }, sources: { field: { ...source, generation: options.generation ?? `lab-${number}-field-1`, topics: [...b.topics], consumerGroup: options.consumerGroup ?? b.consumerGroup, startFrom: 'latest' } }, schemas: production.schemas, channels, limits: BENCH_LIMITS, ...(failureHandling ? { failureHandling } : {}) };
+  return { configVersion: 1, projectId: b.projectId, gateway: { host: options.host ?? '0.0.0.0', port: options.port ?? 7400, path: b.gatewayPath, allowedOrigins: [...(options.allowedOrigins ?? [SITE_ORIGIN])] }, connections: { field: connection }, sources: { field: { ...source, generation: options.generation ?? `lab-${number}-field-1`, topics: [...b.topics], consumerGroup: options.consumerGroup ?? b.consumerGroup, startFrom: 'latest' } }, schemas: production.schemas, channels, limits: BENCH_LIMITS, ...(failureHandling ? { failureHandling } : {}) };
 }
 /**
  * Scenario records the field station publishes carry a `mapping` marker; `fromRecord`

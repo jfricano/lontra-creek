@@ -5,7 +5,11 @@
  * has no nullable types, so "nothing yet" is spelled out (day 0, "--:--", "none").
  *
  * Den sites are protected. While an otter is in a holt, its public view withholds
- * where it is; only the restricted holt channel has the location.
+ * where it is; only the restricted holt channel has the location. The public den
+ * view says only whether a holt's pups are home: no reach, no grid reference, and
+ * nothing about the adults, so it can't place an otter that the otter view
+ * withholds. (Whether the pups are out is already public: the mother's otter view
+ * says when they are with her.)
  */
 import type { Species } from "./cameras.ts";
 import { studyTime, type Daylight } from "./clock.ts";
@@ -76,6 +80,15 @@ export interface HoltView {
   lastExit: StudyStamp;
 }
 
+/** A holt's pups: home, out with their mother, or none (a holt without a litter). */
+export type PupsAtDen = "in-den" | "out" | "none";
+
+/** Deliberately minimal: a holt's reach would place a denning otter, so it isn't here. */
+export interface DenView {
+  holtId: HoltId;
+  pups: PupsAtDen;
+}
+
 export interface OverviewView {
   watershed: typeof WATERSHED_ID;
   observed: StudyStamp;
@@ -90,6 +103,7 @@ export interface ChannelViews {
   otter: OtterView;
   reach: ReachView;
   holt: HoltView;
+  den: DenView;
   creekOverview: OverviewView;
 }
 
@@ -98,6 +112,7 @@ export interface ChannelParams {
   otter: { otterId: OtterId };
   reach: { reachId: CameraReachId };
   holt: { holtId: HoltId };
+  den: { holtId: HoltId };
   creekOverview: { watershed: typeof WATERSHED_ID };
 }
 
@@ -109,6 +124,7 @@ export const TOPICS: Readonly<Record<ChannelName, string>> = {
   otter: "field.telemetry",
   reach: "field.cameras",
   holt: "field.holts",
+  den: "field.dens",
   creekOverview: "creek.overview"
 };
 
@@ -239,6 +255,14 @@ function holtView(world: WorldState, id: HoltId): HoltView {
   };
 }
 
+function denView(world: WorldState, id: HoltId): DenView {
+  const litter = OTTERS.find(profile => profile.den === id && profile.pups.length > 0);
+  const pups: PupsAtDen = litter === undefined
+    ? "none"
+    : litter.pups.every(pup => world.holts[id].occupants.includes(pup)) ? "in-den" : "out";
+  return { holtId: id, pups };
+}
+
 function overviewView(world: WorldState): OverviewView {
   const time = studyTime(world.tick);
   return {
@@ -264,6 +288,7 @@ export function allViews(world: WorldState): View[] {
     ...STATIONS.map((station): View => ({ channel: "station", key: `station:${station.id}`, params: { stationId: station.id }, data: stationView(world, station.id) })),
     ...OTTERS.map((otter): View => ({ channel: "otter", key: `otter:${otter.id}`, params: { otterId: otter.id }, data: otterView(world, otter.id) })),
     ...CAMERAS.map((camera): View => ({ channel: "reach", key: `reach:${camera.reach}`, params: { reachId: camera.reach }, data: reachView(world, camera.id) })),
-    ...HOLTS.map((holt): View => ({ channel: "holt", key: `holt:${holt.id}`, params: { holtId: holt.id }, data: holtView(world, holt.id) }))
+    ...HOLTS.map((holt): View => ({ channel: "holt", key: `holt:${holt.id}`, params: { holtId: holt.id }, data: holtView(world, holt.id) })),
+    ...HOLTS.map((holt): View => ({ channel: "den", key: `den:${holt.id}`, params: { holtId: holt.id }, data: denView(world, holt.id) }))
   ];
 }

@@ -13,7 +13,7 @@ function labWrites(page: import("@playwright/test").Page): string[] {
   return writes;
 }
 
-const routes = ["/", "/docs/", "/releases/", "/when-it-breaks/", "/playground/", "/workbench/", "/field-station/", "/lab/"];
+const routes = ["/", "/docs/", "/releases/", "/when-it-breaks/", "/playground/", "/workbench/", "/field-station/", "/lab/", "/pup-patrol/"];
 
 test("every public route has unique metadata and internal links resolve", async ({ page, request }) => {
   const titles = new Set<string>();

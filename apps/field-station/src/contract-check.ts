@@ -17,9 +17,11 @@ export type ChannelContractsMatch = [
   Expect<Same<AppChannels["otter"]["data"], ChannelViews["otter"]>>,
   Expect<Same<AppChannels["reach"]["data"], ChannelViews["reach"]>>,
   Expect<Same<AppChannels["holt"]["data"], ChannelViews["holt"]>>,
+  Expect<Same<AppChannels["den"]["data"], ChannelViews["den"]>>,
   Expect<Same<AppChannels["creekOverview"]["params"], ChannelParams["creekOverview"]>>,
   Expect<Same<AppChannels["station"]["params"], ChannelParams["station"]>>,
   Expect<Same<AppChannels["otter"]["params"], ChannelParams["otter"]>>,
   Expect<Same<AppChannels["reach"]["params"], ChannelParams["reach"]>>,
-  Expect<Same<AppChannels["holt"]["params"], ChannelParams["holt"]>>
+  Expect<Same<AppChannels["holt"]["params"], ChannelParams["holt"]>>,
+  Expect<Same<AppChannels["den"]["params"], ChannelParams["den"]>>
 ];

@@ -75,6 +75,9 @@ services:
       FIELD_TICK_MS: ${FIELD_TICK_MS:-2000}
       FIELD_GENERATION: ${FIELD_GENERATION:-1}
       SITE_ORIGIN: ${SITE_ORIGIN:-https://streamotter.dev}
+      # Pup Patrol's switch, off unless set: GAME_ORIGIN=https://lontracreek.com in lontra.env turns
+      # on its three /api routes here and its socket handshakes at the gateway (game-origin.ts).
+      GAME_ORIGIN: ${GAME_ORIGIN:-}
       GATEWAY_PUBLIC_ORIGIN: ${GATEWAY_PUBLIC_ORIGIN:-https://demo.streamotter.dev}
     volumes:
       - ${LONTRA_SECRETS:?}/kafka/ca.pem:/etc/lontra/kafka/ca.pem:ro
@@ -100,6 +103,8 @@ services:
       FIELD_STATION_SECRET: ${FIELD_STATION_SECRET:?}
       FIELD_STATION_SERVICE_TOKEN: ${FIELD_STATION_SERVICE_TOKEN:?}
       FIELD_STATION_INTERNAL_URL: http://field-station:7410
+      # The same Pup Patrol switch as the field station's: off refuses the game origin's handshakes.
+      GAME_ORIGIN: ${GAME_ORIGIN:-}
     volumes:
       - ${LONTRA_SECRETS:?}/kafka/ca.pem:/etc/lontra/kafka/ca.pem:ro
     depends_on:

@@ -7,6 +7,7 @@ import type { Json, Principal, SourceRecord } from "streamotter/contracts";
 import { mayRead } from "../src/access.ts";
 import { issueToken, type Badge } from "../src/identity.ts";
 import { createKafkaHandlers, HANDSHAKES_PER_BADGE, kafkaHandlerOptions } from "../src/kafka-handlers.ts";
+import { GAME_DEV_ORIGINS, GAME_ORIGIN, projectConfig } from "../src/project.ts";
 import { toRecord } from "../src/records.ts";
 
 const appDir = join(import.meta.dirname, "..");
@@ -77,6 +78,13 @@ describe("the Kafka handlers", () => {
     assert.equal(await handlers.authenticate({ ...context, token: forged, origin: "https://streamotter.dev" }), null);
   });
 
+  test("authenticate refuses an origin the deployment has switched off, whatever the badge", async () => {
+    const off = createKafkaHandlers({ secret, serviceToken: token, internalOrigin: "http://field-station:7410", refusedOrigins: ["https://lontracreek.com"] });
+    const badge: Badge = { subject: "volunteer-game", role: "volunteer", name: "Volunteer" };
+    assert.equal(await off.authenticate({ ...context, token: issueToken(badge, { secret, ttlSeconds: 60 }).token, origin: "https://lontracreek.com" }), null);
+    assert.equal((await off.authenticate({ ...context, token: issueToken(badge, { secret, ttlSeconds: 60 }).token, origin: "https://streamotter.dev" }))?.subject, "volunteer-game");
+  });
+
   test("one badge opens at most HANDSHAKES_PER_BADGE connections", async () => {
     const badge: Badge = { subject: "volunteer-many", role: "volunteer", name: "Volunteer" };
     const signed = issueToken(badge, { secret, ttlSeconds: 60 }).token;
@@ -140,6 +148,22 @@ describe("the Kafka handlers", () => {
     assert.throws(() => kafkaHandlerOptions({ NODE_ENV: "production", FIELD_STATION_SERVICE_TOKEN: token }), /FIELD_STATION_SECRET/);
     const options = kafkaHandlerOptions({ NODE_ENV: "production", FIELD_STATION_SECRET: secret, FIELD_STATION_SERVICE_TOKEN: token, FIELD_STATION_INTERNAL_URL: "http://field-station:7410/" });
     assert.equal(options.internalOrigin, "http://field-station:7410");
+  });
+
+  test("GAME_ORIGIN is the gateway's Pup Patrol switch: off unless set to the origin its config allows", () => {
+    const production = { NODE_ENV: "production", FIELD_STATION_SECRET: secret, FIELD_STATION_SERVICE_TOKEN: token };
+    assert.deepEqual(kafkaHandlerOptions(production).refusedOrigins, [GAME_ORIGIN]);
+    assert.deepEqual(kafkaHandlerOptions({ ...production, GAME_ORIGIN: "" }).refusedOrigins, [GAME_ORIGIN]);
+    assert.deepEqual(kafkaHandlerOptions({ ...production, GAME_ORIGIN }).refusedOrigins, []);
+    assert.throws(() => kafkaHandlerOptions({ ...production, GAME_ORIGIN: "https://staging.lontracreek.com" }), /GAME_ORIGIN must be/);
+    assert.deepEqual(kafkaHandlerOptions({}).refusedOrigins, [], "development refuses nothing");
+  });
+
+  test("every gateway config allows the game's origin, so the switch alone decides", () => {
+    assert.ok(projectConfig("production").gateway.allowedOrigins.includes(GAME_ORIGIN));
+    for (const environment of ["fixture", "local-kafka"] as const) {
+      for (const origin of GAME_DEV_ORIGINS) assert.ok(projectConfig(environment).gateway.allowedOrigins.includes(origin), `${environment} ${origin}`);
+    }
   });
 });
 

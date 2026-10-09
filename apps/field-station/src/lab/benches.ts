@@ -37,7 +37,7 @@ export interface Bench {
   readonly gatewayPath: string;
 }
 
-export const CREEK_TOPICS: readonly string[] = [...new Set(Object.entries(TOPICS).filter(([channel]) => channel !== "holt").map(([, topic]) => topic))];
+export const CREEK_TOPICS: readonly string[] = [...new Set(Object.entries(TOPICS).filter(([channel]) => channel !== "holt" && channel !== "den").map(([, topic]) => topic))];
 
 export function bench(number: number): Bench {
   if (!Number.isSafeInteger(number) || number < 1 || number > MAX_BENCHES) {

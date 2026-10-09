@@ -50,8 +50,10 @@ test("streamotter.dev links to the game: a home card and the footer, not the hea
   const base = readFileSync(new URL("../src/layouts/Base.astro", import.meta.url), "utf8");
   assert.match(home, /const explorePages = \[\.\.\.LISTED_PAGES\.filter\([^\n]*\), GAME_PAGE\];/, "a card in the home page's See it run grid");
   assert.match(base, /<a href=\{GAME_PAGE\.href\}>\{GAME_PAGE\.label\}<\/a>/, "the footer's Explore list");
-  assert.match(base, /<a href=\{GAME\.url\}>Play Pup Patrol ↗<\/a>/, "the footer's Project list, straight to lontracreek.com");
+  const newTab = String.raw`target="_blank" rel="noopener">`;
+  assert.ok(base.includes(`<a href={GAME.url} ${newTab}Play Pup Patrol ↗<span class="sr-only"> (opens in a new tab)</span></a>`), "the footer's Project list, straight to lontracreek.com in a new tab");
   assert.equal(GAME.url, "https://lontracreek.com");
   assert.equal(GAME_PAGE.href, "/pup-patrol/");
-  assert.match(page, /href=\{GAME\.url\}>Play Pup Patrol at lontracreek\.com ↗/, "the explainer's play button");
+  assert.ok(page.includes(`href={GAME.url} ${newTab}Play Pup Patrol at lontracreek.com ↗<span class="sr-only"> (opens in a new tab)</span>`), "the explainer's play button, in a new tab");
+  assert.ok(![...`${base}${page}`.matchAll(/href=\{GAME\.url\}[^>]*>/g)].some(match => !match[0].includes('target="_blank"')), "every link to the game opens a new tab");
 });

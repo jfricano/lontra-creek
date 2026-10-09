@@ -30,7 +30,7 @@
 
 ### The explainer page
 
-- `/pup-patrol/` on streamotter.dev. It is linked from a card in the home page's "See it run" grid, the footer's Explore list and the Docs page's "On this site"; the footer's Project list also links straight to lontracreek.com ("Play Pup Patrol ↗"). It is not a header navigation item: it's a demo of one feature. It explains how the game uses StreamOtter (one provider, a `useSubscription` per channel tied to the round, subscription and connection states as game states, two-second ticks driving the canvas, and the new `den` channel), what to watch for, and how to play, and links to lontracreek.com. It shows the hooks code only when the release the site pins has them (`hooksIn(RELEASE)` in `apps/site/src/pup-patrol.ts`): before `1.0.0` it says they arrive in `1.0.0`; for a `1.0.0` prerelease it shows them labeled as a preview.
+- `/pup-patrol/` on streamotter.dev. It is linked from a card in the home page's "See it run" grid, the footer's Explore list and the Docs page's "On this site"; the footer's Project list also links straight to lontracreek.com ("Play Pup Patrol ↗"). Every link to the game opens in a new tab. It is not a header navigation item: it's a demo of one feature. It explains how the game uses StreamOtter (one provider, a `useSubscription` per channel tied to the round, subscription and connection states as game states, two-second ticks driving the canvas, and the new `den` channel), what to watch for, and how to play, and links to lontracreek.com. It shows the hooks code only when the release the site pins has them (`hooksIn(RELEASE)` in `apps/site/src/pup-patrol.ts`): before `1.0.0` it says they arrive in `1.0.0`; for a `1.0.0` prerelease it shows them labeled as a preview.
 
 ## Tests
 

@@ -5,6 +5,8 @@
  * site's rule that every claim matches the pinned release.
  */
 
+import type { Page } from "./site.ts";
+
 export const GAME = {
   url: "https://lontracreek.com",
   /** The npm release that ships `streamotter/react` (the hooks ship in 1.0.0, the public launch). */
@@ -24,6 +26,18 @@ export const GAME = {
     { state: "live again", source: "useSubscription", game: "The fresh snapshot wins: the pups go where the den view says, and trap frames taken while paused don't count." }
   ]
 } as const;
+
+/**
+ * The explainer, as a card for the home page's "See it run" grid and a footer link. It stays
+ * out of the header navigation: it's a demo of one feature, not a part of the site.
+ */
+export const GAME_PAGE: Page = {
+  href: "/pup-patrol/",
+  label: "Pup Patrol",
+  question: "What can I build with the hooks?",
+  summary: "A sixty-second game on the creek's live channels, built with StreamOtter's React hooks. Play it at lontracreek.com, then see how it uses each hook.",
+  ready: true
+};
 
 function parse(version: string): { core: [number, number, number]; prerelease: boolean } {
   const match = /^(\d+)\.(\d+)\.(\d+)(-.+)?$/.exec(version);

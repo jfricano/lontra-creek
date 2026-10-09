@@ -6,6 +6,7 @@ import figtreeLatin from "@fontsource-variable/figtree/files/figtree-latin-wght-
 import LockupHorizontal from "../assets/brand/lockup-horizontal.svg";
 import LockupStacked from "../assets/brand/lockup-stacked.svg";
 import { LINKS, LISTED_PAGES, RELEASE, TAGLINE } from "../site.ts";
+import { GAME, GAME_PAGE } from "../pup-patrol.ts";
 import { bootstrapTabletNetwork } from "../scripts/tablet-network-bootstrap.ts";
 
 interface Props {
@@ -97,6 +98,7 @@ const isCurrent = (href: string) => (current.startsWith(href) ? "page" : undefin
         <nav class="foot-links" aria-labelledby="foot-explore">
           <p class="eyebrow" id="foot-explore">Explore</p>
           {LISTED_PAGES.map(page => <a href={page.href}>{page.label}</a>)}
+          <a href={GAME_PAGE.href}>{GAME_PAGE.label}</a>
         </nav>
         <nav class="foot-links" aria-labelledby="foot-project">
           <p class="eyebrow" id="foot-project">Project</p>
@@ -105,6 +107,7 @@ const isCurrent = (href: string) => (current.startsWith(href) ? "page" : undefin
           <a href={LINKS.gettingStarted}>Getting started</a>
           <a href={LINKS.changelog}>Changelog</a>
           <a href={LINKS.demoRepo}>This site's source</a>
+          <a href={GAME.url}>Play Pup Patrol ↗</a>
         </nav>
       </div>
       <div class="wrap copyright muted">© 2026 Orca Solutions</div>

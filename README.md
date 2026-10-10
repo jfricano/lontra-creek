@@ -107,3 +107,7 @@ Lontra Creek, its field station, and its otters are made up. The pipeline is rea
 ## License
 
 [MIT](LICENSE) © 2026 Orca Solutions.
+
+## Delivery workflow
+
+See [the delivery workflow](docs/WORKFLOW.md) for author verification, focused review of high-risk changes and scoped release authority. Existing project behavior and setup commands above remain authoritative.

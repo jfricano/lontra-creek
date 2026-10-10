@@ -1,8 +1,14 @@
 # Software Operating Guide
 
-Version 3.0 | October 9, 2026
+Version 3.1.1 | October 9, 2026
 
 Practical delivery policy for Claude and Codex. Replaces v2.3's blanket independent-review requirement. The aim is useful, reliable software delivered with little coordination overhead. Verification is mandatory; a second agent is not mandatory for every change. Matching AGENTS.md and CLAUDE.md are the short entry points; PR_WORKFLOW.md supplies the delivery details.
+
+Operating philosophy: deep thinking and complex logic beneath an intuitive interface and powerful simplicity. Apply this to everything we do: products, architecture, implementation, documentation, internal tools, coordination, verification and handoffs. Understand the problem deeply and handle its necessary complexity so the person using the result can act clearly and confidently. Simplicity is a designed outcome, not shallow reasoning, missing capability or merely fewer words and screens.
+
+Simplicity must never substitute for completeness. Deliver complete approved behavior, including necessary edge cases, invariants, failure handling and operational obligations. Make the interface and workflow understandable and easy to operate while handling necessary complex logic underneath. Simplify the recipient's experience without reducing required capability or correctness. Completeness is measured against approved scope, not speculative feature expansion. Keep material consequences, permissions, costs and recovery choices visible.
+
+Documentation is a core operational asset and the shared memory that builds resilience across teams. Another authorized team or session must be able to understand and continue the work without depending on one chat or agent. Efficiency means less duplicate reporting, not less durable knowledge. Keep essential documentation complete, accurate and usable; brevity or token savings must not erase what others need to operate, verify or recover the work.
 
 ## 1. Ownership and authority
 
@@ -85,6 +91,8 @@ Keep one home for each fact:
 - ADR: only a consequential decision with lasting tradeoffs. No ADR for ordinary implementation detail.
 - Release/handoff receipt: only where another owner or environment needs durable exact-source evidence.
 
+Maintain durable documentation alongside meaningful implementation changes and handoffs. It must explain approved scope, consequential decisions and why, current implementation versus deployed state, interfaces, remaining issues, useful verification evidence, and applicable setup, release and recovery procedures. Scale detail to the actual scope and risk; update the affected authoritative records rather than generating a new report for every task. Make records easy to navigate and useful to the next authorized team, whether that takes a paragraph or a detailed guide. Preserve dated history while directing readers to current truth. Documentation is part of delivery, not optional cleanup, and does not require a separate independent review or reporting layer by default.
+
 Link existing evidence instead of copying the same status into several reports. Preserve dated history but point entry documents to the current state. Do not create a new audit/report/PR for every test result. Respect client separation and employment boundaries; synthetic data is the default.
 
 ## 8. Honest completion and policy adoption
@@ -94,3 +102,37 @@ Report: what works now, checks actually run/reused, important unverified behavio
 This scaffold is the source for new/adopted project instructions, not an automatic rewrite of every existing repository. Project-specific accepted requirements and protections still apply until deliberately reconciled. Ignored local instructions are not delivered by Git clone; supply them through supported session/project mechanisms or explicitly authorize tracking them.
 
 When changing this policy, preserve the previous version outside active sources, update both identical entry points and affected role/templates, and record the change. Do not silently modify project permissions, release workflows, automations or repository settings.
+
+## 9. Powerful simplicity in every outcome
+
+Make the next useful action clear whether the interface is a product screen, API, command, document, report or team handoff. Organize around the recipient's goal; choose sensible defaults, expose necessary detail when useful, and remove avoidable steps, duplicated facts and coordination. A concise surface must retain the evidence and depth needed to trust and operate it. Judge efficiency by useful outcomes and total effort, including the human's attention and future maintenance, not by how little thought or code a task takes.
+
+Understand the user's goal, constraints, edge cases and hard tradeoffs before expanding the solution. Invest deeper reasoning where a wrong assumption would cause expensive rework. Use a concrete flow or small working slice to resolve meaningful UX choices; reuse approved direction for routine changes.
+
+Make the common path intuitive, with clear language, sensible defaults, accessible controls and useful feedback. Reveal advanced power when it is useful. Necessary internal complexity should produce simpler decisions and reliable behavior for the user. Keep important consequences, permissions, costs and recovery choices visible. A sparse interface that makes essential work difficult is not simplicity.
+
+Separate business rules from presentation and provider integrations at real boundaries. Keep secrets and privileged operations on the trusted side. Model important invariants explicitly and check meaningful failure paths. Prefer a modular monolith and existing tools when adequate; add abstraction, services or infrastructure only for a demonstrated need. Complex logic is justified by the problem, not by sophistication alone.
+
+For data with lasting value, preserve practical export and migration paths. Record consequential architecture tradeoffs and the evidence that would justify changing them in a short ADR. These principles guide implementation; they do not require an architecture document or another approval for every task.
+
+## 10. Cost, services and agent usage
+
+Prefer suitable existing entitlements, local tools, open source and free tiers. Before adopting or materially changing a dependency/service, check relevant current limits, licensing, data retention, export and upgrade path. Reuse evidence while it remains applicable. New or increased subscriptions, paid usage, overages or converting trials need authorization unless a recorded budget covers them; a payment method on file is not authorization. When a cost decision is needed, present the free option, smallest adequate paid option, upgrade trigger and recommendation.
+
+Agent usage shares the human's budget. Keep configured models unless selection is authorized; within that authority choose capability and effort appropriate to the problem. Spend rigor on consequential design and correctness, use focused execution for settled work, and avoid unnecessary parallel contexts or idle watchers. When usage is constrained, finish and preserve a safe increment and its short working record before starting more work. Do not expand into speculative roadmap work or ongoing monitoring without instruction.
+
+## 11. Studio and client boundaries
+
+Studio work uses the human's personal devices and accounts. Never request, accept or handle information from the human's other employment. Keep their employer/public role out of studio copy and repositories unless explicitly instructed.
+
+Keep client material in that client's authorized project and repositories, without cross-client context, examples or code. Synthetic data is the default. Real client data requires explicit authorization after applicable confidentiality terms are checked, and must not enter public repositories or unauthorized services. Never print, commit or log secrets or personal data.
+
+The approved brief defines client scope, acceptance criteria, exclusions, revision limits, data/integrations and milestones as relevant. A material request outside it needs a concise change proposal explaining scope, time and cost; do not silently expand work or agree on the human's behalf. Reuse the approved brief for work within scope.
+
+## 12. Durable delivery
+
+Deliver working behavior with the applicable setup/usage instructions, meaningful verification evidence, known limitations and recovery guidance. For a substantive release or client handoff, include relevant change history, dependency/license information and maintenance boundaries, including what is not covered. Scale these to the project and link existing records rather than creating a document for each item.
+
+Source approval, release acceptance and authority to publish are distinct. Present the actual candidate and remaining gaps; passing checks alone is not release acceptance, and acceptance cannot make a failed check pass. Preserve important work and state durably before an ephemeral environment can disappear, using only authorized destinations. A local temporary artifact is not a backup.
+
+Restore and maintain these substantive principles when simplifying process. Apply them to the affected work with proportionate checks and existing evidence; do not reintroduce blanket independent review, repeated approvals or duplicate reporting.

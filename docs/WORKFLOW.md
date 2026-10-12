@@ -1,6 +1,6 @@
 # Delivery workflow
 
-Practical workflow v3.1.1, updated October 9, 2026. Existing product requirements,
+Practical workflow v3.1.4, updated October 11, 2026. Existing product requirements,
 project permissions and repository protections continue to apply.
 
 - One delivery owner implements and verifies a useful increment in an owned
@@ -47,3 +47,11 @@ Prefer suitable existing entitlements, local tools, open source and free tiers. 
 Keep studio work on personal devices/accounts and other-employment information out of studio work. Keep client material within its authorized project without cross-client context, examples or code. Use synthetic data; real client data needs explicit authority and checked confidentiality terms and must not enter public repositories or unauthorized services. Never log or commit secrets or personal data. Material client scope changes require a concise scope/time/cost proposal; reuse approved scope for ordinary work within it.
 
 Deliver applicable setup/usage instructions, meaningful evidence, limitations and recovery guidance. Substantive releases/handoffs include relevant change history, dependency/license information and maintenance boundaries; link existing records rather than manufacturing documents. Source approval, release acceptance and publication authority are distinct; passing checks alone is not acceptance. Preserve work durably through authorized destinations. Author verification happens during implementation: inspect a typo, exercise affected UI, or reproduce a bug and check relevant regressions. No exhaustive self-review, full suite or fresh context by default. Existing repository permissions, privacy rules, consequence-based checks and explicit review exceptions remain controlling.
+
+## Human-centered implementation — v3.1.4
+
+Begin with the person using the result: their goal, context, constraints and attention. Use clear language without blame, accessible interactions, honest status and practical recovery. Keep consequential choices visible; teammates and maintainers are users too. Meet clients and ideas with curiosity and respect for their intended experience, including playful or unconventional entertainment. Apply technical rigor to approved goals and actual constraints without imposing personal taste or adding a judgment phase.
+
+Make touched code pleasant to read: use a single blank line between distinct logical steps or phases where it helps scanning, keep closely related statements together, and follow established language conventions between declarations/functions. Respect existing formatters, linting and language idioms. Avoid per-statement padding, decorative separators or arbitrary spacing that obscures flow. Exclude generated/minified code; improve touched code incrementally with focused diffs, without behavior changes or broad formatting churn solely for this preference.
+
+These refinements fit the existing implementation and verification loop; no new checklist, review gate, formatter mandate or staffing layer. Preserve complete approved behavior, durable documentation and all project-specific requirements and permissions.

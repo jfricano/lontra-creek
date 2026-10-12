@@ -1,16 +1,14 @@
 # Practical PR and release workflow
 
-Version 3.0 | October 9, 2026
+Companion to policy v3.1.4 | October 11, 2026
 
 The author checks every change. Independent review is required for high-risk behavior, not every PR. Follow SOFTWARE_OPERATING_GUIDE.md section 3 for classification. Existing repository-required checks/protections still apply.
 
 ## 1. Own and build a useful increment
 
-Author verification is part of implementation, not a separate exhaustive self-review, report or subagent. For a typo, inspect the edit; for UI, exercise the affected rendered flow; for a bug, reproduce it and run relevant regressions. A full suite or fresh context is not the default.
-
 Use an owned branch/worktree from the appropriate base. Inspect real state, preserve unrelated work and name dependencies. Default to one PR for a coherent outcome, including affected documentation. Open a draft while incomplete; commit/push only within authorization and use configured signing. Keep shared main a clean reading baseline.
 
-A bounded fix needs a short outcome and acceptance check, not a new planning ceremony. Author inspect the diff and run relevant checks/changed flows. Add regression coverage for important behavior. Record unrun checks and reasons.
+A bounded fix needs a short outcome and acceptance check, not a new planning ceremony. The author inspects the diff and verifies affected behavior during implementation: inspect a typo, exercise an affected UI flow, or reproduce a bug and check relevant regressions. No separate exhaustive self-review, report, subagent or full suite by default. Record unrun checks and reasons.
 
 ## 2. Choose the review needed
 

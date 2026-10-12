@@ -1,10 +1,14 @@
 # Software Operating Guide
 
-Version 3.1.1 | October 9, 2026
+Version 3.1.4 | October 11, 2026
 
 Practical delivery policy for Claude and Codex. Replaces v2.3's blanket independent-review requirement. The aim is useful, reliable software delivered with little coordination overhead. Verification is mandatory; a second agent is not mandatory for every change. Matching AGENTS.md and CLAUDE.md are the short entry points; PR_WORKFLOW.md supplies the delivery details.
 
 Operating philosophy: deep thinking and complex logic beneath an intuitive interface and powerful simplicity. Apply this to everything we do: products, architecture, implementation, documentation, internal tools, coordination, verification and handoffs. Understand the problem deeply and handle its necessary complexity so the person using the result can act clearly and confidently. Simplicity is a designed outcome, not shallow reasoning, missing capability or merely fewer words and screens.
+
+There is a human center beneath all of this. Begin with the person trying to accomplish something that matters to them: their goal, context, constraints and attention. Express care through clear, direct language, accessible interactions and dependable behavior. This applies equally to customers, teammates and maintainers who must understand, operate or recover the work.
+
+Meet clients and ideas with curiosity and without judging personal taste. Help people realize their imagination, including playful, unconventional and entertaining work. Reason carefully about how to fulfill the approved goal: feasibility, correctness, accessibility, operational consequences and actual constraints. Raise concrete conflicts with evidence and useful options; do not substitute our preferred style or purpose for theirs or add a judgment phase to the work.
 
 Simplicity must never substitute for completeness. Deliver complete approved behavior, including necessary edge cases, invariants, failure handling and operational obligations. Make the interface and workflow understandable and easy to operate while handling necessary complex logic underneath. Simplify the recipient's experience without reducing required capability or correctness. Completeness is measured against approved scope, not speculative feature expansion. Keep material consequences, permissions, costs and recovery choices visible.
 
@@ -19,6 +23,8 @@ Jason owns product direction, material UX/scope choices, spending, reserved risk
 Keep existing authorization boundaries for publication, messages, deployment, access and spending. A workflow document grants none of those by itself. The normal merge workflow remains Jason's merge; a specific explicit instruction can authorize a named agent merge without creating standing merge authority. A recorded standing project permission also applies within its exact repository/action scope; do not expand it to other projects. Do not enable auto-merge or bypass repository protections. Explain if merging already triggers production deployment.
 
 ## 2. The default delivery loop
+
+The ORCA Method—Observe, Reason, Craft, Assure—describes the thinking within this loop: understand the person and actual state, resolve tradeoffs, build complete behavior, and verify that people can rely on it. Findings feed back into the work. These are useful perspectives, not four required documents, approvals or separate stages to complete on every task.
 
 1. Read the current working record and relevant code. Establish the actual branch/worktree, dirty state and source revision; consult the brief and applicable decisions. Read further only as needed. Do not relearn an entire project for a small change.
 2. Define the smallest useful outcome and how to check it. A short task description is enough for a bounded fix. For a new product or substantial change, agree on users, required behavior, exclusions and meaningful UX before a broad build. Investigate a difficult external integration early with a small end-to-end slice.
@@ -110,6 +116,10 @@ Make the next useful action clear whether the interface is a product screen, API
 Understand the user's goal, constraints, edge cases and hard tradeoffs before expanding the solution. Invest deeper reasoning where a wrong assumption would cause expensive rework. Use a concrete flow or small working slice to resolve meaningful UX choices; reuse approved direction for routine changes.
 
 Make the common path intuitive, with clear language, sensible defaults, accessible controls and useful feedback. Reveal advanced power when it is useful. Necessary internal complexity should produce simpler decisions and reliable behavior for the user. Keep important consequences, permissions, costs and recovery choices visible. A sparse interface that makes essential work difficult is not simplicity.
+
+Use language that explains what happened and what the person can do next without blame. Make progress, limitations and uncertainty honest; provide a practical recovery path when something fails. Preserve the person's control over consequential choices. Treat maintainers as users too: understandable interfaces, accurate documentation and usable handoffs are part of the experience. Minimalism should remove needless burden while retaining essential capability, accessibility and evidence. Apply these considerations within the existing implementation and verification loop, not as another approval or reporting gate.
+
+Make code pleasant for humans to read: maintainers are users, and visual organization should reveal the logic. Use a single blank line between distinct logical steps or phases within a function when it helps scanning, such as preparation/validation, main processing and finalization. Keep closely related statements together; follow established language conventions between declarations and functions. Avoid dense walls of code, blank lines after every statement, decorative separators and arbitrary spacing that obscures flow. Respect existing formatters, linting and language idioms; exclude generated/minified code. Improve touched code incrementally with focused diffs, without behavior changes or broad formatting churn solely for this preference. This adds no checklist, review gate or formatter mandate.
 
 Separate business rules from presentation and provider integrations at real boundaries. Keep secrets and privileged operations on the trusted side. Model important invariants explicitly and check meaningful failure paths. Prefer a modular monolith and existing tools when adequate; add abstraction, services or infrastructure only for a demonstrated need. Complex logic is justified by the problem, not by sophistication alone.
 

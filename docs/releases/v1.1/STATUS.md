@@ -1,8 +1,10 @@
 # Lontra Creek V1.1 — Status
 
-Updated October 5, 2026 · The live tracker for [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Every slice PR updates its row in the same PR.
+Implementation tracker snapshot October 5, 2026; source/rollout context reconciled October 11. The slice table retains the original integration checkpoints for [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
-**Overall:** two branches, nothing deployed, and each StreamOtter version in its own place.
+**Current source and recorded rollout:** phase one was accepted October 5, as recorded in the [rollout log](../0.2.0-rc.1/ROLLOUT_LOG.md). Phase-two source is merged by PR #42 at `6cb47e98134c2d97dda1958ebe1b32d305c72af4`, with both apps pinned to registry `streamotter@0.2.0-rc.1`. A merged source pin does not establish phase-two hosted acceptance; follow the [rollout plan](../0.2.0-rc.1/ROLLOUT_PLAN.md) and matching operator/public acceptance records. Lab benches and the workbench sandbox remain separately gated.
+
+The branch descriptions and slice results below are retained as the October 5 implementation snapshot, not current PR-open or deployment status.
 
 - **Phase 1 (rc.3):** the slices that needed no new StreamOtter APIs are combined in draft PR #40 (`review/v1.1`; the slice PRs #29–#39 are closed with their branches kept), which passed an [independent review](REVIEW_FINDINGS.md) with every finding fixed, and #41 (`fix/streamotter-dev-domain`) renames the domain to streamotter.dev. Both pin `streamotter@0.1.0-rc.3`, which provides none of the native V1.1 capabilities ([BASELINE.md](BASELINE.md)).
 - **Phase 2 (0.2.0-rc.1):** `feat/v1.1-source-failure-exercises`, stacked on #41, is the branch of the pin PR (not opened yet). It carries W8's update for 0.2.0-rc.1, W9a and W9b. 0.2.0-rc.1 was published to npm on October 5, and the branch now pins `streamotter@0.2.0-rc.1` exactly from the registry, in place of the pre-publish pack it was built against; `scripts/check-release-pins.mjs` passes ([SOURCE_FAILURE_EXERCISES.md](SOURCE_FAILURE_EXERCISES.md#pre-publish-packages-and-their-removal)).

@@ -133,5 +133,65 @@ class BackupTest(unittest.TestCase):
                 b.snapshot(self.stage)
 
 
+    def snapshot_with(self, release_files, journal=False):
+        """Snapshot with the release directory holding exactly `release_files`; returns the compose call."""
+        for name in ('lontra-world.json', 'lontra-manifest.json'):
+            (self.stage / name).unlink(missing_ok=True)
+        config = b.ROOT / 'releases' / ('b' * 40)
+        info = dict(Image=self.image, Config=dict(Image='release'), State=dict(Running=True, StartedAt='now'),
+                    Mounts=[dict(Destination='/var/lib/lontra', Type='volume', Name='lontra-creek_field-data')])
+        def docker(args, data=None):
+            self.calls.append((args, data))
+            if args[0] == 'compose': return ('c' * 64).encode()
+            if args[0] == 'exec': return json.dumps(dict(text=self.data.decode(), mtime='2026-01-01T00:00:00Z')).encode()
+            if args[0] == 'inspect': return json.dumps([info]).encode()
+            raise AssertionError(args)
+        def present(path):
+            if path == b.ROOT / 'activation-transaction.json':
+                return journal
+            return path.parent == config and path.name in release_files
+        with patch.object(b, 'env_values', return_value=dict(LONTRA_CONFIG_DIR=str(config), LONTRA_IMAGE='release')), \
+                patch.object(b, 'secure'), patch.object(b, 'present', present), patch.object(Path, 'exists', present), \
+                patch.object(Path, 'is_symlink', lambda path: False), \
+                patch.object(Path, 'read_bytes', return_value=b'config'), patch.object(b, 'run', docker):
+            b.snapshot(self.stage)
+        return config, self.calls[0][0], json.loads((self.stage / 'lontra-manifest.json').read_text())
+
+    def test_adapter_lab_release_snapshot_uses_overlays_and_profile(self):
+        config, compose, manifest = self.snapshot_with({'compose.lab.yaml', 'compose.shared.lab.yaml', 'profile.env', 'compose.offline.yaml'})
+        files = [compose[i + 1] for i, arg in enumerate(compose) if arg == '-f']
+        self.assertEqual(files, [str(config / n) for n in ('compose.yaml', 'compose.lab.yaml', 'compose.shared.yaml', 'compose.shared.lab.yaml')])
+        envs = [compose[i + 1] for i, arg in enumerate(compose) if arg == '--env-file']
+        self.assertEqual(envs[-1], str(config / 'profile.env'))
+        for name in ('compose.lab.yaml', 'compose.shared.lab.yaml', 'profile.env', 'compose.offline.yaml'):
+            self.assertIn(name, manifest['configHashes'])
+
+    def test_base_release_snapshot_is_unchanged(self):
+        config, compose, manifest = self.snapshot_with(set())
+        files = [compose[i + 1] for i, arg in enumerate(compose) if arg == '-f']
+        self.assertEqual(files, [str(config / 'compose.yaml'), str(config / 'compose.shared.yaml')])
+        self.assertEqual(compose.count('--env-file'), 2)
+        self.assertNotIn('profile.env', manifest['configHashes'])
+
+    def test_marker_lab_layout_still_supported(self):
+        config, compose, manifest = self.snapshot_with({'lab.enabled', 'compose.lab.yaml', 'compose.shared.lab.yaml'})
+        self.assertIn(str(config / 'compose.shared.lab.yaml'), compose)
+        self.assertEqual(compose.count('--env-file'), 2)
+
+    def test_partial_or_mixed_lab_layout_refused(self):
+        for files in ({'compose.lab.yaml'}, {'profile.env'}, {'compose.lab.yaml', 'compose.shared.lab.yaml'},
+                      {'lab.enabled', 'compose.lab.yaml', 'compose.shared.lab.yaml', 'profile.env'}):
+            with self.subTest(files=sorted(files)):
+                self.calls.clear()
+                with self.assertRaisesRegex(ValueError, 'Partial or mixed Lab'):
+                    self.snapshot_with(files)
+                self.assertEqual(self.calls, [])
+
+    def test_pending_transaction_refuses_snapshot(self):
+        with self.assertRaisesRegex(ValueError, 'Pending activation or provisioning'):
+            self.snapshot_with(set(), journal=True)
+        self.assertEqual(self.calls, [])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -4,6 +4,8 @@ import { type View, type ChannelName } from "./field-views.ts";
 import { FlowHistory, chapterFromHash } from "./walkthrough-model.ts";
 import { watchIdle } from "./idle-session.ts";
 import example from "../snippets/walkthrough.ts?raw";
+import handlers from "../snippets/handlers.ts?raw";
+import { excerpt } from "../snippets/excerpt.ts";
 
 const root = document.querySelector<HTMLElement>("[data-walkthrough]");
 if (root !== null) void mount(root);
@@ -42,7 +44,10 @@ async function mount(root: HTMLElement): Promise<void> {
     button("[data-chapter-back]").disabled = chapter === 1;
     button("[data-chapter-next]").disabled = chapter === 6;
     el("[data-chapter-count]").textContent = `${chapter} of 6`;
-    el("[data-chapter-code]").textContent = example.split("// snippet:start")[1]?.split("// snippet:end")[0]?.trim() ?? "";
+    // The holt chapter shows the server's handler that refuses volunteers; the rest show browser code.
+    const serverSide = chapter === 4;
+    el("[data-chapter-code-label]").textContent = serverSide ? "the holt handler, server side (simplified)" : "walkthrough code";
+    el("[data-chapter-code]").textContent = excerpt(serverSide ? handlers : example);
     if (focus) root.querySelector<HTMLElement>(`[data-chapter="${chapter}"] h2`)?.focus();
   }
   window.addEventListener("hashchange", () => { chapter = chapterFromHash(location.hash); renderChapter(true); });

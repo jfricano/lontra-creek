@@ -5,7 +5,7 @@
  * https://localhost:8443 only.
  *
  *   npm run dev:lab                         # same as `up`
- *   npm run dev:lab -- up [--no-build] [--extra-ca <file>]
+ *   npm run dev:lab -- up [--no-build] [--extra-ca <file> | --no-extra-ca]
  *   npm run dev:lab -- status
  *   npm run dev:lab -- logs [--follow] [service...]
  *   npm run dev:lab -- stop                 # keeps volumes and the current study
@@ -21,7 +21,7 @@
  * explicit confirmation. It has no dependencies beyond Node, Docker, Compose,
  * OpenSSL, and the repository's own scripts. See docs/LOCAL_LAB.md.
  */
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, appendFileSync, copyFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
@@ -70,7 +70,9 @@ Options:
   --project <name>    Compose project name (default ${DEFAULT_PROJECT}); fixed at first \`up\`
   --no-build          up: reuse the existing site build and image instead of rebuilding
   --extra-ca <file>   up: trust this extra CA bundle for npm inside the image build only
-                      (for networks behind a TLS-intercepting proxy); needs BuildKit
+                      (for networks behind a TLS-intercepting proxy); needs BuildKit.
+                      Remembered in the local directory: later builds use it too
+  --no-extra-ca       up: forget a remembered --extra-ca and build without one
   --follow, -f        logs: keep streaming
   --yes, -y           discard: confirm without a prompt
   --help, -h          Show this help`;
@@ -88,6 +90,7 @@ export function parseArgs(argv) {
         project: { type: "string" },
         "no-build": { type: "boolean" },
         "extra-ca": { type: "string" },
+        "no-extra-ca": { type: "boolean" },
         follow: { type: "boolean", short: "f" },
         yes: { type: "boolean", short: "y" },
         help: { type: "boolean", short: "h" }
@@ -106,6 +109,7 @@ export function parseArgs(argv) {
   };
   only("no-build", "up");
   only("extra-ca", "up");
+  only("no-extra-ca", "up");
   only("follow", "logs");
   only("yes", "discard");
   for (const service of rest) {
@@ -116,12 +120,14 @@ export function parseArgs(argv) {
   }
   if (values.dir === "") throw new UsageError("--dir needs a path.");
   if (values["extra-ca"] === "") throw new UsageError("--extra-ca needs a file.");
+  if (values["extra-ca"] !== undefined && values["no-extra-ca"]) throw new UsageError("--extra-ca and --no-extra-ca contradict each other; pass one.");
   return {
     command,
     dir: values.dir ?? DEFAULT_DIR,
     project: values.project,
     build: !values["no-build"],
     extraCa: values["extra-ca"],
+    forgetExtraCa: values["no-extra-ca"] === true,
     follow: values.follow === true,
     yes: values.yes === true,
     services: rest
@@ -159,7 +165,7 @@ export function isPortFree(port, host = "127.0.0.1") {
  * (status null when the command is missing); `portFree(port)` resolves to a boolean.
  * Returns the problems found, each a sentence with what to do; empty means ready.
  */
-export async function checkPrerequisites({ run = capture, portFree = isPortFree, nodeVersion = process.versions.node, checkPort = true, extraCa } = {}) {
+export async function checkPrerequisites({ run = capture, portFree = isPortFree, nodeVersion = process.versions.node, checkPort = true, extraCa, extraCaRemembered = false } = {}) {
   const problems = [];
   if (compareVersions(nodeVersion, MIN_NODE) < 0) problems.push(`Node ${MIN_NODE} or later is required; this is Node ${nodeVersion}.`);
   const docker = await run("docker", ["--version"]);
@@ -174,7 +180,11 @@ export async function checkPrerequisites({ run = capture, portFree = isPortFree,
   }
   const openssl = await run("openssl", ["version"]);
   if (openssl.status !== 0) problems.push("OpenSSL is required to make the local test certificates and secrets.");
-  if (extraCa !== undefined && !existsSync(extraCa)) problems.push(`--extra-ca file not found: ${extraCa}`);
+  if (extraCa !== undefined && !existsSync(extraCa)) {
+    problems.push(extraCaRemembered
+      ? `The extra CA bundle remembered from an earlier \`up --extra-ca\` is gone: ${extraCa}. Pass \`--extra-ca <file>\` again, or \`--no-extra-ca\` to build without one.`
+      : `--extra-ca file not found: ${extraCa}`);
+  }
   if (!existsSync(join(ROOT, "node_modules"))) problems.push("Dependencies are not installed. Run `npm ci` first.");
   if (checkPort && !(await portFree(PORT))) problems.push(`Port ${PORT} on 127.0.0.1 is in use. Stop whatever holds it (another local Lab: \`npm run dev:lab -- stop\`) and try again.`);
   return problems;
@@ -240,6 +250,50 @@ export function extraCaDockerfile(text) {
   });
   if (count === 0) throw new Error("deploy/Dockerfile has no `RUN npm ci` line to adapt for --extra-ca.");
   return result;
+}
+
+/**
+ * The extra CA bundle an image build trusts, and the launcher state to keep. A bundle given
+ * with --extra-ca is remembered (as an absolute path) in the local directory's dev-lab.json, so
+ * a later plain `up`, such as the one `stop` suggests, rebuilds through the same proxy;
+ * --no-extra-ca forgets it. `source` says which: "given", "remembered", "forgotten", or "none".
+ */
+export function chooseExtraCa(state = {}, { given, forget = false, cwd = process.cwd() } = {}) {
+  const { extraCa: remembered, ...rest } = state;
+  if (given !== undefined) {
+    const extraCa = resolve(cwd, given);
+    return { extraCa, source: "given", state: { ...rest, extraCa } };
+  }
+  if (forget) return { extraCa: undefined, source: remembered === undefined ? "none" : "forgotten", state: rest };
+  return { extraCa: remembered, source: remembered === undefined ? "none" : "remembered", state };
+}
+
+/** How npm and OpenSSL report a certificate chain they can't verify, as behind a TLS-intercepting proxy. */
+const CERT_ERROR = /SELF_SIGNED_CERT_IN_CHAIN|UNABLE_TO_GET_ISSUER_CERT(?:_LOCALLY)?|UNABLE_TO_VERIFY_LEAF_SIGNATURE|DEPTH_ZERO_SELF_SIGNED_CERT|CERT_UNTRUSTED|self[- ]signed certificate in certificate chain|unable to get local issuer certificate/i;
+/** Docker Hub's answer when anonymous pulls are over its rate limit. */
+const PULL_LIMIT = /429 Too Many Requests|toomanyrequests/i;
+
+/** What to do about a failed image build, from the tail of its output; null when the cause isn't recognised. */
+export function buildFailureHint(output, { extraCa } = {}) {
+  if (CERT_ERROR.test(output)) {
+    return extraCa === undefined
+      ? "The image build failed on a certificate error: this network seems to re-sign HTTPS traffic (a TLS-intercepting proxy).\n" +
+        "Pass its CA bundle for the build only:\n  npm run dev:lab -- up --extra-ca <bundle.pem>\n" +
+        "See \"Behind a TLS-intercepting proxy\" and Troubleshooting in docs/LOCAL_LAB.md."
+      : `The image build failed on a certificate error even with the extra CA ${extraCa}.\n` +
+        "Check that it is the PEM bundle your proxy signs with. See \"Behind a TLS-intercepting proxy\" in docs/LOCAL_LAB.md.";
+  }
+  if (PULL_LIMIT.test(output)) {
+    return "Docker Hub refused a base image pull (429 Too Many Requests: its limit for anonymous pulls).\n" +
+      "Wait a few minutes and run the same command again, or sign in with `docker login` first. See Requirements in docs/LOCAL_LAB.md.";
+  }
+  return null;
+}
+
+/** How to start the stack again after `stop`, or when `status` finds it stopped. */
+export function startAgain(state = {}) {
+  const ca = state.extraCa === undefined ? "" : ` Rebuilds use the extra CA remembered from \`--extra-ca\` (${state.extraCa}); \`up --no-extra-ca\` forgets it.`;
+  return `Start again with \`npm run dev:lab\` (rebuilds the site and image), or \`npm run dev:lab -- up --no-build\` to reuse the last build; the same study resumes.${ca}`;
 }
 
 /** Parses a Compose env file's KEY=value lines. */
@@ -316,6 +370,35 @@ function must(command, args, options = {}) {
 
 function readState(path) {
   try { return JSON.parse(readFileSync(join(path, STATE_FILE), "utf8")); } catch { return undefined; }
+}
+
+function writeState(path, state) {
+  writeFileSync(join(path, STATE_FILE), JSON.stringify(state, null, 2) + "\n");
+}
+
+/**
+ * Records a given --extra-ca in the local directory's dev-lab.json, or forgets the remembered
+ * one for --no-extra-ca, keeping everything else there. Returns chooseExtraCa's answer.
+ */
+export function rememberExtraCa(path, { given, forget = false, cwd = process.cwd() } = {}) {
+  const choice = chooseExtraCa(readState(path) ?? {}, { given, forget, cwd });
+  if (choice.source === "given" || choice.source === "forgotten") writeState(path, choice.state);
+  return choice;
+}
+
+/** How many bytes of a build's output to keep for buildFailureHint: the error is at the end. */
+const TAIL_BYTES = 256 * 1024;
+
+/** Runs a command with its output shown as it comes, keeping the tail of its stderr; resolves to { status, signal, tail }, or { status: null, error, tail }. */
+function runShowingOutput(command, args, options = {}) {
+  return new Promise(done => {
+    const child = spawn(command, args, { cwd: ROOT, stdio: ["inherit", "inherit", "pipe"], ...options });
+    let tail = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", chunk => { process.stderr.write(chunk); tail = (tail + chunk).slice(-TAIL_BYTES); });
+    child.on("error", error => done({ status: null, tail, error }));
+    child.on("close", (status, signal) => done({ status, signal, tail }));
+  });
 }
 
 /** The local directory's recorded project, or an error when --project disagrees with it. */
@@ -414,12 +497,18 @@ async function up(options) {
   step("Checking prerequisites");
   const running = capture("docker", ["ps", "-q", "--filter", `label=com.docker.compose.project=${project}`, "--filter", "label=com.docker.compose.service=caddy"]);
   const alreadyServing = running.status === 0 && running.stdout.trim() !== "";
-  const problems = await checkPrerequisites({ checkPort: !alreadyServing, extraCa: options.extraCa });
+  // A remembered --extra-ca matters only to a build; one given now is checked either way.
+  const extra = chooseExtraCa(readState(path), { given: options.extraCa, forget: options.forgetExtraCa });
+  const checkCa = extra.source === "given" || (options.build && extra.source === "remembered");
+  const problems = await checkPrerequisites({ checkPort: !alreadyServing, extraCa: checkCa ? extra.extraCa : undefined, extraCaRemembered: extra.source === "remembered" });
   if (problems.length > 0) throw new Error(`Not ready to start the local Lab:\n${problems.map(p => `  - ${p}`).join("\n")}`);
   console.log(`Ready. Local directory: ${relative(ROOT, path)}; Compose project: ${project}.`);
 
   step("Preparing local secrets, test certificates, and settings (kept across runs)");
   const env = prepare(path, project);
+  // Recorded only now that prepare() has made (or kept) the launcher's own state file.
+  rememberExtraCa(path, { given: options.extraCa, forget: options.forgetExtraCa });
+  if (extra.source === "forgotten") console.log("Forgot the extra CA bundle remembered from an earlier `up --extra-ca`.");
 
   if (options.build) {
     step("Building the site for the local origin");
@@ -427,16 +516,23 @@ async function up(options) {
     step(`Building the image ${env.LONTRA_IMAGE} (local only; never pushed)`);
     let dockerfile = "deploy/Dockerfile";
     const secret = [];
-    if (options.extraCa !== undefined) {
+    if (extra.extraCa !== undefined) {
       const build = join(path, "build");
       mkdirSync(build, { recursive: true });
       dockerfile = join(build, "Dockerfile");
       writeFileSync(dockerfile, extraCaDockerfile(readFileSync(join(ROOT, "deploy/Dockerfile"), "utf8")));
       copyFileSync(join(ROOT, "deploy/Dockerfile.dockerignore"), `${dockerfile}.dockerignore`);
-      secret.push("--secret", `id=ca,src=${resolve(options.extraCa)}`);
-      console.log(`Using an extra CA for npm inside the build only: ${options.extraCa}`);
+      secret.push("--secret", `id=ca,src=${extra.extraCa}`);
+      console.log(extra.source === "given"
+        ? `Using an extra CA for npm inside the build only: ${extra.extraCa}\nIt is remembered in ${relative(ROOT, join(path, STATE_FILE))} for later builds; \`up --no-extra-ca\` forgets it.`
+        : `Using the extra CA remembered from an earlier \`up --extra-ca\`, for npm inside the build only: ${extra.extraCa}\n\`up --no-extra-ca\` forgets it.`);
     }
-    must("docker", ["build", "-f", dockerfile, ...secret, "-t", env.LONTRA_IMAGE, "."], { env: { ...process.env, DOCKER_BUILDKIT: "1" } });
+    const built = await runShowingOutput("docker", ["build", "-f", dockerfile, ...secret, "-t", env.LONTRA_IMAGE, "."], { env: { ...process.env, DOCKER_BUILDKIT: "1" } });
+    if (built.error) throw new Error(`docker could not run: ${built.error.message}`);
+    if (built.status !== 0) {
+      const hint = buildFailureHint(built.tail, { extraCa: extra.extraCa });
+      throw new Error(`docker build -f ${relative(ROOT, resolve(ROOT, dockerfile))} failed (${built.status === null ? built.signal : `exit ${built.status}`}).${hint ? `\n\n${hint}` : ""}`);
+    }
   } else {
     if (!existsSync(join(ROOT, "apps/site/dist/lab/index.html"))) throw new Error("--no-build: apps/site/dist has no built Lab page. Run without --no-build.");
     if (capture("docker", ["image", "inspect", env.LONTRA_IMAGE]).status !== 0) throw new Error(`--no-build: image ${env.LONTRA_IMAGE} does not exist. Run without --no-build.`);
@@ -478,7 +574,7 @@ function stop(options) {
   if (!prepared) throw new Error(`No local Lab is prepared in ${relative(ROOT, path)}; nothing to stop.`);
   step(`Stopping ${project}; volumes and the local study are kept`);
   must("docker", compose(project, path, ["down"]));
-  console.log(`Stopped. Start again with \`npm run dev:lab\`; the same study resumes. To delete it instead: \`npm run dev:lab -- discard\`.`);
+  console.log(`Stopped. ${startAgain(readState(path))} To delete it instead: \`npm run dev:lab -- discard\`.`);
 }
 
 async function status(options) {
@@ -489,6 +585,11 @@ async function status(options) {
   }
   step(`Containers (${project})`);
   must("docker", compose(project, path, ["ps", "--all"]));
+  const running = capture("docker", ["ps", "-q", "--filter", `label=com.docker.compose.project=${project}`]);
+  if (running.status === 0 && running.stdout.trim() === "") {
+    console.log(`\nThe local Lab (Compose project ${project}) is not running. ${startAgain(readState(path))}`);
+    return;
+  }
   step("URLs");
   await report(readFileSync(join(path, "secrets/origin/ca.pem")));
 }

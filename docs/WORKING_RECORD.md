@@ -1,5 +1,9 @@
 # Lontra Creek delivery record
 
+## Workflow adoption — October 9, 2026
+
+Practical workflow v3.0: one delivery owner, proportionate author verification, focused review for high-risk behavior/concrete concerns and delta-based evidence reuse. Existing product requirements, configured signing, recorded permissions and repository protections are preserved. Dated verification/history below retains its original scope; it does not impose a blanket review gate on new routine work. No application merge, deployment or provider acceptance is established by this documentation update.
+
 Updated 2026-09-27. Status: in progress; not deployed or release accepted.
 
 ## Contract and authority

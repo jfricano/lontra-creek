@@ -94,9 +94,10 @@ async function mount(root: HTMLElement): Promise<void> {
     const timeout = AbortSignal.timeout(8_000);
     const response = await fetch(`${origin}/api/lab/${path}`, { method, credentials: "include", cache: "no-store", signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }) });
-    if (response.status === 429) budget.refused(refusedPauseMs(response.headers.get("retry-after")));
     // A 502 from the edge has no JSON body: check the status first.
     const data = await response.json().catch(() => ({})) as T & { error?: string; code?: string };
+    // A 429 spent the address budget, except `too-many-actions`, which is this lease's one action a second.
+    if (response.status === 429 && data.code !== "too-many-actions") budget.refused(refusedPauseMs(response.headers.get("retry-after")));
     if (!response.ok) throw new HttpStatusError(data.error ?? `Lab request failed (${response.status}).`, response.status, data.code);
     return data;
   }

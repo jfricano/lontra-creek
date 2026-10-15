@@ -45,7 +45,8 @@ export class RequestBudget {
   constructor(options: BudgetOptions = {}) {
     this.#burst = options.burst ?? PAGE_BURST;
     this.#perSecond = options.perSecond ?? PAGE_PER_SECOND;
-    this.#now = options.now ?? Date.now;
+    // Monotonic: a wall clock stepped back would leave every request waiting out the step.
+    this.#now = options.now ?? (() => performance.now());
     this.#wait = options.wait ?? abortableWait;
     this.#tokens = this.#burst;
     this.#at = this.#now();
@@ -64,7 +65,7 @@ export class RequestBudget {
 
   /** Waits for a token. Returns without one when `signal` aborts, so the caller's request then fails as aborted. */
   async acquire(signal: AbortSignal = NEVER, background = false): Promise<void> {
-    for (let ms = this.take(background); ms > 0 && !signal.aborted; ms = this.take(background)) await this.#wait(ms, signal);
+    while (!signal.aborted) { const ms = this.take(background); if (ms === 0) return; await this.#wait(ms, signal); }
   }
 
   /**

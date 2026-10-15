@@ -63,6 +63,16 @@ test("an aborted wait returns without a token", async () => {
   assert.equal(budget.take(), 0, "the aborted acquire took nothing, so the refilled token is still there");
 });
 
+test("an acquire already aborted, or aborted during its wait, takes no token", async () => {
+  let now = 0; const controller = new AbortController();
+  const budget = new RequestBudget({ burst: 1, perSecond: 1, now: () => now, wait: async ms => { now += ms; controller.abort(); } });
+  await budget.acquire(new AbortController().signal); // spends the only token
+  await budget.acquire(controller.signal);            // waits until one is free, but is aborted meanwhile
+  await budget.acquire(controller.signal);            // already aborted
+  assert.equal(budget.take(), 0, "the token refilled during the wait is still there");
+  assert.ok(budget.take() > 0);
+});
+
 test("Retry-After is honored when readable, capped, and defaulted otherwise", () => {
   assert.equal(refusedPauseMs("1"), 1_000);
   assert.equal(refusedPauseMs(" 4 "), 4_000);

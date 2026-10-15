@@ -128,7 +128,7 @@ test("one refused or lost pool check keeps the bench; the Lab is called unavaila
 });
 
 test("a leased page keeps its Lab requests within its share of the address budget", async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   const sent: number[] = [];
   await page.route("**/api/lab/**", async route => {
     sent.push(Date.now());
@@ -142,9 +142,10 @@ test("a leased page keeps its Lab requests within its share of the address budge
   await expect(page.locator("[data-lab-message]")).toHaveText("Your isolated bench: 1.");
   // Past the page's burst (9), the rate is what's left: at most 1.4 a second, so two pages from one address stay under the field station's 3.
   await page.waitForTimeout(10_000);
-  const from = Date.now(); await page.waitForTimeout(10_000);
+  const from = Date.now(); await page.waitForTimeout(20_000);
   const inWindow = sent.filter(at => at >= from).length;
-  expect(inWindow, `${inWindow} Lab requests in 10 s`).toBeLessThanOrEqual(15);
+  // 1.4 a second, plus the few tokens left in the bucket when the window opened.
+  expect(inWindow, `${inWindow} Lab requests in 20 s`).toBeLessThanOrEqual(32);
 });
 
 test("the feed opens on the scenario view, marks the retried record, and says how Resume turned out", async ({ page }) => {

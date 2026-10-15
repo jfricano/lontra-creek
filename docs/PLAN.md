@@ -196,7 +196,7 @@ The simulation (`packages/creek-sim`) is deterministic: the world is a pure func
 - **Sessions** are signed badges with expiry, so the server keeps no session table.
 - **Notebooks** live in the app's memory and in a compacted Kafka topic, `field.notebooks`, which keeps the latest record for each key. On startup the app rebuilds them from that topic. A notebook's revision is the write time in milliseconds, kept strictly increasing, so a restart can never reuse a revision for different data. Notebooks expire with their session: each is published once more as expired and empty (StreamOtter V1 pauses a source on a tombstone), and the topic's delete retention, two hours, removes old records.
 
-Channels: `station` (stationId), `otter` (otterId), `reach` (reachId, camera traps), `holt` (holtId, researchers only), `creekOverview` (watershed), and `notebook` (observerId, its owner only). Topics: `field.gauges`, `field.telemetry`, `field.cameras`, `field.holts`, `creek.overview`, and `field.notebooks`, in two sources so a notebook problem can't pause the world.
+Channels: `station` (stationId), `otter` (otterId), `reach` (reachId, camera traps), `holt` (holtId, researchers only), `den` (holtId, public: whether the holt's pups are home, for Pup Patrol), `creekOverview` (watershed), and `notebook` (observerId, its owner only). Topics: `field.gauges`, `field.telemetry`, `field.cameras`, `field.holts`, `field.dens`, `creek.overview`, and `field.notebooks`, in two sources so a notebook problem can't pause the world.
 
 ## Limits and operations
 

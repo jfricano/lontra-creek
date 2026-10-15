@@ -8,6 +8,7 @@ import capture from "../../public/recordings/workbench/capture.json" with { type
 import LiveCreek from "../components/LiveCreek.astro";
 import Base from "../layouts/Base.astro";
 import { INSTALL_COMMAND, LINKS, LISTED_PAGES, RELEASE } from "../site.ts";
+import { GAME_PAGE } from "../pup-patrol.ts";
 import { UPCOMING_STABLE } from "../release-facts.ts";
 import { excerpt } from "../snippets/excerpt.ts";
 import handlersSource from "../snippets/handlers.ts?raw";
@@ -32,7 +33,7 @@ const v11Points = [
 const previewShot = capture.images.preview;
 const capturedOn = new Date(capture.capturedAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
 
-const explorePages = LISTED_PAGES.filter(page => page.href !== "/docs/" && page.href !== "/releases/");
+const explorePages = [...LISTED_PAGES.filter(page => page.href !== "/docs/" && page.href !== "/releases/"), GAME_PAGE];
 
 const states = [
   { state: "authorizing", text: "Your handler is deciding whether this viewer may have this channel." },

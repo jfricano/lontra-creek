@@ -719,9 +719,9 @@ LC11-ADR-03 decides least privilege per Kafka user; this section is the authorit
 
 | Name | Kind | Written by | Read by | Source in code |
 | --- | --- | --- | --- | --- |
-| `field.gauges`, `field.telemetry`, `field.cameras`, `field.holts`, `creek.overview` | topics, 6 h retention | field station | production gateway (`field` source) | `TOPICS` in `packages/creek-sim/src/views.ts`; created by `apps/field-station/src/server/kafka.ts` |
+| `field.gauges`, `field.telemetry`, `field.cameras`, `field.holts`, `field.dens`, `creek.overview` | topics, 6 h retention | field station | production gateway (`field` source) | `TOPICS` in `packages/creek-sim/src/views.ts`; created by `apps/field-station/src/server/kafka.ts` |
 | `field.notebooks` | topic, compact+delete | field station | production gateway (`notebooks` source); field station on start (rebuild) | `NOTEBOOK_TOPIC` in `apps/field-station/src/records.ts`; `readAll` in `server/kafka.ts` |
-| `lab-N.field.gauges`, `lab-N.field.telemetry`, `lab-N.field.cameras`, `lab-N.creek.overview` (no holts) | topics, 1 h retention, one set per bench up to `FIELD_LAB_BENCHES` | field station (copies of the creek) | bench N's gateway | `CREEK_TOPICS` and `bench()` in `apps/field-station/src/lab/benches.ts`; `withBenchCopies` in `server/kafka.ts` |
+| `lab-N.field.gauges`, `lab-N.field.telemetry`, `lab-N.field.cameras`, `lab-N.creek.overview` (no holts or dens) | topics, 1 h retention, one set per bench up to `FIELD_LAB_BENCHES` | field station (copies of the creek) | bench N's gateway | `CREEK_TOPICS` and `bench()` in `apps/field-station/src/lab/benches.ts`; `withBenchCopies` in `server/kafka.ts` |
 | `lab-N.quarantine` | topic, created by the broker's bootstrap: 1 partition, `retention.ms` 3600000, `retention.bytes` 8388608, 1 MiB/10 min segments | bench N (V1.1's quarantine writer, W9b) | bench N | `deploy/kafka/start.sh` |
 | `streamotter-lontra-creek-field`, `streamotter-lontra-creek-notebooks` | consumer groups | | production gateway | `apps/field-station/src/project.ts` |
 | `lontra-field-station-read-<UUID>` | throwaway group, deleted after use | | field station | `readAll` in `server/kafka.ts` |

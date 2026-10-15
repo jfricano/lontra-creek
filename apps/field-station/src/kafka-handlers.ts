@@ -12,11 +12,13 @@
  * never older than an update already on Kafka.
  *
  * Environment: FIELD_STATION_SECRET and FIELD_STATION_SERVICE_TOKEN (both required in
- * production), FIELD_STATION_INTERNAL_URL (default http://127.0.0.1:7410).
+ * production), FIELD_STATION_INTERNAL_URL (default http://127.0.0.1:7410), and GAME_ORIGIN
+ * (Pup Patrol's switch, shared with the field station; see game-origin.ts).
  */
 import type { ChannelHandlers, HandlerRegistry } from "streamotter/gateway";
 import { mayRead } from "./access.ts";
 import type { AppChannels } from "./generated/streamotter.generated.ts";
+import { refusedGameOrigins } from "./game-origin.ts";
 import { fieldStationSecret, serviceToken, verifyToken } from "./identity.ts";
 import { fromRecord, topicFor, viewPath } from "./records.ts";
 
@@ -27,6 +29,8 @@ export interface KafkaHandlerOptions {
   serviceToken: string;
   /** The internal API's origin, such as http://field-station:7410. */
   internalOrigin: string;
+  /** Origins the gateway's config allows but this deployment has switched off (game-origin.ts). */
+  refusedOrigins?: readonly string[];
   /** Prepended to each channel's topic: a Failure Lab bench's copy of the creek (lab/benches.ts). */
   topicPrefix?: string;
   fetch?: typeof fetch;
@@ -36,7 +40,8 @@ export function kafkaHandlerOptions(env: NodeJS.ProcessEnv = process.env): Kafka
   return {
     secret: fieldStationSecret(env),
     serviceToken: serviceToken(env),
-    internalOrigin: new URL(env["FIELD_STATION_INTERNAL_URL"] ?? "http://127.0.0.1:7410").origin
+    internalOrigin: new URL(env["FIELD_STATION_INTERNAL_URL"] ?? "http://127.0.0.1:7410").origin,
+    refusedOrigins: refusedGameOrigins(env, env["NODE_ENV"] === "production")
   };
 }
 
@@ -49,6 +54,7 @@ export const HANDSHAKES_PER_BADGE = 2;
 export function createKafkaHandlers(options: KafkaHandlerOptions): HandlerRegistry<AppChannels> {
   const request = options.fetch ?? fetch;
   const prefix = options.topicPrefix ?? "";
+  const refused = new Set(options.refusedOrigins ?? []);
   // Handshakes per badge (its sessionId), kept until the badge expires.
   const handshakes = new Map<string, { count: number; expiresAt: number }>();
   let sweptAt = 0;
@@ -99,13 +105,14 @@ export function createKafkaHandlers(options: KafkaHandlerOptions): HandlerRegist
   }
 
   return {
-    authenticate: ({ token }) => admit(token),
+    authenticate: ({ token, origin }) => refused.has(origin) ? null : admit(token),
     channels: {
       creekOverview: channel("creekOverview"),
       station: channel("station"),
       otter: channel("otter"),
       reach: channel("reach"),
       holt: channel("holt"),
+      den: channel("den"),
       notebook: channel("notebook")
     }
   };

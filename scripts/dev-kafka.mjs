@@ -43,7 +43,8 @@ for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{void stop();});
 try {
  command('npm',['run','build','-w','@lontra-creek/field-station']);
  const config=JSON.parse(await readFile(join(root,'apps/field-station/streamotter.json'),'utf8'));
- config.gateway.port=ports.gateway;config.gateway.allowedOrigins=env.SITE_ORIGIN.split(',');config.connections.field.brokers=[env.KAFKA_BROKERS];
+ config.gateway.port=ports.gateway;config.gateway.allowedOrigins=[...env.SITE_ORIGIN.split(','),'http://localhost:5173','http://127.0.0.1:5173'];// the site, and Pup Patrol's Vite dev server (GAME_DEV_ORIGINS)
+ config.connections.field.brokers=[env.KAFKA_BROKERS];
  await writeFile(env.LONTRA_NATIVE_CONFIG,JSON.stringify(config,null,2));
  const properties=join(directory,'server.properties');
  await writeFile(properties,`process.roles=broker,controller\nnode.id=1\ncontroller.quorum.voters=1@127.0.0.1:${ports.controller}\nlisteners=PLAINTEXT://127.0.0.1:${ports.broker},CONTROLLER://127.0.0.1:${ports.controller}\nadvertised.listeners=PLAINTEXT://127.0.0.1:${ports.broker}\nlistener.security.protocol.map=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT\ncontroller.listener.names=CONTROLLER\ninter.broker.listener.name=PLAINTEXT\nlog.dirs=${directory}/logs\noffsets.topic.replication.factor=1\ntransaction.state.log.replication.factor=1\ntransaction.state.log.min.isr=1\ngroup.initial.rebalance.delay.ms=0\nnum.partitions=3\nauto.create.topics.enable=false\n`);

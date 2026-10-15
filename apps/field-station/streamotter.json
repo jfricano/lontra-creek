@@ -11,6 +11,17 @@
       "source": "field",
       "version": 1
     },
+    "den": {
+      "delivery": {
+        "kind": "state",
+        "overflow": "resync"
+      },
+      "handlersRef": "den",
+      "paramsSchema": "HoltParams",
+      "payloadSchema": "DenStatus",
+      "source": "field",
+      "version": 1
+    },
     "holt": {
       "delivery": {
         "kind": "state",
@@ -79,7 +90,9 @@
   "gateway": {
     "allowedOrigins": [
       "http://localhost:4321",
-      "http://127.0.0.1:4321"
+      "http://127.0.0.1:4321",
+      "http://localhost:5173",
+      "http://127.0.0.1:5173"
     ],
     "host": "127.0.0.1",
     "path": "/streamotter/socket.io",
@@ -341,6 +354,31 @@
         "weather",
         "stations",
         "otters"
+      ],
+      "type": "object"
+    },
+    "DenStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "holtId": {
+          "enum": [
+            "A",
+            "B"
+          ],
+          "type": "string"
+        },
+        "pups": {
+          "enum": [
+            "in-den",
+            "out",
+            "none"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "holtId",
+        "pups"
       ],
       "type": "object"
     },
@@ -884,6 +922,7 @@
         "field.telemetry",
         "field.cameras",
         "field.holts",
+        "field.dens",
         "creek.overview"
       ]
     },

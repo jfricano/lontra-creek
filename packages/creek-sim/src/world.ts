@@ -132,6 +132,8 @@ export function serialize(world: WorldState): string {
 export function restore(text: string): WorldState {
   const world = JSON.parse(text) as WorldState;
   if (world.format !== WORLD_FORMAT) throw new Error(`Unsupported world format ${String(world.format)}; expected ${WORLD_FORMAT}.`);
+  // A view added since the checkpoint was written (such as `den`) is published from the restored tick.
+  for (const view of allViews(world)) world.published[view.key] ??= { tick: world.tick, json: JSON.stringify(view.data) };
   return world;
 }
 

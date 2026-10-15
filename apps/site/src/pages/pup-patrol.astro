@@ -1,0 +1,61 @@
+---
+import {Code} from "astro:components";
+import ReferencePage from "../layouts/ReferencePage.astro";
+import {CODE, DEN_EXCERPT, GAME, hooksIn} from "../pup-patrol.ts";
+import {RELEASE} from "../site.ts";
+const hooks=hooksIn(RELEASE);
+---
+<ReferencePage title="Pup Patrol" description="A sixty-second game on Lontra Creek's live channels, built to show StreamOtter's React hooks at work: herd Sprout and Skipper home before the Beaver Flats camera trap fires.">
+  <section>
+    <p>You are Pebble (LO-07), the river otter who dens at Holt A. Her pups wander out toward a camera trap, and you nudge them home before it fires. The game scripts none of it: the pups come out when the field station says they're out, and the trap fires when its camera does, through the same Kafka topics and gateway as the <a href="/field-station/">field station walkthrough</a>. This page explains how the game uses StreamOtter to do that.</p>
+    <p><a class="button button-primary" href={GAME.url} target="_blank" rel="noopener">Play Pup Patrol at lontracreek.com ↗<span class="sr-only"> (opens in a new tab)</span></a></p>
+  </section>
+
+  <section aria-labelledby="how-title">
+    <h2 id="how-title">How it uses StreamOtter</h2>
+    {hooks==="not yet" && <p class="notice" data-hooks="not-yet">The game is built on <code>streamotter/react</code>, the React hooks that arrive in <code>streamotter@{GAME.hooksRelease}</code>. This site describes <code>streamotter@{RELEASE}</code>, which doesn't have them yet, so the hooks named below are what {GAME.hooksRelease} adds; the game's hooks code is shown here once the site moves to it.</p>}
+    {hooks==="preview" && <p class="notice" data-hooks="preview">This page describes <code>streamotter@{RELEASE}</code>, a prerelease of {GAME.hooksRelease}. The hooks can still change before {GAME.hooksRelease}.</p>}
+
+    <h3>One connection for the page</h3>
+    <p>A <code>StreamOtterProvider</code> wraps the page and owns one StreamOtter client. Its <code>getToken</code> asks this demo's field station for a fresh volunteer badge every time the client connects, and keeps it in memory: no cookie crosses from lontracreek.com. The game only reads; it never sends anything to Kafka.</p>
+    {hooks!=="not yet" && <Code code={CODE.provider} lang="tsx" theme="night-owl" />}
+
+    <h3>A subscription per channel, for as long as a round is on screen</h3>
+    <p>The round component calls <code>useSubscription</code> three times. Each call opens one subscription when the round mounts and closes it when the round unmounts, so the end screen leaves none open. The round re-renders up to ten times a second with brand-new params objects; the hooks compare params by value, so those renders keep the same three subscriptions.</p>
+    {hooks!=="not yet" && <Code code={CODE.subscriptions} lang="tsx" theme="night-owl" />}
+    <div class="table-scroll" tabindex="0" role="region" aria-labelledby="channels-caption"><table><caption id="channels-caption">The three public channels the round reads</caption><thead><tr><th scope="col">Channel</th><th scope="col">Params</th><th scope="col">What it's for</th></tr></thead><tbody>{GAME.channels.map(row=><tr><th scope="row"><code>{row.channel}</code></th><td><code>{row.params}</code></td><td>{row.what}</td></tr>)}</tbody></table></div>
+
+    <h3>Subscription state is game state</h3>
+    <p>Every <code>useSubscription</code> result carries a <code>state</code>, and <code>useConnectionState</code> reports the connection. The round plays only while all of them say live, and it pauses the moment any one doesn't. That includes a source failure on the field station's side: when the gateway pauses its Kafka source, the subscriptions turn stale and so does the round.</p>
+    <div class="table-scroll" tabindex="0" role="region" aria-labelledby="states-caption"><table><caption id="states-caption">What each state does to a round</caption><thead><tr><th scope="col">State</th><th scope="col">From</th><th scope="col">In the game</th></tr></thead><tbody>{GAME.states.map(row=><tr><th scope="row"><code>{row.state}</code></th><td><code>{row.source}</code></td><td>{row.game}</td></tr>)}</tbody></table></div>
+    {hooks!=="not yet" && <Code code={CODE.states} lang="tsx" theme="night-owl" />}
+
+    <h3>Two-second ticks, smooth frames</h3>
+    <p>The creek moves one field tick every two seconds, and the game doesn't ask for anything faster. The creek overview is republished on every tick, so a new <code>creekOverview</code> revision is the game's clock. React owns the data: each update re-renders the round, and an effect hands the change to the game, giving each pup a new target on a tick, turning the pups toward the trap or toward home when the den view changes, and firing the trap on a new Beaver Flats frame. A canvas owns the frames: a <code>requestAnimationFrame</code> loop eases the pups toward their targets between ticks and draws Pebble at the display's frame rate, without going through React per frame.</p>
+    {hooks!=="not yet" && <Code code={CODE.ticks} lang="tsx" theme="night-owl" />}
+
+    <h3>The den channel</h3>
+    <p><code>den</code> is a new public channel this demo added for the game. The field station publishes Holt A's view to its own Kafka topic, <code>field.dens</code>, whenever the pups go out or come home, and the gateway serves it like any other channel: every reader of <code>den</code> for Holt A gets the same snapshot and the same updates. It says only <code>in-den</code>, <code>out</code> or <code>none</code>. Where Holt A is, and when an adult is inside, stays on the researchers-only <code>holt</code> channel, as the <a href="/field-station/#chapter-4">protected den chapter</a> shows.</p>
+    <Code code={DEN_EXCERPT} lang="ts" theme="night-owl" />
+  </section>
+
+
+  <section aria-labelledby="watch-title">
+    <h2 id="watch-title">See it for yourself</h2>
+    <ul>
+      <li><strong>Turn off your network mid-round.</strong> The signal bars drop, the field freezes in grey on the last known creek, and the round pauses.</li>
+      <li><strong>Turn it back on.</strong> The fresh snapshot resets the pups to where the creek says they are, and the clock picks up where it stopped.</li>
+      <li><strong>Open "Live data".</strong> Three subscriptions with their states and revisions. The render count climbs while the subscriptions stay the same; when the round ends, the count of subscriptions goes to zero.</li>
+    </ul>
+    <p>When this demo's backend is down, the game says so and replays a recording of the creek, labeled as a recording.</p>
+  </section>
+
+  <section aria-labelledby="play-title">
+    <h2 id="play-title">How to play</h2>
+    <div class="reference-grid">
+      <div class="reference-card"><h3>Move</h3><p>Arrow keys or WASD, or drag on the field with a mouse or finger. The pups are too young to swim, so they stay on the bank. Pups near Pebble are nudged away from her, so get behind a pup to push it toward the holt. A pup that has just come out won't go straight back in, so you have to chase it home.</p></div>
+      <div class="reference-card"><h3>Score</h3><p>Every pup in the holt earns a point each field tick, and ten more if it's home at the bell. Every pup in the picture when the trap fires costs five.</p></div>
+      <div class="reference-card"><h3>Read the creek</h3><p>When the field station says the pups are out, they keep wandering downstream. When it calls them home, they head back on their own. A round lasts sixty seconds of live creek.</p></div>
+    </div>
+  </section>
+</ReferencePage>

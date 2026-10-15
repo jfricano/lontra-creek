@@ -109,7 +109,7 @@ Lontra Creek, its field station, and its otters are made up. The pipeline is rea
 How the hosted demo is released and run, for the people who operate it:
 
 - [docs/releases/](docs/releases/README.md): the [V1.1 release](docs/releases/v1.1/README.md) and the [0.2.0-rc.1 rollout plan](docs/releases/0.2.0-rc.1/ROLLOUT_PLAN.md), with its [rollout log](docs/releases/0.2.0-rc.1/ROLLOUT_LOG.md) of what was deployed and when. The plan has two phases: phase one, V1.1 on StreamOtter 0.1.0-rc.3 (#40 and #41), was accepted on October 5, 2026; phase two, moving the hosted demo to 0.2.0-rc.1 (pinned on `main` since #42 merged on October 5), was accepted on October 10. The plan keeps the hosted Lab benches and sandbox off until the owner approves them separately. [V1.1 status](docs/releases/v1.1/STATUS.md) is the tracker as of October 5.
-- The hosted demo is activated on the shared host (`/srv/apps/lontra`, with `/etc/apps/lontra/lontra.env`) with devops's shared-host procedure; see the rollout plan and [docs/SHARED_HOST_READINESS.md](docs/SHARED_HOST_READINESS.md). The `/srv/lontra` scripts and the `Deploy demo` workflow in [deploy/OPERATIONS.md](deploy/OPERATIONS.md) serve the standalone layout only.
+- The hosted demo is activated on the shared host with devops's shared-host procedure; see the rollout plan and [docs/SHARED_HOST_READINESS.md](docs/SHARED_HOST_READINESS.md). The `/srv/lontra` scripts and the `Deploy demo` workflow in [deploy/OPERATIONS.md](deploy/OPERATIONS.md) serve the standalone layout only.
 - [docs/PLAN.md](docs/PLAN.md) has the scope, operating rules, phases, and launch criteria; [docs/TEAM_PLAN.md](docs/TEAM_PLAN.md) the team's process.
 
 ## License

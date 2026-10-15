@@ -2,7 +2,7 @@
 
 Updated October 5, 2026 · The tracker for [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) while V1.1 was built.
 
-> **Historical (note added October 15, 2026).** This page is no longer updated; it records the slices and their evidence as of October 5, 2026. Later that day the phase 2 branch, `feat/v1.1-source-failure-exercises`, merged into `main` as #42, and it no longer exists on the remote: `main` pins `streamotter@0.2.0-rc.1` from npm. Phase one of the rollout was accepted the same day. Some lines below were already behind then: #40 and #41 had merged on October 4, and "nothing deployed" ended with that acceptance. What has been deployed since is in the [rollout log](../0.2.0-rc.1/ROLLOUT_LOG.md), and how to run the Lab locally is in [LOCAL_LAB.md](../../LOCAL_LAB.md).
+> **Historical (note added October 15, 2026).** This page is no longer updated; it records the slices and their evidence as of October 5, 2026. Later that day the phase 2 branch, `feat/v1.1-source-failure-exercises`, merged into `main` as #42, and it no longer exists on the remote: `main` pins `streamotter@0.2.0-rc.1` from npm. Phase one of the rollout was accepted the same day. Some lines below were already behind then: #40 and #41 had merged on October 5 (03:32 UTC), and "nothing deployed" ended with that acceptance. What has been deployed since is in the [rollout log](../0.2.0-rc.1/ROLLOUT_LOG.md), and how to run the Lab locally is in [LOCAL_LAB.md](../../LOCAL_LAB.md).
 
 **Overall:** two branches, nothing deployed, and each StreamOtter version in its own place.
 

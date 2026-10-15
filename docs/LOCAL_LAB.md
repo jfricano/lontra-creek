@@ -305,8 +305,8 @@ Each story has an ID (used in these docs and on its card), a slug (in
 | LC11-S05 | `conflicting-readings` | Conflicting readings: stopping is correct | Two readings at one revision, held; a retry holds again, which is where the story ends |
 | LC11-S06 | `calibration-blip` | Calibration lookup blip | Start it once for a blip one retry absorbs, and again in the same lease for lookups that run out of retries |
 | LC11-S07 | `too-many-bad-readings` | Too many bad readings | The first five are continued past automatically; the sixth holds, with no action to reopen it |
-| LC11-S08 | `restart-recovery` | Recovery across restart and a new subscription | Plays like S03, with two records. The restart itself is checked by [the suite below](#the-source-failures-suite), not on the page |
-| LC11-S09 | `unavailable-evidence` | Unavailable evidence or quarantine | Plays like S03. The suite below deletes the quarantine copy and checks that reprocessing is refused; the page doesn't |
+| LC11-S08 | `restart-recovery` | Recovery across restart and a new subscription | Plays like S03 with two records, without the coverage step. The restart itself is checked by [the suite below](#the-source-failures-suite), not on the page |
+| LC11-S09 | `unavailable-evidence` | Unavailable evidence or quarantine | Plays like S03, without the coverage step. The suite below deletes the quarantine copy and checks that reprocessing is refused; the page doesn't |
 
 What each story establishes is in
 [SOURCE_FAILURE_EXERCISES.md](releases/v1.1/SOURCE_FAILURE_EXERCISES.md); the

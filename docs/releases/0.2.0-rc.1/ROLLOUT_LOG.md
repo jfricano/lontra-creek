@@ -2,7 +2,7 @@
 
 **Phase one was accepted on 2026-10-05 at 13:59 UTC.**
 
-This log records what has actually happened in phase one of the [rollout plan](ROLLOUT_PLAN.md): sources, digests, manifest hashes, run and deployment IDs, the activation incident, and every re-verification, with the time it was made. The plan says what should happen; this file says what did. Phase two (#42, StreamOtter 0.2.0-rc.1) gets its own section once phase one is accepted.
+This log records what has actually happened in phase one of the [rollout plan](ROLLOUT_PLAN.md): sources, digests, manifest hashes, run and deployment IDs, the activation incident, and every re-verification, with the time it was made. The plan says what should happen; this file says what did. Phase two (#42, StreamOtter 0.2.0-rc.1) was accepted on 2026-10-10; see [its section](#phase-two-streamotter-020-rc1-source-6cb47e9-accepted-2026-10-10-pdt) at the end.
 
 Execution moved from devops (Codex) to Claude on 2026-10-05 at jason's request, following the devops handoff of 2026-10-04 (Pacific). Times are UTC unless marked.
 
@@ -230,3 +230,18 @@ Merging #43, #45 and #46 to `main` queued three Images runs waiting on `registry
 Impact: none. The workflow only pushes an immutable SHA tag (no `latest`, which is still 404); nothing pulls or deploys on push; the accepted phase-one manifest `a19d62b9…` pins `d6e426a` at index `sha256:a88855305be5…`, which is unchanged in GHCR. The `11d3278` image is not a release candidate: phase two will build from #42's merge SHA. Nothing to undo.
 
 Sweep at 07:20 PDT: no `site.yml` runs after 37318760521 (production, 06:42 PDT), so Pages production `3873885c` is unchanged; no StreamOtter workflow runs on `main` after 06:35 PDT (no package publish). The only artifact published after acceptance is the `11d3278` image above.
+
+## Phase two (StreamOtter 0.2.0-rc.1, source `6cb47e9`): accepted 2026-10-10 PDT
+
+Summary added 2026-10-15. Times are PDT.
+
+| Step | Result | When |
+| --- | --- | --- |
+| Images #15 (run 37361539033) | Approved by jason; #14 rejected. ARM64 manifest `sha256:3a3770c2afc689ee8fd47aad5632d465f70329c6d8121470a2791d0745ac4dbb` | 2026-10-09 09:20 |
+| Candidate prep and recovery refresh | Image loaded from an offline archive (never a host pull); six pins `0.2.0-rc.1` verified; candidate manifest identity `6685d05dd77a9a4724f734dddf33f268bb4cd9f0c146c2c5ad0702fdc3a9f366`; backups and a disposable restore refreshed | 2026-10-09 10:11–10:52 |
+| Activation | Done by jason; candidate `6685d05d…` awaiting public acceptance | 2026-10-09 evening |
+| Pages preview | Run [38020657300](https://github.com/jfricano/lontra-creek/actions/runs/38020657300) on `6cb47e9`, preview `029dff15` | 2026-10-10 09:28 |
+| Pages production | Run [38100473230](https://github.com/jfricano/lontra-creek/actions/runs/38100473230) on `6cb47e9` | 2026-10-10 18:02 |
+| Browser proof and `accept` | Run by jason with devops: all six checks plus header, redirect and workbench checks; the previous release is kept for rollback. **Phase two accepted.** | 2026-10-10 ~18:15 |
+
+The lontra-creek main freeze ended with this acceptance. The hosted Lab benches and sandbox stay off until the owner approves them separately.

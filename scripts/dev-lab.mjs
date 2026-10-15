@@ -258,7 +258,7 @@ export function extraCaDockerfile(text) {
  * a later plain `up`, such as the one `stop` suggests, rebuilds through the same proxy;
  * --no-extra-ca forgets it. `source` says which: "given", "remembered", "forgotten", or "none".
  */
-export function chooseExtraCa(state = {}, { given, forget = false, cwd = process.cwd() } = {}) {
+export function chooseExtraCa(state = {}, { given, forget = false, cwd = process.env.INIT_CWD ?? process.cwd() } = {}) {
   const { extraCa: remembered, ...rest } = state;
   if (given !== undefined) {
     const extraCa = resolve(cwd, given);
@@ -382,7 +382,7 @@ function writeState(path, state) {
  * Records a given --extra-ca in the local directory's dev-lab.json, or forgets the remembered
  * one for --no-extra-ca, keeping everything else there. Returns chooseExtraCa's answer.
  */
-export function rememberExtraCa(path, { given, forget = false, cwd = process.cwd() } = {}) {
+export function rememberExtraCa(path, { given, forget = false, cwd = process.env.INIT_CWD ?? process.cwd() } = {}) {
   const choice = chooseExtraCa(readState(path) ?? {}, { given, forget, cwd });
   if (choice.source === "given" || choice.source === "forgotten") writeState(path, choice.state);
   return choice;
@@ -511,6 +511,7 @@ async function up(options) {
   // Recorded only now that prepare() has made (or kept) the launcher's own state file.
   rememberExtraCa(path, { given: options.extraCa, forget: options.forgetExtraCa });
   if (extra.source === "forgotten") console.log("Forgot the extra CA bundle remembered from an earlier `up --extra-ca`.");
+  if (extra.source === "given" && !options.build) console.log(`Remembered the extra CA bundle ${extra.extraCa} in ${relative(ROOT, join(path, STATE_FILE))} for later builds; \`up --no-extra-ca\` forgets it.`);
 
   if (options.build) {
     step("Building the site for the local origin");
@@ -529,7 +530,9 @@ async function up(options) {
         ? `Using an extra CA for npm inside the build only: ${extra.extraCa}\nIt is remembered in ${relative(ROOT, join(path, STATE_FILE))} for later builds; \`up --no-extra-ca\` forgets it.`
         : `Using the extra CA remembered from an earlier \`up --extra-ca\`, for npm inside the build only: ${extra.extraCa}\n\`up --no-extra-ca\` forgets it.`);
     }
-    const built = await runShowingOutput("docker", ["build", "-f", dockerfile, ...secret, "-t", env.LONTRA_IMAGE, "."], { env: { ...process.env, DOCKER_BUILDKIT: "1" } });
+    // stderr is piped so buildFailureHint can read the error, which turns off BuildKit's live
+    // view; --progress=plain makes that the same with or without a terminal.
+    const built = await runShowingOutput("docker", ["build", "--progress=plain", "-f", dockerfile, ...secret, "-t", env.LONTRA_IMAGE, "."], { env: { ...process.env, DOCKER_BUILDKIT: "1" } });
     if (built.error) throw new Error(`docker could not run: ${built.error.message}`);
     if (built.status !== 0) {
       const hint = buildFailureHint(built.tail, { extraCa: extra.extraCa });

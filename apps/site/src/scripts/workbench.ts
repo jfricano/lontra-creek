@@ -216,7 +216,7 @@ function mount(root: HTMLElement): void {
   buttons.start.addEventListener("click", () => { void act(async () => {
     const g = generation; starting = true;
     const answer = await call<SandboxLease>("session", "POST").finally(() => { starting = false; }); if (g !== generation) return;
-    if (!answer.ok) { note = problemText(answer.problem); if (answer.problem.kind === "refused" && answer.problem.code === "sandbox-unavailable") await refreshStatus(); return; }
+    if (!answer.ok) { note = problemText(answer.problem); return; }
     autoClaim = true; setLease(answer.data); owned = true;
     if (lease?.status === "ready") await claim();
   }, buttons.start); });

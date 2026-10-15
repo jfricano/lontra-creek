@@ -1,4 +1,4 @@
-/** scripts/dev-lab.mjs: argument parsing, prerequisite checks, and the discard guard, with no Docker. */
+/** scripts/dev-lab.mjs: argument parsing, prerequisite checks, the remembered extra CA, and the discard guard, with no Docker. */
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,17 +6,19 @@ import { join } from "node:path";
 import { describe, test } from "node:test";
 import {
   COMPOSE_FILES, DEFAULT_DIR, DEFAULT_PROJECT, MIN_NODE, ROOT, UsageError,
-  checkOwnDirectory, checkPrerequisites, compareVersions, confirmDiscard, extraCaDockerfile, localDirectory, parseArgs, readEnv, sandboxSecret, urls, waitForReadyBench
+  buildFailureHint, checkOwnDirectory, checkPrerequisites, chooseExtraCa, compareVersions, confirmDiscard, extraCaDockerfile, localDirectory, parseArgs, readEnv,
+  rememberExtraCa, sandboxSecret, startAgain, urls, waitForReadyBench
 } from "../dev-lab.mjs";
 
 describe("parseArgs", () => {
   test("defaults to up in .local/lab with a rebuild", () => {
-    assert.deepEqual(parseArgs([]), { command: "up", dir: DEFAULT_DIR, project: undefined, build: true, extraCa: undefined, follow: false, yes: false, services: [] });
+    assert.deepEqual(parseArgs([]), { command: "up", dir: DEFAULT_DIR, project: undefined, build: true, extraCa: undefined, forgetExtraCa: false, follow: false, yes: false, services: [] });
   });
 
   test("reads each command and its own options", () => {
     assert.equal(parseArgs(["up", "--no-build"]).build, false);
     assert.equal(parseArgs(["up", "--extra-ca", "/tmp/ca.pem"]).extraCa, "/tmp/ca.pem");
+    assert.equal(parseArgs(["up", "--no-extra-ca"]).forgetExtraCa, true);
     assert.equal(parseArgs(["stop"]).command, "stop");
     assert.equal(parseArgs(["status", "--dir", ".local/lab-2", "--project", "lab-2"]).project, "lab-2");
     assert.deepEqual(parseArgs(["logs", "-f", "caddy", "lab-1"]).services, ["caddy", "lab-1"]);
@@ -34,7 +36,8 @@ describe("parseArgs", () => {
   test("rejects unknown commands, options, stray arguments, and options for other commands", () => {
     for (const argv of [
       ["deploy"], ["down"], ["up", "--volumes"], ["stop", "--yes"], ["up", "--yes"], ["stop", "now"], ["status", "--follow"],
-      ["discard", "--no-build"], ["logs", "--extra-ca", "x"], ["logs", "Caddy;rm"], ["--project", "Bad Name"], ["--dir", ""], ["--extra-ca"]
+      ["discard", "--no-build"], ["logs", "--extra-ca", "x"], ["logs", "Caddy;rm"], ["--project", "Bad Name"], ["--dir", ""], ["--extra-ca"],
+      ["stop", "--no-extra-ca"], ["up", "--extra-ca", "/tmp/ca.pem", "--no-extra-ca"]
     ]) {
       assert.throws(() => parseArgs(argv), UsageError, argv.join(" "));
     }
@@ -123,6 +126,14 @@ describe("checkPrerequisites", () => {
   test("reports a missing --extra-ca file", async () => {
     const { run } = runner(healthy);
     assert.match((await checkPrerequisites({ run, portFree: free, nodeVersion: "24.15.0", extraCa: "/nonexistent/ca.pem" })).join(), /--extra-ca file not found/);
+  });
+
+  test("reports a remembered extra CA that is gone, and how to replace or forget it", async () => {
+    const { run } = runner(healthy);
+    const problems = await checkPrerequisites({ run, portFree: free, nodeVersion: "24.15.0", extraCa: "/nonexistent/ca.pem", extraCaRemembered: true });
+    assert.equal(problems.length, 1);
+    assert.match(problems[0], /remembered from an earlier `up --extra-ca` is gone: \/nonexistent\/ca\.pem/);
+    assert.match(problems[0], /`--extra-ca <file>` again, or `--no-extra-ca`/);
   });
 });
 
@@ -221,6 +232,74 @@ describe("extraCaDockerfile", () => {
     assert.equal((adapted.match(/^RUN --mount=type=secret,id=ca,target=\/tmp\/extra-ca\.pem NODE_EXTRA_CA_CERTS=\/tmp\/extra-ca\.pem npm ci /gm) ?? []).length, runs.length);
     assert.equal(adapted.replace(/--mount=type=secret,id=ca,target=\/tmp\/extra-ca\.pem NODE_EXTRA_CA_CERTS=\/tmp\/extra-ca\.pem /g, ""), original);
     assert.throws(() => extraCaDockerfile("FROM node\nRUN npm install\n"), /no `RUN npm ci`/);
+  });
+});
+
+describe("the remembered extra CA", () => {
+  test("a given bundle is used as an absolute path and remembered; later runs reuse it until --no-extra-ca", () => {
+    const state = { project: DEFAULT_PROJECT, createdAt: "2026-10-14T22:55:05.588Z" };
+    const given = chooseExtraCa(state, { given: "certs/proxy.pem", cwd: "/work/lontra-creek" });
+    assert.deepEqual(given, { extraCa: "/work/lontra-creek/certs/proxy.pem", source: "given", state: { ...state, extraCa: "/work/lontra-creek/certs/proxy.pem" } });
+    assert.deepEqual(chooseExtraCa(given.state, {}), { extraCa: "/work/lontra-creek/certs/proxy.pem", source: "remembered", state: given.state });
+    assert.deepEqual(chooseExtraCa(given.state, { given: "/etc/other.pem" }).extraCa, "/etc/other.pem", "a new bundle replaces the remembered one");
+    assert.deepEqual(chooseExtraCa(given.state, { forget: true }), { extraCa: undefined, source: "forgotten", state });
+    assert.deepEqual(chooseExtraCa(state, { forget: true }), { extraCa: undefined, source: "none", state });
+    assert.deepEqual(chooseExtraCa(state, {}), { extraCa: undefined, source: "none", state });
+    assert.deepEqual(chooseExtraCa(undefined, {}), { extraCa: undefined, source: "none", state: {} });
+  });
+
+  test("up --extra-ca, stop, then a plain up: the local directory's dev-lab.json carries the bundle across, keeping its other fields", () => {
+    const dir = mkdtempSync(join(tmpdir(), "lontra-dev-lab-ca-"));
+    try {
+      const file = join(dir, "dev-lab.json");
+      writeFileSync(file, JSON.stringify({ project: "lab-2", createdAt: "2026-10-14T22:55:05.588Z", note: "Made by scripts/dev-lab.mjs." }, null, 2) + "\n");
+      const first = rememberExtraCa(dir, { given: "/etc/proxy-ca.pem" });
+      assert.equal(first.source, "given");
+      assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { project: "lab-2", createdAt: "2026-10-14T22:55:05.588Z", note: "Made by scripts/dev-lab.mjs.", extraCa: "/etc/proxy-ca.pem" });
+
+      // `stop` touches nothing here; the next plain `up` (no flags) finds the bundle again.
+      const again = rememberExtraCa(dir, {});
+      assert.deepEqual([again.source, again.extraCa], ["remembered", "/etc/proxy-ca.pem"]);
+      assert.match(startAgain(JSON.parse(readFileSync(file, "utf8"))), /extra CA remembered from `--extra-ca` \(\/etc\/proxy-ca\.pem\); `up --no-extra-ca` forgets it/);
+
+      const forgotten = rememberExtraCa(dir, { forget: true });
+      assert.deepEqual([forgotten.source, forgotten.extraCa], ["forgotten", undefined]);
+      assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { project: "lab-2", createdAt: "2026-10-14T22:55:05.588Z", note: "Made by scripts/dev-lab.mjs." });
+      assert.equal(rememberExtraCa(dir, {}).source, "none");
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test("how to start again names the plain and the no-build restart, and the CA only when one is remembered", () => {
+    assert.equal(startAgain({ project: DEFAULT_PROJECT }), "Start again with `npm run dev:lab` (rebuilds the site and image), or `npm run dev:lab -- up --no-build` to reuse the last build; the same study resumes.");
+    assert.doesNotMatch(startAgain(), /extra CA/);
+    assert.match(startAgain({ extraCa: "/etc/proxy-ca.pem" }), /Rebuilds use the extra CA/);
+    assert.match(startAgain({}, { dir: ".local/lab-2" }), /^Start again with `npm run dev:lab -- up --dir \.local\/lab-2` .*`npm run dev:lab -- up --no-build --dir \.local\/lab-2`/);
+  });
+});
+
+describe("buildFailureHint", () => {
+  // The clean-room run's last lines before "docker build -f deploy/Dockerfile failed (exit 1).", October 14, 2026.
+  const certFailure = "#16 71.07 npm error code SELF_SIGNED_CERT_IN_CHAIN\n#16 71.07 npm error request to https://registry.npmjs.org/xmlhttprequest-ssl/-/xmlhttprequest-ssl-2.1.2.tgz failed, reason: self-signed certificate in certificate chain\n";
+  const pullLimit = "#4 ERROR: unexpected status from HEAD request to https://registry-1.docker.io/v2/library/node/manifests/24.21.0-bookworm-slim: 429 Too Many Requests\n";
+
+  test("a certificate error points at --extra-ca and the docs", () => {
+    const hint = buildFailureHint(certFailure);
+    assert.match(hint, /npm run dev:lab -- up --extra-ca <bundle\.pem>/);
+    assert.match(hint, /Behind a TLS-intercepting proxy.*Troubleshooting in docs\/LOCAL_LAB\.md/);
+    assert.match(buildFailureHint("npm error code UNABLE_TO_GET_ISSUER_CERT_LOCALLY\n"), /--extra-ca/);
+    assert.match(buildFailureHint("reason: unable to get local issuer certificate"), /--extra-ca/);
+  });
+
+  test("with an extra CA already in use, it says to check that bundle instead", () => {
+    const hint = buildFailureHint(certFailure, { extraCa: "/etc/proxy-ca.pem" });
+    assert.match(hint, /even with the extra CA \/etc\/proxy-ca\.pem/);
+    assert.doesNotMatch(hint, /<bundle\.pem>/);
+  });
+
+  test("Docker Hub's pull limit says to wait or sign in; anything else gets no guess", () => {
+    assert.match(buildFailureHint(pullLimit), /429 Too Many Requests.*\n.*docker login/);
+    assert.equal(buildFailureHint("#12 ERROR: process \"/bin/sh -c npm run build\" did not complete successfully: exit code: 2\n"), null);
+    assert.equal(buildFailureHint(""), null);
   });
 });
 

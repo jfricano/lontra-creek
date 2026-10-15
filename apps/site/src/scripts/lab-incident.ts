@@ -9,7 +9,7 @@
  * Every mark carries text and an icon, so no state depends on color. A note beside a
  * mark says what it does not mean.
  */
-import type { LabIncidentSummary, LabIntent } from "../../../field-station/src/lab/contract.ts";
+import type { LabIncidentSummary, LabIntent, LabScenarioId } from "../../../field-station/src/lab/contract.ts";
 
 export interface Mark {
   icon: string;
@@ -49,7 +49,7 @@ export const EVALUATION: Record<NonNullable<LabIncidentSummary["evaluation"]>["r
 
 export const REPROCESS: Record<NonNullable<LabIncidentSummary["reprocess"]>, Mark> = {
   reprocessed: { icon: "✓", text: "Reprocessed", tone: "neutral", note: "Gateway-local reprocessing ran. That isn't proof a business action completed or that every browser rendered it." },
-  superseded: { icon: "✓", text: "Superseded by a newer snapshot", tone: "neutral", note: "A safe outcome: the old state was already obsolete." },
+  superseded: { icon: "✓", text: "Superseded by a newer snapshot", tone: "neutral", note: "A safe outcome: the old state was already obsolete. Each evaluation can be approved once; evaluating again offers a new approval." },
   failed: { icon: "✕", text: "Reprocessing failed", tone: "failed" },
   unknown: { icon: "?", text: "Reprocessing outcome unknown", tone: "held", note: "The result is looked up again; the request is never repeated automatically." }
 };
@@ -75,6 +75,15 @@ export const INTENT_NOTES: Record<LabIntent, string> = {
   "incident.reassess": "Asks the recovery guard again whether continuing past the saved record is safe.",
   "incident.evaluate": "A dry run of the saved record through today's mapper. It changes no source offset and sends no state.",
   "incident.approve-reprocess": "Opens the evaluation for review. Nothing is reprocessed until you approve it there."
+};
+
+/**
+ * Stories whose lesson is the hold itself. The backend still offers a retry of the held
+ * record, and each one holds again: that is the correct end, as the line beside it says.
+ */
+export const HOLD_IS_THE_END: Partial<Record<LabScenarioId, string>> = {
+  "garbled-reading": "Holding is where this story ends: saved bytes that aren't valid JSON can't be repaired, so each retry holds again. Returning the bench discards this study, which doesn't fix the incident.",
+  "conflicting-readings": "Holding is where this story ends: nothing says which reading is true, and there is no force-skip, so each retry holds again. Returning the bench discards this study, which doesn't fix the incident."
 };
 
 export type StepOrigin = "Application action" | "Library observation" | "Browser observation";
@@ -132,7 +141,8 @@ export function incidentView(incident: LabIncidentSummary, browser: readonly Bro
     discarded: incident.discarded ? DISCARDED : null,
     nextIntent: incident.nextIntent,
     nextLabel: incident.nextIntent === null ? null : INTENT_LABELS[incident.nextIntent],
-    next: incident.nextIntent !== null ? INTENT_NOTES[incident.nextIntent]
+    next: incident.nextIntent !== null
+      ? [INTENT_NOTES[incident.nextIntent], ...(incident.nextIntent === "incident.retry-current" && incident.source === "held" ? [HOLD_IS_THE_END[incident.scenario]] : [])].filter(Boolean).join(" ")
       : incident.discarded ? "None: this study was discarded."
       // No Lab intent continues past this hold (an integrity class, or an open continuation limit): only a reset ends it.
       : incident.source === "held" ? "None. The source stays held at this record; returning the bench discards this study, which doesn't fix the incident."

@@ -422,7 +422,7 @@ test("an incident answer that arrives after a newer one is dropped, so the panel
   const held: Route[] = [];
   let holding = true;
   await page.route("**/api/lab/incident", route => { if (holding) { held.push(route); return; } return route.fallback(); });
-  await expect.poll(() => held.length, { timeout: 5_000 }).toBeGreaterThan(0);
+  await expect.poll(() => held.length, { timeout: 10_000 }).toBeGreaterThan(0);
   holding = false;
   // Every label the next-step button shows from here on, so a step back can't hide between polls.
   await act(page).evaluate(button => {
@@ -450,6 +450,8 @@ test("LC11-S02: a garbled reading stays held; evaluation fails and nothing is of
   await act(page).click();
   await expect(operation(page)).toHaveText("Retry: done. The gateway ran the retry. Current incident shows how it turned out.");
   await expect(panel(page).locator("[data-lab-incident-source]")).toContainText("Source held at this record");
+  // The next step is offered once the page has fetched the incident the retry left.
+  await expect(act(page)).toHaveText("Evaluate the saved record");
   await act(page).click();
   await expect(panel(page).locator("[data-lab-incident-evaluation]")).toContainText("Evaluation failed");
   await expect(panel(page).locator("[data-lab-incident-evaluation]")).toContainText("The saved bytes still don't decode as JSON");
@@ -517,7 +519,9 @@ test("an approval whose plan expired or whose incident moved on sends nothing (f
   await dialog.getByRole("button", { name: "Cancel" }).click();
   // A fresh plan, then the incident moves on while the review is open.
   lab.setIncident({ ...base, evaluation: plan(new Date(Date.now() + 240_000).toISOString()) });
-  await page.waitForTimeout(2_500);
+  // Until the next incident poll has answered, the page still holds the expired plan.
+  await (await page.waitForRequest(request => new URL(request.url()).pathname === "/api/lab/incident")).response();
+  await page.waitForTimeout(300);
   await act(page).click();
   await expect(approve).toHaveAttribute("aria-disabled", "false");
   lab.setIncident({ ...base, scenarioRevision: 6, evaluation: plan(new Date(Date.now() + 240_000).toISOString()) });

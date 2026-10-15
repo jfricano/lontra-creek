@@ -87,6 +87,67 @@ test("the pool refreshes when a lease is granted, and returning resets the bench
   await expect(page.locator("[data-lab-revision]")).toHaveText("—");
 });
 
+test("one refused or lost pool check keeps the bench; the Lab is called unavailable only when checks keep failing", async ({ page }) => {
+  // While `failing` is set, pool checks get that answer; with `once`, only the next check does.
+  let failing: { status: number; json?: unknown } | null = null; let once = false; let served = 0;
+  const fail = (answer: { status: number; json?: unknown }, onlyNext: boolean) => { failing = answer; once = onlyNext; };
+  await page.route("**/api/lab/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/status")) {
+      const answer = failing; if (answer) { served++; if (once) failing = null; }
+      return answer ? route.fulfill(answer.json === undefined ? { status:answer.status, body:"" } : { status:answer.status, json:answer.json })
+        : route.fulfill({ json:{ enabled:true, now:now(), benches:[{ bench:1, state:"leased" }], queueLength:0, nextFreeAt:null } });
+    }
+    if (path.endsWith("/lease/token")) return route.fulfill({ json:token });
+    if (path.endsWith("/trace")) return route.fulfill({ json:{ items:[], next:"", gap:false } });
+    return route.fulfill({ json:ready() });
+  });
+  const banner = page.locator("[data-lab-unavailable]"); const actions = page.locator("[data-lab-actions]"); const check = page.locator("[data-lab-retry]");
+  await page.goto("/lab/"); await page.locator("[data-lab-join]").click();
+  await expect(page.locator("[data-lab-message]")).toHaveText("Your isolated bench: 1.");
+  await expect(actions).toBeEnabled();
+  // Over this address's request budget (two pages on one computer, say): the field station answered, so the Lab isn't down.
+  fail({ status:429, json:{ error:"Too many requests.", code:"too-many-requests" } }, true);
+  await check.click(); await expect.poll(() => served).toBe(1);
+  await page.waitForTimeout(1_000);
+  await expect(banner).toBeHidden(); await expect(actions).toBeEnabled();
+  // One check lost at the edge is a blip.
+  fail({ status:502 }, true);
+  await check.click(); await expect.poll(() => served).toBe(2);
+  await page.waitForTimeout(1_000);
+  await expect(banner).toBeHidden(); await expect(actions).toBeEnabled();
+  // Checks that keep failing mean the Lab is unavailable.
+  fail({ status:502 }, false);
+  await check.click(); await expect.poll(() => served).toBeGreaterThanOrEqual(3);
+  await check.click();
+  await expect(banner).toBeVisible(); await expect(page.locator("[data-lab-message]")).toHaveText("The Lab is unavailable.");
+  // The next answer clears it.
+  failing = null;
+  await check.click();
+  await expect(banner).toBeHidden();
+});
+
+test("a leased page keeps its Lab requests within its share of the address budget", async ({ page }) => {
+  test.setTimeout(90_000);
+  const sent: number[] = [];
+  await page.route("**/api/lab/**", async route => {
+    sent.push(Date.now());
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/status")) return route.fulfill({ json:{ enabled:true, now:now(), benches:[{ bench:1, state:"leased" }], queueLength:0, nextFreeAt:null } });
+    if (path.endsWith("/lease/token")) return route.fulfill({ json:token });
+    if (path.endsWith("/trace")) return route.fulfill({ json:{ items:[], next:"", gap:false } });
+    return route.fulfill({ json:ready() });
+  });
+  await page.goto("/lab/"); await page.locator("[data-lab-join]").click();
+  await expect(page.locator("[data-lab-message]")).toHaveText("Your isolated bench: 1.");
+  // Past the page's burst (9), the rate is what's left: at most 1.4 a second, so two pages from one address stay under the field station's 3.
+  await page.waitForTimeout(10_000);
+  const from = Date.now(); await page.waitForTimeout(20_000);
+  const inWindow = sent.filter(at => at >= from).length;
+  // 1.4 a second, plus the few tokens left in the bucket when the window opened.
+  expect(inWindow, `${inWindow} Lab requests in 20 s`).toBeLessThanOrEqual(32);
+});
+
 test("the feed opens on the scenario view, marks the retried record, and says how Resume turned out", async ({ page }) => {
   const pages = [
     [feedItem({ kind:"bench", event:"lease-started" }), feedItem({ kind:"trace", stage:"send", outcome:"ok", group:"g1", channel:"station", subscriber:"you" }),

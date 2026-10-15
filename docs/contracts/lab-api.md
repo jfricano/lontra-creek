@@ -55,7 +55,8 @@ Configuration defaults, not measured capacity. The real values are recorded on t
 | Queue | 50 places | Then `queue-full` |
 | Places per client address | 2 | Leases plus places in line, keyed by `X-Client-IP` (an IPv6 address by its /64), counted across the Lab and the workbench sandbox together ([sandbox contract](sandbox-api.md) §8) |
 | Lab request budget | 20 at once, 3 a second | Per client address, for `/api/lab/*` and `/api/sandbox/*` together, instead of the general `/api` budget (30 at once, 1 a second), which a polling page would exhaust |
-| Page polling | lease every 2 s; feed every 1 s while active; status every 10 s | Also on `visibilitychange` to visible |
+| Page polling | lease every 2 s; feed every 1 s while active; status every 10 s, slower when the page's request share runs short | Also on `visibilitychange` to visible |
+| Page request share | at most 1.4 a second after a burst of 9 | Every Lab request the page sends waits for it, so two places from one address fit the Lab request budget. Polls leave 3 in reserve for the visitor's own requests. A 429 holds every request for its `Retry-After`, or 2 s when the page can't read it. A 429 never makes the page call the Lab unavailable, and neither does one lost status check; two in a row do |
 | Feed | 500 items kept per lease; at most 100 per response | Older items fall off; the page is told (`gap`) |
 
 StreamOtter timings the Lab relies on, from `0.1.0-rc.3`:

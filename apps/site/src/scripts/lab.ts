@@ -2,6 +2,7 @@ import type { Client } from "streamotter/client";
 import type { LabStatus, LabLease, LabToken, LabAction, LabActionResult, LabFeedPage, LabBenchState, LabErrorCode, LabIncidentView, LabIntentRequest, LabOperation } from "../../../field-station/src/lab/contract.ts";
 import { channelVersions, type AppChannels } from "../generated/streamotter.generated.ts";
 import { LabFeedModel, retriedOutcome } from "./lab-feed.ts";
+import { RequestBudget, refusedPauseMs } from "./lab-budget.ts";
 import { ApprovalDialog, reviewFrom } from "./lab-approval.ts";
 import { capabilityAnswer, type CapabilityAnswer } from "./lab-catalog-model.ts";
 import type { BrowserStep } from "./lab-incident.ts";
@@ -31,6 +32,8 @@ const MESSAGES: Record<LabErrorCode, string> = {
   "lab-unavailable": "The Lab is unavailable.",
   "bench-unavailable": "Your bench stopped answering."
 };
+/** Pool checks that fail in a row, with no answer or a server error, before the page calls the Lab unavailable. */
+const STATUS_FAILURES_UNAVAILABLE = 2;
 function explain(error: unknown): string {
   if (error instanceof HttpStatusError) return (error.code !== undefined && error.code in MESSAGES ? MESSAGES[error.code as LabErrorCode] : undefined) ?? (error.status >= 500 ? "The Lab isn't answering right now. Trying again." : `The Lab answered ${error.status}.`);
   if (error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError")) return "The Lab didn't answer in time. Trying again.";
@@ -53,6 +56,10 @@ async function mount(root: HTMLElement): Promise<void> {
   let poolAvailable = false;
   let nextActionAt = 0;
   let offset = 0;
+  /** Pool checks failed in a row (status()). */
+  let statusFailures = 0;
+  /** Every Lab request this page sends waits for its share of the address budget (lab-budget.ts). */
+  const budget = new RequestBudget();
   /** Bumped on every disconnect: a connect, view event, or feed page from an older client is dropped. */
   let sequence = 0;
   let benchStateNow: LabBenchState | undefined;
@@ -81,12 +88,16 @@ async function mount(root: HTMLElement): Promise<void> {
   let announced: string | null = null;
   function observe(text: string): void { browserSteps.push({ at: new Date(Date.now() + offset).toISOString(), text }); if (browserSteps.length > 50) browserSteps.shift(); }
   function applicationView(): void { incident.application({ connection, subscription: viewState, reason: viewReason, revision, value: lastValue }); }
-  async function request<T>(path: string, body?: unknown, method = body === undefined ? "GET" : "POST", signal?: AbortSignal): Promise<T> {
+  /** `background` is the poll loop's own requests, which wait behind the visitor's (lab-budget.ts). */
+  async function request<T>(path: string, body?: unknown, method = body === undefined ? "GET" : "POST", signal?: AbortSignal, background = false): Promise<T> {
+    await budget.acquire(signal, background);
     const timeout = AbortSignal.timeout(8_000);
     const response = await fetch(`${origin}/api/lab/${path}`, { method, credentials: "include", cache: "no-store", signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }) });
     // A 502 from the edge has no JSON body: check the status first.
     const data = await response.json().catch(() => ({})) as T & { error?: string; code?: string };
+    // A 429 spent the address budget, except `too-many-actions`, which is this lease's one action a second.
+    if (response.status === 429 && data.code !== "too-many-actions") budget.refused(refusedPauseMs(response.headers.get("retry-after")));
     if (!response.ok) throw new HttpStatusError(data.error ?? `Lab request failed (${response.status}).`, response.status, data.code);
     return data;
   }
@@ -171,20 +182,27 @@ async function mount(root: HTMLElement): Promise<void> {
     // The pool changes whenever this visitor's place does: show it now, not at the next 10 s poll.
     if (changed) void status();
   }
-  async function status(): Promise<void> {
+  async function status(background = false): Promise<void> {
     try {
-      const result = await request<LabStatus>("status");
+      const result = await request<LabStatus>("status", undefined, "GET", undefined, background);
       const working = result.enabled && result.benches.some(b => b.state === "ready" || b.state === "leased" || b.state === "resetting");
-      poolAvailable = working;
+      statusFailures = 0; poolAvailable = working;
       el("[data-lab-unavailable]").hidden = working;
       el("[data-lab-pool]").textContent = result.enabled ? result.benches.map(b => `Bench ${b.bench}: ${b.state}`).join(" · ") : "Lab not enabled on this deployment.";
       if (!working) { joins.disabled = true; await disconnect(); text(message, "The Lab is unavailable."); }
       else if (!lease || lease.status === "none" || lease.status === "ended") { joins.disabled = false; if (lease?.status !== "ended") text(message, "Choose Borrow a bench to begin."); }
-    } catch { poolAvailable = false; el("[data-lab-unavailable]").hidden = false; text(message, "The Lab is unavailable."); joins.disabled = true; await disconnect(); }
+    } catch (error) {
+      // A 429 is the field station answering (this address's request budget is spent), and one lost or failed check
+      // usually clears at the next: neither shows the Lab is down, so the page keeps its bench and says what happened.
+      const refused = error instanceof HttpStatusError && error.status === 429;
+      if (!refused) statusFailures++;
+      if (refused || poolAvailable && statusFailures < STATUS_FAILURES_UNAVAILABLE) { text(message, explain(error)); return; }
+      poolAvailable = false; el("[data-lab-unavailable]").hidden = false; text(message, "The Lab is unavailable."); joins.disabled = true; await disconnect();
+    }
   }
-  async function leasePoll(): Promise<void> {
+  async function leasePoll(background = false): Promise<void> {
     if (lease && lease.status !== "none" && lease.status !== "ended") {
-      try { await renderLease(await request<LabLease>("lease")); }
+      try { await renderLease(await request<LabLease>("lease", undefined, "GET", undefined, background)); }
       catch(error) { heartbeatHealthy = false; actions.disabled = true; await failed(error); }
     }
   }
@@ -215,11 +233,11 @@ async function mount(root: HTMLElement): Promise<void> {
       outcome.textContent = retriedOutcome(retried);
     }
   }
-  async function feed(): Promise<void> {
+  async function feed(background = false): Promise<void> {
     if (!leaseId) return;
     const activeSequence = sequence;
     try {
-      const page = await request<LabFeedPage>(`trace${cursor ? `?after=${encodeURIComponent(cursor)}` : ""}`);
+      const page = await request<LabFeedPage>(`trace${cursor ? `?after=${encodeURIComponent(cursor)}` : ""}`, undefined, "GET", undefined, background);
       // A reconnect while this was in flight reset the cursor: this page belongs to the old one.
       if (activeSequence !== sequence) return;
       cursor = page.next;
@@ -247,12 +265,12 @@ async function mount(root: HTMLElement): Promise<void> {
    * poll and a finished step's own fetch can overlap: an answer to an older fetch than the
    * one already shown is dropped, so the panel never steps back.
    */
-  async function incidentPoll(): Promise<void> {
+  async function incidentPoll(background = false): Promise<void> {
     if (!leaseId || capabilities.kind !== "summary" || !capabilities.summary.features.incidentProjection.available) return;
     const activeSequence = sequence;
     const asked = ++incidentAsked;
     try {
-      const view = await request<LabIncidentView>("incident");
+      const view = await request<LabIncidentView>("incident", undefined, "GET", undefined, background);
       if (activeSequence !== sequence || asked < incidentShown) return;
       incidentShown = asked;
       const state = incident.render(view, browserSteps);
@@ -322,7 +340,7 @@ async function mount(root: HTMLElement): Promise<void> {
   let pollTick = 0;
   async function poll(): Promise<void> {
     if (stopped) return;
-    await feed(); if (pollTick % 2 === 0) { await leasePoll(); await incidentPoll(); } if (pollTick % 10 === 0) await status(); pollTick++;
+    await feed(true); if (pollTick % 2 === 0) { await leasePoll(true); await incidentPoll(true); } if (pollTick % 10 === 0) await status(true); pollTick++;
     if (!stopped) timer = setTimeout(() => { void poll(); }, 1_000);
   }
   const clock = setInterval(() => {

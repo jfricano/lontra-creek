@@ -23,6 +23,10 @@ export default defineConfig({
   forbidOnly: CI,
   retries: CI ? 2 : 0,
   reporter: CI ? [["html", { open: "never" }], ["github"], ["list"]] : "list",
+  // The Lab page paces its requests to its share of the address budget (lab-budget.ts), and in these
+  // specs its SDK keeps signing in to a gateway nothing listens on, which spends that budget too: a
+  // poll-driven change can take longer than the default 5 s to show.
+  expect: { timeout: 10_000 },
   use: {
     baseURL: SITE_URL,
     trace: "on-first-retry"

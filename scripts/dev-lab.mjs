@@ -290,10 +290,12 @@ export function buildFailureHint(output, { extraCa } = {}) {
   return null;
 }
 
-/** How to start the stack again after `stop`, or when `status` finds it stopped. */
-export function startAgain(state = {}) {
+/** How to start the stack again after `stop`, or when `status` finds it stopped, for the local directory given as `dir`. */
+export function startAgain(state = {}, { dir = DEFAULT_DIR } = {}) {
+  const flags = dir === DEFAULT_DIR ? "" : ` --dir ${dir}`;
+  const plain = flags === "" ? "npm run dev:lab" : `npm run dev:lab -- up${flags}`;
   const ca = state.extraCa === undefined ? "" : ` Rebuilds use the extra CA remembered from \`--extra-ca\` (${state.extraCa}); \`up --no-extra-ca\` forgets it.`;
-  return `Start again with \`npm run dev:lab\` (rebuilds the site and image), or \`npm run dev:lab -- up --no-build\` to reuse the last build; the same study resumes.${ca}`;
+  return `Start again with \`${plain}\` (rebuilds the site and image), or \`npm run dev:lab -- up --no-build${flags}\` to reuse the last build; the same study resumes.${ca}`;
 }
 
 /** Parses a Compose env file's KEY=value lines. */
@@ -386,8 +388,8 @@ export function rememberExtraCa(path, { given, forget = false, cwd = process.cwd
   return choice;
 }
 
-/** How many bytes of a build's output to keep for buildFailureHint: the error is at the end. */
-const TAIL_BYTES = 256 * 1024;
+/** How much of a build's output (in characters) to keep for buildFailureHint: the error is at the end. */
+const TAIL_CHARS = 256 * 1024;
 
 /** Runs a command with its output shown as it comes, keeping the tail of its stderr; resolves to { status, signal, tail }, or { status: null, error, tail }. */
 function runShowingOutput(command, args, options = {}) {
@@ -395,7 +397,7 @@ function runShowingOutput(command, args, options = {}) {
     const child = spawn(command, args, { cwd: ROOT, stdio: ["inherit", "inherit", "pipe"], ...options });
     let tail = "";
     child.stderr.setEncoding("utf8");
-    child.stderr.on("data", chunk => { process.stderr.write(chunk); tail = (tail + chunk).slice(-TAIL_BYTES); });
+    child.stderr.on("data", chunk => { process.stderr.write(chunk); tail = (tail + chunk).slice(-TAIL_CHARS); });
     child.on("error", error => done({ status: null, tail, error }));
     child.on("close", (status, signal) => done({ status, signal, tail }));
   });
@@ -498,7 +500,7 @@ async function up(options) {
   const running = capture("docker", ["ps", "-q", "--filter", `label=com.docker.compose.project=${project}`, "--filter", "label=com.docker.compose.service=caddy"]);
   const alreadyServing = running.status === 0 && running.stdout.trim() !== "";
   // A remembered --extra-ca matters only to a build; one given now is checked either way.
-  const extra = chooseExtraCa(readState(path), { given: options.extraCa, forget: options.forgetExtraCa });
+  const extra = chooseExtraCa(readState(path) ?? {}, { given: options.extraCa, forget: options.forgetExtraCa });
   const checkCa = extra.source === "given" || (options.build && extra.source === "remembered");
   const problems = await checkPrerequisites({ checkPort: !alreadyServing, extraCa: checkCa ? extra.extraCa : undefined, extraCaRemembered: extra.source === "remembered" });
   if (problems.length > 0) throw new Error(`Not ready to start the local Lab:\n${problems.map(p => `  - ${p}`).join("\n")}`);
@@ -574,7 +576,7 @@ function stop(options) {
   if (!prepared) throw new Error(`No local Lab is prepared in ${relative(ROOT, path)}; nothing to stop.`);
   step(`Stopping ${project}; volumes and the local study are kept`);
   must("docker", compose(project, path, ["down"]));
-  console.log(`Stopped. ${startAgain(readState(path))} To delete it instead: \`npm run dev:lab -- discard\`.`);
+  console.log(`Stopped. ${startAgain(readState(path), { dir: options.dir })} To delete it instead: \`npm run dev:lab -- discard${options.dir === DEFAULT_DIR ? "" : ` --dir ${options.dir}`}\`.`);
 }
 
 async function status(options) {
@@ -587,7 +589,7 @@ async function status(options) {
   must("docker", compose(project, path, ["ps", "--all"]));
   const running = capture("docker", ["ps", "-q", "--filter", `label=com.docker.compose.project=${project}`]);
   if (running.status === 0 && running.stdout.trim() === "") {
-    console.log(`\nThe local Lab (Compose project ${project}) is not running. ${startAgain(readState(path))}`);
+    console.log(`\nThe local Lab (Compose project ${project}) is not running. ${startAgain(readState(path), { dir: options.dir })}`);
     return;
   }
   step("URLs");

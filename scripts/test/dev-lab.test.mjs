@@ -273,6 +273,7 @@ describe("the remembered extra CA", () => {
     assert.equal(startAgain({ project: DEFAULT_PROJECT }), "Start again with `npm run dev:lab` (rebuilds the site and image), or `npm run dev:lab -- up --no-build` to reuse the last build; the same study resumes.");
     assert.doesNotMatch(startAgain(), /extra CA/);
     assert.match(startAgain({ extraCa: "/etc/proxy-ca.pem" }), /Rebuilds use the extra CA/);
+    assert.match(startAgain({}, { dir: ".local/lab-2" }), /^Start again with `npm run dev:lab -- up --dir \.local\/lab-2` .*`npm run dev:lab -- up --no-build --dir \.local\/lab-2`/);
   });
 });
 

@@ -20,6 +20,17 @@ test("the catalog covers LC11-S01 to S09 once each, with the plan's delivery lab
   for (const id of NEW) assert.equal(SCENARIOS[id].controls, null, id);
 });
 
+test("cards whose lesson the page shows only in part say what the page shows, and where the rest is checked", () => {
+  assert.deepEqual(TRACKS["source-failures"].filter(id => SCENARIOS[id].onPage !== undefined), ["calibration-blip", "restart-recovery", "unavailable-evidence"]);
+  // S06 has two outcomes: the first Start in a study recovers, the next runs out of retries (field-station lab/runtime.ts).
+  assert.match(SCENARIOS["calibration-blip"].onPage!, /^start it once .* Start it again in the same lease .* held\./);
+  // S08's restart and S09's deleted copy happen only in the real-Kafka suite, never from the page.
+  for (const id of ["restart-recovery", "unavailable-evidence"] as const) {
+    assert.match(SCENARIOS[id].onPage!, /^it plays like Bad projection/, id);
+    assert.match(SCENARIOS[id].onPage!, /deploy\/test\/lab-source-failures\.test\.ts/, id);
+  }
+});
+
 test("a deep link selects explanation only, and an unknown scenario is ignored", () => {
   assert.deepEqual(selectionFromUrl(url("")), { track: "connections", scenario: null });
   assert.deepEqual(selectionFromUrl(url("", "#source-failures")), { track: "source-failures", scenario: null });

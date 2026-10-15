@@ -15,5 +15,7 @@ dist/
 /blob-report/
 # Local instructions for Claude Code; not part of the published repository.
 CLAUDE.md
-.claude/launch.json
+# Local Claude Code state. settings.json stays tracked: it holds the shared permission rules.
+/.claude/*
+!/.claude/settings.json
 deploy/secrets/

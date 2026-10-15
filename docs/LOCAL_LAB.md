@@ -25,18 +25,28 @@ demonstrate it.
 ## Requirements
 
 - Node 24.15 or later (the failure journal's floor), and `npm ci` already run in
-  this checkout. On this branch `npm ci` installs StreamOtter 0.2.0-rc.1 from the
-  npm registry, at the exact version the apps pin.
+  this checkout. `npm ci` installs StreamOtter 0.2.0-rc.1 from the npm registry,
+  at the exact version the apps pin.
 - Docker (Engine or Desktop) with the daemon running, and the Docker Compose v2
   plugin, 2.24.4 or later (the local overlay uses `!override`).
 - OpenSSL, for the throwaway secrets and test certificates.
 - Port 8443 free on 127.0.0.1.
-- Network access to pull the pinned Kafka, Caddy and Node base images and npm
-  packages on the first build. Kafka runs with a 512 MB heap here; the other
-  ten containers are small Node and Caddy processes.
+- Network access on the first build, to pull the pinned images
+  (`node:24.21.0-bookworm-slim`, `apache/kafka:4.1.2`, `caddy:2.11.4-alpine`,
+  and BuildKit's `docker/dockerfile:1` frontend) and npm packages. Docker Hub
+  limits anonymous pulls: if a pull fails with `429 Too Many Requests`, wait a
+  few minutes and run again, or sign in with `docker login` first. Pulling the
+  three images by hand with `docker pull` works too. Behind a TLS-intercepting
+  proxy, see [below](#behind-a-tls-intercepting-proxy).
+- About 3 GB of free disk for the first run. Measured on October 14, 2026, on
+  Linux amd64: about 1.4 GB of images (the Node, Kafka and Caddy images and the
+  built `lontra-creek:local`), about 0.5 GB of build cache, and Kafka's data volume
+  at about 1.3 GB right after the first start.
+- Memory for eleven containers: Kafka runs with a 512 MB heap here; the other
+  ten are small Node and Caddy processes.
 
-The launcher checks each of these before doing anything and says what is
-missing.
+Before doing anything, the launcher checks Node, the installed dependencies,
+Docker, Compose, OpenSSL and the port, and says what is missing.
 
 ## Start
 
@@ -59,6 +69,9 @@ npm run dev:lab
    same study with the same secrets and test CA.
 3. Builds the site for the `https://localhost:8443` origin, and the image
    `lontra-creek:local` from `deploy/Dockerfile`. The image stays on this machine.
+   With an `--extra-ca` bundle, given now or remembered from an earlier `up`, the
+   image's `npm ci` steps trust it (see
+   [Behind a TLS-intercepting proxy](#behind-a-tls-intercepting-proxy)).
 4. Starts the Compose project `lontra-local-lab` from `deploy/compose.yaml`,
    `deploy/compose.lab.yaml`, `deploy/compose.sandbox.yaml` and
    `deploy/compose.local-lab.yaml`, and waits up to five minutes for every
@@ -82,19 +95,19 @@ changing browser cookie policy. No hosts-file change is needed: `localhost`
 resolves to your own machine.
 
 `npm run dev:lab -- up --no-build` restarts with the existing site build and
-image, skipping both builds.
+image, skipping both builds: the quicker restart after `stop`.
 
 The local Lab runs Kafka with least-privilege ACLs (`KAFKA_AUTHORIZATION=acl`)
 and the benches with the `quarantine` failure-handling profile and the local
 exercises (`LAB_FAILURE_HANDLING=quarantine`, `LAB_LOCAL_EXERCISES=1`, set by
-`deploy/compose.local-lab.yaml`), so every source-failures scenario, LC11-S01
-to S09, is offered here. The hosted Lab's default is `retry` with no local
-exercises, on a broker without authorization, which offers only the calibration
-blip (Lab contract 12.2). To try that configuration locally, export
+`deploy/compose.local-lab.yaml`), so every
+[source-failures story](#source-failure-exercises) is offered here. The hosted
+Lab's default is `retry` with no local exercises, on a broker without
+authorization, which offers only Calibration lookup blip among the new stories.
+To try that configuration locally, export
 `LAB_FAILURE_HANDLING=retry LAB_LOCAL_EXERCISES=0 KAFKA_AUTHORIZATION=none`
-before `up`; the field station and every bench read the same profile. That is
-the combination the retry evidence was recorded with (S06 only). A broker that
-already ran with ACLs keeps them stored under `none`; going back to `acl`
+before `up`; the field station and every bench read the same profile. A broker
+that already ran with ACLs keeps them stored under `none`; going back to `acl`
 enforces them again.
 
 ## Commands
@@ -103,8 +116,8 @@ Pass options after `--`, for example `npm run dev:lab -- logs -f caddy`.
 
 | Command | Effect |
 | --- | --- |
-| `up` (default) | Check, prepare, build, start, and print URLs. Safe to repeat. |
-| `status` | `docker compose ps` for the project, then probe the six URLs. |
+| `up` (default) | Check, prepare, build, start, and print URLs. Safe to repeat. `--no-build` skips both builds; `--extra-ca <file>` trusts a proxy's CA bundle in the image build and is remembered for later builds; `--no-extra-ca` forgets it. |
+| `status` | `docker compose ps` for the project, then probe the six URLs. On a stopped stack it says so, and how to start it, instead. |
 | `logs [--follow] [service...]` | The last 200 log lines, optionally streaming, optionally for named services (`caddy`, `kafka`, `field-station`, `gateway`, `lab-1`, `lab-1-kafka`, `sandbox`, and so on). |
 | `stop` | Remove the containers and network. **Keeps** the volumes and `.local/lab/`. |
 | `discard [--yes]` | **Deletes** the local study: the project's containers and volumes, and `.local/lab/`. Asks first. |
@@ -129,7 +142,10 @@ first, because port 8443 is fixed by `deploy/compose.local-lab.yaml` and
 that makes up the current study: the Kafka log, the field station's
 checkpoints, each bench's study volume (`lab-1-state` to `lab-3-state`: its
 `study.json`, journal, and discarded-study summaries), Caddy's data volume,
-and `.local/lab/` with the secrets, test CA and study epoch. The next `npm run dev:lab` resumes the same study; the field
+and `.local/lab/` with the secrets, test CA, study epoch, and any remembered
+`--extra-ca`. The next `npm run dev:lab` resumes the same study: it rebuilds the
+site and image first (through the remembered `--extra-ca`, if there is one),
+and `npm run dev:lab -- up --no-build` skips the rebuild. Either way the field
 station catches up to the wall clock from its checkpoint. This is the only
 way the launcher stops the stack, and it never deletes a volume.
 
@@ -138,7 +154,8 @@ the project's volumes and the local directory, then asks you to type the
 project name. Only that exact answer proceeds; anything else cancels. In a
 non-interactive shell (a script or CI), it refuses unless `--yes` is given.
 Confirmed, it runs `docker compose down --volumes --remove-orphans` for this
-project only and deletes the local directory. The bench study volumes go with
+project only and deletes the local directory, which also forgets a remembered
+`--extra-ca`. The bench study volumes go with
 it, so each bench's current study and its discarded-study summaries are gone
 too. It refuses to delete a directory
 the launcher did not make (one without `dev-lab.json`). Images are kept. The
@@ -270,11 +287,28 @@ a minute without a check-in from the page.
 
 ## Source-failure exercises
 
-The Lab page's **Source failures** track runs the V1.1 exercises (LC11-S01–S09)
-on a borrowed bench: open `https://localhost:8443/lab/#source-failures`, choose
-**Borrow a bench**, then **Start this scenario** on a story the page lists as
-available, and follow the incident panel. What each story shows, how a scenario
-gets offered, and what has been verified where are in
+The Lab page's **Source failures** track has nine stories. The first, Fouled
+sensor, is the existing bench control; the other eight are new exercises you
+start on a borrowed bench. Open `https://localhost:8443/lab/#source-failures`,
+choose **Borrow a bench**, then **Start this scenario** on a story the page
+lists as available, and follow the incident panel's **Next supported action**.
+
+Each story has an ID (used in these docs and on its card), a slug (in
+`/lab/?scenario=<slug>` links and in the API), and a title on the page:
+
+| ID | Slug | Title on the page | What the page shows |
+| --- | --- | --- | --- |
+| LC11-S01 | `fouled-sensor` | Fouled sensor: fix and retry | Runs with the Fouled sensor bench controls: the source pauses at the record; restore calibration and resume to retry it |
+| LC11-S02 | `garbled-reading` | Garbled reading: preserve and hold | Evidence saved and the source held; a retry holds again, which is where the story ends |
+| LC11-S03 | `bad-projection` | Bad projection: recover from authoritative state | The headline path: held until snapshot coverage is ready, then reassess, advance, and resynchronize |
+| LC11-S04 | `inspect-old-reading` | Inspect the old reading: evaluate, then reprocess | Evaluate, review and approve, then Superseded by a newer snapshot; each evaluation can be approved once |
+| LC11-S05 | `conflicting-readings` | Conflicting readings: stopping is correct | Two readings at one revision, held; a retry holds again, which is where the story ends |
+| LC11-S06 | `calibration-blip` | Calibration lookup blip | Start it once for a blip one retry absorbs, and again in the same lease for lookups that run out of retries |
+| LC11-S07 | `too-many-bad-readings` | Too many bad readings | The first five are continued past automatically; the sixth holds, with no action to reopen it |
+| LC11-S08 | `restart-recovery` | Recovery across restart and a new subscription | Plays like S03 with two records, without the coverage step. The restart itself is checked by [the suite below](#the-source-failures-suite), not on the page |
+| LC11-S09 | `unavailable-evidence` | Unavailable evidence or quarantine | Plays like S03, without the coverage step. The suite below deletes the quarantine copy and checks that reprocessing is refused; the page doesn't |
+
+What each story establishes is in
 [SOURCE_FAILURE_EXERCISES.md](releases/v1.1/SOURCE_FAILURE_EXERCISES.md); the
 interface is the [Lab contract, section 12](contracts/lab-api.md#12-the-source-failures-track-v11).
 
@@ -286,28 +320,21 @@ curl --cacert .local/lab/secrets/origin/ca.pem https://localhost:8443/api/lab/ca
 ```
 
 A story the summary doesn't list as available stays listed with its reason:
-`not-integrated` while no recorded real-Kafka evidence matches what runs here
-(the release, the exact StreamOtter packages the lockfile installed, and the
-benches' profile; a story is recorded only after its suite passes here), or
+`not-integrated` when the StreamOtter packages installed here, or the benches'
+profile, don't match what the story was verified with, or
 `deployment-restricted` when the benches' failure-handling profile
-(`LAB_FAILURE_HANDLING`) or `LAB_LOCAL_EXERCISES` doesn't cover it. Which stories the local stack offers is recorded in
-[STATUS.md](releases/v1.1/STATUS.md).
+(`LAB_FAILURE_HANDLING`) or `LAB_LOCAL_EXERCISES` doesn't cover it. With the
+defaults, `npm run dev:lab` offers all eight new stories; the hosted default
+(`LAB_FAILURE_HANDLING=retry`, `KAFKA_AUTHORIZATION=none`) offers only
+Calibration lookup blip (S06).
 
-On this stack all eight new stories are offered: `npm run dev:lab` runs the benches with the
-`quarantine` profile, `LAB_LOCAL_EXERCISES=1` and Kafka ACLs on. The hosted default
-(`LAB_FAILURE_HANDLING=retry`, `KAFKA_AUTHORIZATION=none`) offers only Calibration blip (S06),
-the one story recorded under `retry`.
+### The source-failures suite
 
-The source-failures exercises (Lab contract 12.9) run as a visitor through
-Caddy and check the broker itself through `docker compose exec`: the
-quarantine topic's copies, committed offsets, and leftover groups. S08 also
-restarts a bench container, and S09 deletes a quarantine copy. A scenario is
-recorded in `VERIFIED_WITH`, with the install's StreamOtter integrity and the
-profile it ran under, only after this suite passes for it. The suite runs only
-what the capability summary offers, so a new release, build, or scenario is
-admitted locally first: put the candidate entry in the working tree, run the
-stack and the suite, and commit the entry only for what passed (Lab contract
-12.3):
+`deploy/test/lab-source-failures.test.ts` runs every story the capability
+summary offers, as a visitor through Caddy, and checks the broker itself through
+`docker compose exec`: the quarantine topic's copies, committed offsets, and
+leftover groups. It also does what the page can't: for S08 it restarts a bench
+container, and for S09 it deletes the quarantine copy.
 
 ```sh
 C="docker compose -p lontra-local-lab -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.sandbox.yaml -f deploy/compose.local-lab.yaml --env-file .local/lab/.env"
@@ -327,7 +354,9 @@ runs only with `LAB_EXPIRY_TEST=1`.
 | Symptom | Cause and fix |
 | --- | --- |
 | `Port 8443 on 127.0.0.1 is in use` | Another local Lab or another program holds it. `npm run dev:lab -- stop` for a local Lab; there is only one port 8443. |
-| `npm ci` in the image build fails with `SELF_SIGNED_CERT_IN_CHAIN` | Your network re-signs HTTPS; use `--extra-ca` (below). |
+| `npm ci` in the image build fails with `SELF_SIGNED_CERT_IN_CHAIN`, and the launcher suggests `--extra-ca` | Your network re-signs HTTPS; pass `--extra-ca` once ([below](#behind-a-tls-intercepting-proxy)). Later builds reuse it. |
+| The image build fails with `429 Too Many Requests` | Docker Hub's limit for anonymous pulls. Wait a few minutes and run again, or `docker login` first ([Requirements](#requirements)). |
+| `up` says the extra CA bundle remembered from an earlier `up --extra-ca` is gone | The file moved or was deleted. Pass `--extra-ca <file>` again, or `--no-extra-ca` to build without one. |
 | Compose says `SANDBOX_SERVICE_TOKEN` is required | A hand-made env file without it. Append one as `deploy/OPERATIONS.md` (Workbench sandbox overlay) shows, then recreate `field-station` and `sandbox` together. `npm run dev:lab` does this for you. |
 | `/workbench/` says the sandbox is not enabled | The field station has no `SANDBOX_API_URL`: the stack was started without `deploy/compose.sandbox.yaml`. Start it with `npm run dev:lab`, or add that file to a manual `docker compose` command. |
 | `/api/sandbox/status` reports `seam-unavailable`, or `up` stops on an unhealthy `sandbox` | The installed StreamOtter has no WHC-1 manifest (the sandbox's health check fails until the seam is available and a slot can serve). Run `npm ci`, then `up` (with builds). |
@@ -349,10 +378,81 @@ npm run dev:lab -- up --extra-ca /path/to/proxy-ca-bundle.pem
 The launcher writes an adapted copy of `deploy/Dockerfile` to
 `.local/lab/build/` whose `npm ci` steps read that bundle as a BuildKit secret
 (`--secret id=ca`) through `NODE_EXTRA_CA_CERTS`. The bundle is not copied into
-any image layer, and `deploy/Dockerfile` is unchanged. Without the flag,
-nothing about the build changes.
+any image layer, and `deploy/Dockerfile` is unchanged.
 
-## Status
+You pass the flag once. The launcher remembers the bundle's absolute path in
+`.local/lab/dev-lab.json`, so every later build in that directory uses it,
+including the plain `npm run dev:lab` after `stop`, and says so when it does.
+`npm run dev:lab -- up --no-extra-ca` forgets it, and `discard` removes it with
+the directory. Without a given or remembered bundle, nothing about the build
+changes.
+
+## What the launcher runs (manual recipe)
+
+The same steps by hand, for debugging or for a machine without the launcher.
+They use the same directory, files and project name, so the launcher's
+`status`, `stop` and `discard` work on a stack started this way.
+
+```sh
+npm ci
+mkdir -p .local/lab
+export LOCAL_LAB_DIR="$PWD/.local/lab"
+deploy/make-secrets.sh "$LOCAL_LAB_DIR/.env"            # includes SANDBOX_SERVICE_TOKEN
+deploy/make-certs.sh kafka "$LOCAL_LAB_DIR/secrets/kafka" lab-1-kafka lab-2-kafka lab-3-kafka
+deploy/make-certs.sh test-origin "$LOCAL_LAB_DIR/secrets/origin" localhost   # only once: it always makes a new CA
+node --input-type=module <<'JS'
+import { readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+const dir = process.env.LOCAL_LAB_DIR;
+const config = JSON.parse(readFileSync('apps/field-station/streamotter.production.json', 'utf8'));
+config.gateway.allowedOrigins = ['https://localhost:8443'];
+writeFileSync(`${dir}/streamotter.production.json`, JSON.stringify(config, null, 2));
+appendFileSync(`${dir}/.env`, `\nLONTRA_IMAGE=lontra-creek:local\nLONTRA_SECRETS=${dir}/secrets\nLOCAL_LAB_DIR=${dir}\nFIELD_EPOCH=${new Date().toISOString()}\nSITE_ORIGIN=https://localhost:8443\nGATEWAY_PUBLIC_ORIGIN=https://localhost:8443\nDEMO_HOST=localhost\nKAFKA_HEAP_OPTS=-Xms512m -Xmx512m\n`);
+writeFileSync(`${dir}/dev-lab.json`, JSON.stringify({ project: 'lontra-local-lab', createdAt: new Date().toISOString() }, null, 2) + '\n');
+JS
+PUBLIC_FIELD_STATION_ORIGIN=https://localhost:8443 npm run build -w @lontra-creek/site
+docker build -f deploy/Dockerfile -t lontra-creek:local .
+docker compose -p lontra-local-lab -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.sandbox.yaml -f deploy/compose.local-lab.yaml --env-file "$LOCAL_LAB_DIR/.env" up -d --wait --wait-timeout 300
+```
+
+The local overlay runs Kafka with least-privilege ACLs (`KAFKA_AUTHORIZATION`
+defaults to `acl` there; see `deploy/kafka/start.sh` and the Lab contract,
+section 10.9): each bench's Kafka user reaches only its own `lab-N.*` topics
+and `streamotter-lab-N-` groups. To check every principal's grants and refusals:
+
+```sh
+STACK_KAFKA_EXEC="docker compose -p lontra-local-lab -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.sandbox.yaml -f deploy/compose.local-lab.yaml --env-file $LOCAL_LAB_DIR/.env exec -T" STACK_KAFKA_BENCHES="1 2 3" node --test --test-force-exit deploy/test/kafka-acls.test.ts
+```
+
+An existing local Kafka volume picks the ACLs up on its next start; no
+migration is needed for local data.
+
+Stop, keeping data (what `stop` runs):
+
+```sh
+docker compose -p lontra-local-lab -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.sandbox.yaml -f deploy/compose.local-lab.yaml --env-file "$LOCAL_LAB_DIR/.env" down
+```
+
+Discard (what `discard` runs after confirmation): the same command with
+`down --volumes --remove-orphans`, which deletes only this local Compose
+project's six volumes (Kafka, checkpoint, Caddy, and the three bench study
+volumes), then `rm -rf .local/lab`.
+
+## For maintainers
+
+The rest of this page is for people who change the Lab or move it to a new
+StreamOtter release.
+
+A scenario is offered only when it is recorded in `VERIFIED_WITH`
+(`apps/field-station/src/lab/capabilities.ts`), with the install's StreamOtter
+integrity and the profile it ran under, and it is recorded only after
+[the source-failures suite](#the-source-failures-suite) passes for it. The suite
+runs only what the capability summary offers, so a new release, build, or
+scenario is admitted locally first: put the candidate entry in the working tree,
+run the stack and the suite, and commit the entry only for what passed (Lab
+contract 12.3). Under the `retry` profile only S06 is recorded, checked with
+`LAB_FAILURE_HANDLING=retry LAB_LOCAL_EXERCISES=0 KAFKA_AUTHORIZATION=none`.
+
+### Status
 
 On October 3, 2026, `npm run dev:lab` ran end to end in a Linux (amd64)
 container with Docker 29.6.2 and Compose 5.3.1, behind a TLS-intercepting proxy
@@ -411,52 +511,11 @@ five on the default settings, then the queue, expiry and outage specs with
 `SANDBOX_SLOTS=1`, `SANDBOX_LEASE_SECONDS=75` and the stop and start commands.
 Firefox and WebKit have not been run against the real sandbox yet.
 
-## What the launcher runs (manual recipe)
-
-The same steps by hand, for debugging or for a machine without the launcher.
-They use the same directory, files and project name, so the launcher's
-`status`, `stop` and `discard` work on a stack started this way.
-
-```sh
-npm ci
-mkdir -p .local/lab
-export LOCAL_LAB_DIR="$PWD/.local/lab"
-deploy/make-secrets.sh "$LOCAL_LAB_DIR/.env"            # includes SANDBOX_SERVICE_TOKEN
-deploy/make-certs.sh kafka "$LOCAL_LAB_DIR/secrets/kafka" lab-1-kafka lab-2-kafka lab-3-kafka
-deploy/make-certs.sh test-origin "$LOCAL_LAB_DIR/secrets/origin" localhost   # only once: it always makes a new CA
-node --input-type=module <<'JS'
-import { readFileSync, writeFileSync, appendFileSync } from 'node:fs';
-const dir = process.env.LOCAL_LAB_DIR;
-const config = JSON.parse(readFileSync('apps/field-station/streamotter.production.json', 'utf8'));
-config.gateway.allowedOrigins = ['https://localhost:8443'];
-writeFileSync(`${dir}/streamotter.production.json`, JSON.stringify(config, null, 2));
-appendFileSync(`${dir}/.env`, `\nLONTRA_IMAGE=lontra-creek:local\nLONTRA_SECRETS=${dir}/secrets\nLOCAL_LAB_DIR=${dir}\nFIELD_EPOCH=${new Date().toISOString()}\nSITE_ORIGIN=https://localhost:8443\nGATEWAY_PUBLIC_ORIGIN=https://localhost:8443\nDEMO_HOST=localhost\nKAFKA_HEAP_OPTS=-Xms512m -Xmx512m\n`);
-writeFileSync(`${dir}/dev-lab.json`, JSON.stringify({ project: 'lontra-local-lab', createdAt: new Date().toISOString() }, null, 2) + '\n');
-JS
-PUBLIC_FIELD_STATION_ORIGIN=https://localhost:8443 npm run build -w @lontra-creek/site
-docker build -f deploy/Dockerfile -t lontra-creek:local .
-docker compose -p lontra-local-lab -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.sandbox.yaml -f deploy/compose.local-lab.yaml --env-file "$LOCAL_LAB_DIR/.env" up -d --wait --wait-timeout 300
-```
-
-The local overlay runs Kafka with least-privilege ACLs (`KAFKA_AUTHORIZATION`
-defaults to `acl` there; see `deploy/kafka/start.sh` and the Lab contract,
-section 10.9): each bench's Kafka user reaches only its own `lab-N.*` topics
-and `streamotter-lab-N-` groups. To check every principal's grants and refusals:
-
-```sh
-STACK_KAFKA_EXEC="docker compose -p lontra-local-lab -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.sandbox.yaml -f deploy/compose.local-lab.yaml --env-file $LOCAL_LAB_DIR/.env exec -T" STACK_KAFKA_BENCHES="1 2 3" node --test --test-force-exit deploy/test/kafka-acls.test.ts
-```
-
-An existing local Kafka volume picks the ACLs up on its next start; no
-migration is needed for local data.
-
-Stop, keeping data (what `stop` runs):
-
-```sh
-docker compose -p lontra-local-lab -f deploy/compose.yaml -f deploy/compose.lab.yaml -f deploy/compose.sandbox.yaml -f deploy/compose.local-lab.yaml --env-file "$LOCAL_LAB_DIR/.env" down
-```
-
-Discard (what `discard` runs after confirmation): the same command with
-`down --volumes --remove-orphans`, which deletes only this local Compose
-project's six volumes (Kafka, checkpoint, Caddy, and the three bench study
-volumes), then `rm -rf .local/lab`.
+On October 15, 2026, in the same kind of container (Docker 29.8.2, behind a
+TLS-intercepting proxy, its own `--dir` and `--project`), `up --extra-ca` had
+all eleven services healthy with three benches and three slots ready in about
+two minutes. After `stop`, a plain `up` with no flags rebuilt the image through
+the remembered bundle (a `package.json` change forced both `npm ci` steps to
+run) and resumed the same study in about a minute. `up --no-extra-ca` then
+forgot the bundle, failed on `SELF_SIGNED_CERT_IN_CHAIN` after 76 seconds, and
+printed the `--extra-ca` hint.

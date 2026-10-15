@@ -166,7 +166,7 @@ export function compose(input: { facts: BenchIncidentFacts; scenario: LabScenari
       // Exactly while the next intent is approval: the token and the offer are one fact.
       planToken: nextIntent === 'incident.approve-reprocess' ? token : null,
       summary: evaluation.validation === 'valid'
-        ? evaluation.eligible ? 'The saved record maps and validates with today\'s handlers, and may be reprocessed once.' : `The saved record maps and validates with today's handlers, but can't be reprocessed: ${INELIGIBLE[evaluation.ineligibleReason ?? ''] ?? 'StreamOtter didn\'t offer a plan'}.`
+        ? evaluation.eligible ? 'The saved record maps and validates with today\'s handlers, and may be reprocessed once with this evaluation\'s approval.' : `The saved record maps and validates with today's handlers, but can't be reprocessed: ${INELIGIBLE[evaluation.ineligibleReason ?? ''] ?? 'StreamOtter didn\'t offer a plan'}.`
         : EVIDENCE_GONE.has(evaluation.ineligibleReason ?? '') ? `The saved record couldn't be evaluated: ${INELIGIBLE[evaluation.ineligibleReason!]}.`
         : `The saved record still fails with today's handlers${evaluation.errorClass ? ` (${evaluation.errorClass})` : ''}.`
     },

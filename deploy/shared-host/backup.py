@@ -96,6 +96,42 @@ def write_new(path, data):
         output.write(data)
 
 
+LAB_OVERLAYS = ['compose.lab.yaml', 'compose.shared.lab.yaml']
+
+
+def present(path):
+    return path.exists() or path.is_symlink()
+
+
+def release_layout(config):
+    """Files to hash, Compose files in order, and extra env files for the active release.
+
+    Two Lab layouts exist. The shared-host adapter's Lab release carries both overlays and a
+    hashed `profile.env` (passed last as an env file) and no `lab.enabled` marker, which that
+    adapter forbids. The older marker layout carries `lab.enabled` and both overlays. Anything
+    in between is refused rather than snapshotted with a partial configuration.
+    """
+    files = ['compose.yaml', 'compose.shared.yaml', 'Caddyfile.shared', 'start-caddy-shared.sh', 'kafka/start.sh']
+    if present(config / 'compose.offline.yaml'):
+        files.append('compose.offline.yaml')
+    marker = present(config / 'lab.enabled')
+    overlays = [name for name in LAB_OVERLAYS if present(config / name)]
+    profile = present(config / 'profile.env')
+    if marker:
+        secure(config / 'lab.enabled', private=False)
+    if not marker and not overlays and not profile:
+        lab, env_files = False, []
+    elif overlays == LAB_OVERLAYS and (marker != profile):
+        lab, env_files = True, ([] if marker else ['profile.env'])
+    else:
+        raise ValueError('Partial or mixed Lab release configuration')
+    if lab:
+        files += LAB_OVERLAYS + env_files
+    compose_files = ['compose.yaml', *(['compose.lab.yaml'] if lab else []), 'compose.shared.yaml',
+                     *(['compose.shared.lab.yaml'] if lab else [])]
+    return files, compose_files, env_files
+
+
 def snapshot(stage):
     values = env_values(ENV)
     values.update(env_values(ROOT / 'current.env'))
@@ -103,23 +139,22 @@ def snapshot(stage):
     if config.parent != ROOT / 'releases' or not re.fullmatch(r'[a-f0-9]{40}', config.name):
         raise ValueError('Expected a release SHA configuration directory')
     secure(config, True, private=False)
-    files = ['compose.yaml', 'compose.shared.yaml', 'Caddyfile.shared', 'start-caddy-shared.sh', 'kafka/start.sh']
-    lab = config / 'lab.enabled'
-    if lab.exists() or lab.is_symlink():
-        secure(lab, private=False)
-        files += ['compose.lab.yaml', 'compose.shared.lab.yaml']
+    # A pending activation or Lab provisioning means the accepted state and the files on disk may
+    # disagree; the operator settles it first (`lontra_operator.py recover` or `accept`).
+    journal = ROOT / 'activation-transaction.json'
+    if journal.exists() or journal.is_symlink():
+        raise ValueError('Pending activation or provisioning transaction; settle it before a snapshot')
+    files, compose_files, env_files = release_layout(config)
     hashes = {}
     for name in files:
         secure(config / name, private=False)
         hashes[name] = digest((config / name).read_bytes())
     compose = ['compose', '--project-name', 'lontra-creek', '--project-directory', str(config),
-               '--env-file', str(ENV), '--env-file', str(ROOT / 'current.env'),
-               '-f', str(config / 'compose.yaml')]
-    if lab.exists():
-        compose += ['-f', str(config / 'compose.lab.yaml')]
-    compose += ['-f', str(config / 'compose.shared.yaml')]
-    if lab.exists():
-        compose += ['-f', str(config / 'compose.shared.lab.yaml')]
+               '--env-file', str(ENV), '--env-file', str(ROOT / 'current.env')]
+    for name in env_files:
+        compose += ['--env-file', str(config / name)]
+    for name in compose_files:
+        compose += ['-f', str(config / name)]
     container = run([*compose, 'ps', '-q', 'field-station']).decode().strip()
     if not re.fullmatch(r'[a-f0-9]{12,64}', container):
         raise ValueError('Expected exactly one running field station')

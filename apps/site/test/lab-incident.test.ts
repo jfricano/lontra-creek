@@ -74,3 +74,19 @@ test("a pause keeps no evidence and a retried record is processed; a hold with n
   assert.equal(incidentView(incident({ discarded: true, nextIntent: null })).next, "None: this study was discarded.");
   assert.equal(incidentView(incident({ nextIntent: "incident.approve-reprocess" })).next, "Opens the evaluation for review. Nothing is reprocessed until you approve it there.");
 });
+
+test("where the hold is the lesson (S02, S05), the offered retry says that holding again is the end state", () => {
+  for (const scenario of ["garbled-reading", "conflicting-readings"] as const) {
+    const view = incidentView(incident({ scenario, source: "held", nextIntent: "incident.retry-current" }));
+    assert.equal(view.nextLabel, "Retry the held record");
+    assert.ok(view.next.startsWith(`${INTENT_NOTES["incident.retry-current"]} Holding is where this story ends: `), scenario);
+    assert.match(view.next, /each retry holds again\. Returning the bench discards this study, which doesn't fix the incident\.$/, scenario);
+  }
+  // Fouled sensor's retry is the fix, and a record that is no longer held needs no end-state line.
+  assert.equal(incidentView(incident({ scenario: "fouled-sensor", source: "held", nextIntent: "incident.retry-current" })).next, INTENT_NOTES["incident.retry-current"]);
+  assert.equal(incidentView(incident({ scenario: "garbled-reading", source: "processed", nextIntent: "incident.retry-current" })).next, INTENT_NOTES["incident.retry-current"]);
+});
+
+test("a superseded reprocess says each evaluation's approval is used once", () => {
+  assert.match(REPROCESS.superseded.note!, /^A safe outcome: the old state was already obsolete\. Each evaluation can be approved once; evaluating again offers a new approval\.$/);
+});

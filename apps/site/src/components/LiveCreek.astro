@@ -73,7 +73,7 @@ import { LINKS } from "../site.ts";
     </p>
     <pre tabindex="0"><code>git clone {LINKS.demoRepo}.git
 cd lontra-creek
-npm install
+npm ci
 npm run dev</code></pre>
     <button class="lc-button lc-motion" type="button" data-open-recording>Watch a labeled local recording</button>
     <p>Then open <code>http://127.0.0.1:4321</code>. <a href={LINKS.demoRepo}>The demo's source is on GitHub.</a></p>
@@ -357,6 +357,10 @@ npm run dev</code></pre>
   .lc-note b {
     color: var(--p-ink);
     font-weight: 600;
+  }
+  .lc-why {
+    display: block;
+    margin-top: 6px;
   }
   .lc-log {
     margin: 0;

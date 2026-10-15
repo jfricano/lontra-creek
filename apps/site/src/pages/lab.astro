@@ -31,6 +31,7 @@ const pending = { kind: "pending" } as const;
               <h3><a href={`?scenario=${id}#${track.id}`} data-lab-scenario-link>{entry.title}</a></h3>
               {entry.delivery && <p class="lab-meta"><span class="mono">{entry.story}</span> · <span class="lab-delivery" data-delivery={entry.delivery}>{DELIVERY_LABELS[entry.delivery]}</span>{entry.note && <> · {entry.note}</>}</p>}
               <p>{entry.establishes}</p>
+              {entry.onPage && <p class="lab-onpage" data-lab-onpage><strong>On this page:</strong> {entry.onPage}</p>}
               <p class="lab-availability" id={`${key}-availability`} data-lab-availability data-state={availability.state}><span aria-hidden="true" data-lab-availability-icon>{AVAILABILITY_ICONS[availability.state]}</span> <span data-lab-availability-text>{availability.text}</span></p>
               {entry.controls
                 ? <p><a href={`#${entry.controls}`}>Bench controls: {entry.title.split(":")[0]}</a></p>
@@ -65,7 +66,7 @@ npm run dev</code></pre><p>The fixture demo does not include failure benches. Th
       <div data-lab-incident-empty>
         <p><strong>No incident to show.</strong> This panel shows a quarantine incident only when the backend reports one for your leased bench. It never shows sample data.</p>
         <p data-lab-incident-reason>Until this backend reports that it supports incidents, this panel stays empty.</p>
-        <p class="muted">Fouled sensor's pause is a held source, not a quarantine incident: follow it in Your bench and the gateway feed.</p>
+        <p class="muted">Fouled sensor pauses the source at the record without saving it to quarantine. A backend that reports incidents shows that pause here too, with no evidence kept; Your bench and the gateway feed follow it as well.</p>
       </div>
       <div data-lab-incident-body hidden>
         <p class="lab-incident-head"><strong data-lab-incident-label></strong>: <span data-lab-incident-summary></span></p>
@@ -112,6 +113,7 @@ npm run dev</code></pre><p>The fixture demo does not include failure benches. Th
 .lab-delivery { white-space:nowrap; }
 .lab-delivery[data-delivery="local-ci"] { border-bottom:1px dashed currentColor; }
 .lab-availability { font-size:.92rem; color:var(--ink-2); }
+.lab-onpage { font-size:.92rem; }
 .lab-availability[data-state="unavailable"], .lab-availability[data-state="pending"] { padding-inline-start:10px; border-inline-start:3px solid var(--line-strong); }
 .lab-scenario button[aria-disabled="true"] { opacity:.6; cursor:not-allowed; }
 .lab-capability { padding:12px 14px; background:var(--surface-2); border-radius:10px; }

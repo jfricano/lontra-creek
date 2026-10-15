@@ -25,6 +25,8 @@ export interface LabScenarioEntry {
   controls: `control-${string}` | null;
   /** A short qualifier shown beside the delivery label. */
   note?: string;
+  /** What starting it on this page shows, where that differs from what the story establishes; shown after "On this page:". */
+  onPage?: string;
 }
 
 export const DELIVERY_LABELS: Record<LabDelivery, string> = {
@@ -61,7 +63,8 @@ export const SCENARIOS: Record<LabScenarioId, LabScenarioEntry> = {
   },
   "calibration-blip": {
     id: "calibration-blip", story: "LC11-S06", title: "Calibration lookup blip", delivery: "advanced", controls: null,
-    establishes: "Only a trusted, explicitly transient mapper error gets a bounded retry. Success and exhausted retries are different outcomes."
+    establishes: "Only a trusted, explicitly transient mapper error gets a bounded retry. Success and exhausted retries are different outcomes.",
+    onPage: "start it once for a blip that one retry absorbs: nothing is held. Start it again in the same lease for lookups that keep timing out past the retries, and the record is held. The calibration table is still present; Restore calibration ends the timeouts, and a retry then processes the record."
   },
   "too-many-bad-readings": {
     id: "too-many-bad-readings", story: "LC11-S07", title: "Too many bad readings", delivery: "local-ci", controls: null,
@@ -69,11 +72,13 @@ export const SCENARIOS: Record<LabScenarioId, LabScenarioEntry> = {
   },
   "restart-recovery": {
     id: "restart-recovery", story: "LC11-S08", title: "Recovery across restart and a new subscription", delivery: "local-ci", controls: null,
-    establishes: "The same journal, consumer group, and source generation keep recovery obligations across a restart; a new view can't evade the barrier."
+    establishes: "The same journal, consumer group, and source generation keep recovery obligations across a restart; a new view can't evade the barrier.",
+    onPage: "it plays like Bad projection, with two records: quarantine, advance, resynchronize. The restart itself isn't shown here: the repository's local test suite restarts the bench's gateway and its container and checks that the barrier holds (deploy/test/lab-source-failures.test.ts)."
   },
   "unavailable-evidence": {
     id: "unavailable-evidence", story: "LC11-S09", title: "Unavailable evidence or quarantine", delivery: "local-ci", controls: null,
-    establishes: "No advancement on an unacknowledged quarantine write; missing or expired evidence refuses stored reprocessing."
+    establishes: "No advancement on an unacknowledged quarantine write; missing or expired evidence refuses stored reprocessing.",
+    onPage: "it plays like Bad projection: the copy is saved, and nothing here deletes it or fails the write. The repository's local test suite deletes the quarantine copy and checks that stored reprocessing is refused (deploy/test/lab-source-failures.test.ts)."
   },
   "relay-cut": {
     id: "relay-cut", story: null, title: "Flash flood takes the relay", delivery: null, controls: "control-relay-cut",

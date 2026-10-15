@@ -14,7 +14,7 @@ import { publicApi } from '../src/server/http.ts';
 import { readConfig } from '../src/server/config.ts';
 import type { FieldStation } from '../src/server/station.ts';
 import type { Notebooks } from '../src/server/notebooks.ts';
-function fixture(count = 3, leaseMs = 300_000) {
+function fixture(count = 3, leaseMs = 300_000, queueMax?: number) {
   let now = Date.parse('2026-09-27T00:00:00Z');
   const slots = new Map<BenchId, BenchStatus>();
   // Every study is new: a reset never brings an earlier study ID back.
@@ -39,7 +39,7 @@ function fixture(count = 3, leaseMs = 300_000) {
     close: async (bench: BenchId, studyId: string) => { gate.push(`close ${bench} ${studyId}`); calls.push({ bench, path: 'gate.close', body: studyId }); closed.add(studyId); if (opened.get(bench) === studyId) opened.delete(bench); },
     current: (bench: BenchId) => opened.get(bench) ?? null
   };
-  return { pool: new LeasePool({ client, benches: [...slots.keys()], gatewayOrigin: 'https://demo.test', now: () => now, leaseMs, studies }), calls, slots, gate, studies, hanging, advance: (ms: number) => { now += ms; }, session: (id: string, ttl = 1_800_000) => ({ subject: id, role: 'volunteer' as const, exp: now + ttl }) };
+  return { pool: new LeasePool({ client, benches: [...slots.keys()], gatewayOrigin: 'https://demo.test', now: () => now, leaseMs, studies, ...(queueMax ? { queueMax } : {}) }), calls, slots, gate, studies, hanging, advance: (ms: number) => { now += ms; }, session: (id: string, ttl = 1_800_000) => ({ subject: id, role: 'volunteer' as const, exp: now + ttl }) };
 }
 const code = (name: string) => (error: unknown) => error instanceof LabError && error.code === name;
 test('concurrent joins grant each bench once; FIFO advances after return; requests cannot choose another bench', async () => {
@@ -53,6 +53,19 @@ test('concurrent joins grant each bench once; FIFO advances after return; reques
   await assert.rejects(f.pool.token(sessions[0]!), code('no-lease'));
   assert.equal((await f.pool.token(sessions[3]!)).bench, 1);
   assert.equal(f.pool.view(sessions[1]!).status, 'ready');
+});
+test('a full line refuses a new place with 503 queue-full, and takes one again once a place frees', async () => {
+  const f = fixture(1, 300_000, 2); await f.pool.initialize(); await f.pool.sweep();
+  const [a, b, c, d] = ['a', 'b', 'c', 'd'].map(id => f.session(id)) as [ReturnType<typeof f.session>, ReturnType<typeof f.session>, ReturnType<typeof f.session>, ReturnType<typeof f.session>];
+  assert.equal((await f.pool.join(a, '1')).status, 'ready');
+  assert.equal((await f.pool.join(b, '2')).status, 'queued');
+  assert.equal((await f.pool.join(c, '3')).status, 'queued');
+  await assert.rejects(f.pool.join(d, '4'), (error: unknown) => error instanceof LabError && error.code === 'queue-full' && error.status === 503);
+  assert.equal(f.pool.status().queueLength, 2);
+  assert.equal(f.pool.view(d).status, 'none');
+  await f.pool.leave(c);
+  const joined = await f.pool.join(d, '4');
+  assert.equal(joined.status === 'queued' && joined.position, 2);
 });
 test('per-address places, unclaimed timeout, active idle, queue idle, and session cap', async () => {
   const f = fixture(1); await f.pool.initialize(); await f.pool.sweep();

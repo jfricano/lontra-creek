@@ -40,7 +40,7 @@ The browser SDK requires a running StreamOtter gateway on the server; the gatewa
 Node.js 24.15 or later (the failure journal's floor; CI and the image use Node 24). Under Node 22, `npm test` cancels eight tests in `lab-coverage.test.ts`, which is the test runner, not a product failure.
 
 ```bash
-npm install
+npm ci
 npm test
 npm run typecheck
 npm run dev        # field station + site at http://127.0.0.1:4321

@@ -10,7 +10,7 @@ const chapters = ["Dawn survey", "The creek rises", "Into Slate Canyon", "The pr
   <div data-walkthrough>
     <nav aria-label="Walkthrough chapters" class="chapters">{chapters.map((name,i) => <a href={`#chapter-${i+1}`} data-chapter-link>{i+1}. {name}</a>)}</nav>
     <p role="status" data-walk-status>Opening your volunteer session…</p>
-    <div data-walk-unavailable hidden class="status-note">The field station is unavailable. The rest of the site still works. Run this demo locally with <code>npm install</code> and <code>npm run dev</code> from <a href="https://github.com/jfricano/lontra-creek">the demo repository</a>. <button class="btn" type="button" data-walk-retry>Try again</button></div>
+    <div data-walk-unavailable hidden class="status-note">The field station is unavailable. The rest of the site still works. Run this demo locally with <code>npm ci</code> and <code>npm run dev</code> from <a href="https://github.com/jfricano/lontra-creek">the demo repository</a>. <button class="btn" type="button" data-walk-retry>Try again</button></div>
     <div data-idle-notice hidden class="status-note">Your session was closed after ten minutes idle or hidden. <button class="btn" type="button" data-session-resume>Resume with fresh snapshots</button></div>
     <div class="panel-grid">
       <section class="content-card" aria-label="Current chapter">

@@ -11,13 +11,13 @@ StreamOtter's home site and live demo. Lontra Creek is a fictional river-otter s
 
 This project uses StreamOtter the way any application does: the published [`streamotter`](https://www.npmjs.com/package/streamotter) package from npm, at an exact version. It has no other connection to the [StreamOtter repository](https://github.com/jfricano/StreamOtter).
 
-> **This branch builds against StreamOtter 0.2.0-rc.1.** `feat/v1.1-source-failure-exercises` pins `streamotter@0.2.0-rc.1` exactly, installed from the npm registry. The release was published on October 5, 2026; before that the branch used temporary pre-publish tarballs, which the registry pin replaced. See [SOURCE_FAILURE_EXERCISES.md](docs/releases/v1.1/SOURCE_FAILURE_EXERCISES.md#pre-publish-packages-and-their-removal).
+> **`main` builds against StreamOtter 0.2.0-rc.1.** Both apps pin `streamotter@0.2.0-rc.1` exactly, and `npm ci` installs it from the npm registry.
 
 The Kafka-backed path is **field station → Kafka → StreamOtter gateway → Socket.IO/WebSocket → browser SDK and UI**. The gateway also fetches current snapshots from the field station's private HTTP API. See the [data-flow diagram and walkthrough](docs/PLAN.md#kafka-data-path) for those paths and the notebook write cycle.
 
 The browser SDK requires a running StreamOtter gateway on the server; the gateway need not be an npm dependency of the frontend project. Contracts can be used independently. See [component responsibilities and runtime requirements](docs/PLAN.md#component-responsibilities-and-runtime-requirements) for the gateway, SDK, CLI, Workbench, application-state boundary, and external-feed integrations.
 
-> **Status: the production stack is proven in CI; not yet hosted.** The site (streamotter.dev) includes the guided field station, the Failure Lab with its Source failures track, the playground, the workbench page, reference pages, and labeled recorded fallbacks. The production stack (Kafka over TLS with SCRAM, the gateway, the field station, and Caddy, in containers) passes a full-stack test on every pull request, and `npm run dev:lab` runs it locally with three Lab benches and the workbench sandbox. Nothing is deployed. The demo will run on a shared host behind devops's TLS edge, in two phases: V1.1 on StreamOtter 0.1.0-rc.3 (#40 and #41), then a pin PR moving to 0.2.0-rc.1, published to npm on October 5. In both, the Lab benches and the sandbox stay off on the hosted demo until the owner approves them separately. See the [rollout plan](docs/releases/0.2.0-rc.1/ROLLOUT_PLAN.md), [V1.1 status](docs/releases/v1.1/STATUS.md), and [docs/PLAN.md](docs/PLAN.md).
+> **Status.** The site, [streamotter.dev](https://streamotter.dev), and its demo backend are hosted; V1.1 went live there on October 5, 2026, on StreamOtter 0.1.0-rc.3. The site includes the guided field station, the Failure Lab with its Source failures track, the playground, the workbench page, reference pages, and labeled recorded fallbacks. The production stack (Kafka over TLS with SCRAM, the gateway, the field station, and Caddy, in containers) passes a full-stack test on every pull request, and `npm run dev:lab` runs it locally with three Lab benches and the workbench sandbox. The hosted demo's Lab benches and sandbox can be switched off; the Lab and workbench pages ask the backend what it offers and say so. Release and hosting records are listed under [Maintainers](#maintainers).
 
 ## Layout
 
@@ -96,13 +96,21 @@ npm run dev:lab -- discard         # delete the local study (asks you to confirm
 
 It keeps everything under the git-ignored `.local/lab/` (including the stack secrets and the sandbox's `SANDBOX_SERVICE_TOKEN`), publishes only `127.0.0.1:8443`, uses a throwaway test certificate it never adds to any trust store, and deploys nothing. Stopping never deletes data; only a confirmed `discard` does. See [docs/LOCAL_LAB.md](docs/LOCAL_LAB.md) for the certificate, the sandbox, the source-failure exercises, proxied networks, and the manual recipe, and [SOURCE_FAILURE_EXERCISES.md](docs/releases/v1.1/SOURCE_FAILURE_EXERCISES.md) for what each exercise shows.
 
-In production the field station runs the simulation on the wall clock and publishes to Kafka (`apps/field-station/src/server/main.ts`), and the gateway is `streamotter start` with compiled handlers (`npm run build -w @lontra-creek/field-station`). [`deploy/compose.yaml`](deploy/compose.yaml) runs them with Kafka 4.1.2 and Caddy; [`.github/workflows/stack.yml`](.github/workflows/stack.yml) shows how to bring the stack up with throwaway secrets and test it from outside. The hosted demo is activated on the shared host (`/srv/apps/lontra`, with `/etc/apps/lontra/lontra.env`) with devops's shared-host procedure; see the [rollout plan](docs/releases/0.2.0-rc.1/ROLLOUT_PLAN.md) and [docs/SHARED_HOST_READINESS.md](docs/SHARED_HOST_READINESS.md). The `/srv/lontra` scripts and the `Deploy demo` workflow in [deploy/OPERATIONS.md](deploy/OPERATIONS.md) serve the standalone layout only.
+In production the field station runs the simulation on the wall clock and publishes to Kafka (`apps/field-station/src/server/main.ts`), and the gateway is `streamotter start` with compiled handlers (`npm run build -w @lontra-creek/field-station`). [`deploy/compose.yaml`](deploy/compose.yaml) runs them with Kafka 4.1.2 and Caddy; [`.github/workflows/stack.yml`](.github/workflows/stack.yml) shows how to bring the stack up with throwaway secrets and test it from outside.
 
 ## The simulation in brief
 
 One tick is five study minutes; the hosted demo runs a tick every two seconds, so a study day lasts 9.6 minutes. The world is a pure function of its seed and tick and checkpoints as JSON, so a restarted field station recomputes exactly where it left off. Storm runoff routes downstream through the four gauges with travel time, so a crest reaches LC-01 first and LC-04 hours later. Otters rest through midday, come out at dawn and dusk, shelter from high water, and den in their holts. While an otter is in a den, its public channel withholds where it is.
 
 Lontra Creek, its field station, and its otters are made up. The pipeline is real.
+
+## Maintainers
+
+How the hosted demo is released and run, for the people who operate it:
+
+- [docs/releases/](docs/releases/README.md): the [V1.1 release](docs/releases/v1.1/README.md) and the [0.2.0-rc.1 rollout plan](docs/releases/0.2.0-rc.1/ROLLOUT_PLAN.md), with its [rollout log](docs/releases/0.2.0-rc.1/ROLLOUT_LOG.md) of what was deployed and when. The plan has two phases: phase one, V1.1 on StreamOtter 0.1.0-rc.3 (#40 and #41), was accepted on October 5, 2026; phase two moves the hosted demo to 0.2.0-rc.1, which `main` has pinned since #42 merged that day. The plan keeps the hosted Lab benches and sandbox off until the owner approves them separately. [V1.1 status](docs/releases/v1.1/STATUS.md) is the tracker as of October 5.
+- The hosted demo is activated on the shared host (`/srv/apps/lontra`, with `/etc/apps/lontra/lontra.env`) with devops's shared-host procedure; see the rollout plan and [docs/SHARED_HOST_READINESS.md](docs/SHARED_HOST_READINESS.md). The `/srv/lontra` scripts and the `Deploy demo` workflow in [deploy/OPERATIONS.md](deploy/OPERATIONS.md) serve the standalone layout only.
+- [docs/PLAN.md](docs/PLAN.md) has the scope, operating rules, phases, and launch criteria; [docs/TEAM_PLAN.md](docs/TEAM_PLAN.md) the team's process.
 
 ## License
 

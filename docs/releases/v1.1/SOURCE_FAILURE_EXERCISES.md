@@ -1,10 +1,10 @@
 # Lontra Creek V1.1 — Source failure exercises
 
-October 4, 2026 · Owner: Jason Fricano · Slice W9b · Built on the phase 2 branch `feat/v1.1-source-failure-exercises` against StreamOtter 0.2.0-rc.1 from npm (a pre-publish pack until October 5)
+October 4, 2026, history note added October 15 · Owner: Jason Fricano · Slice W9b · On `main` since #42 merged on October 5, 2026, built against StreamOtter 0.2.0-rc.1 from npm
 
 The Failure Lab's **Source failures** track: nine stories (LC11-S01–S09) in which a bad record reaches a leased bench and the visitor watches what StreamOtter 0.2.0-rc.1's opt-in failure handling does with it: hold it, save it as evidence, refuse to continue until the view can be trusted, evaluate it again, and reprocess it on approval. This page says what the exercises are, how to run them locally, why the hosted demo differs, what has been proven at which level, and how the temporary pre-publish packages gave way to the registry release.
 
-The interfaces are fixed elsewhere and not repeated here: the [Lab contract §12](../../contracts/lab-api.md#12-the-source-failures-track-v11) (routes, intents, projection, page), its private bench surface in §8b, the [companion plan](LONTRA_CREEK_V1_1_COMPANION_PLAN.md#4-scenario-catalog-and-release-coverage) (stories and labels), and the decisions listed at the end. [STATUS.md](STATUS.md) is the live tracker. Where this page and the [rollout plan](../0.2.0-rc.1/ROLLOUT_PLAN.md) differ about hosting, the rollout plan wins.
+The interfaces are fixed elsewhere and not repeated here: the [Lab contract §12](../../contracts/lab-api.md#12-the-source-failures-track-v11) (routes, intents, projection, page), its private bench surface in §8b, the [companion plan](LONTRA_CREEK_V1_1_COMPANION_PLAN.md#4-scenario-catalog-and-release-coverage) (stories and labels), and the decisions listed at the end. [STATUS.md](STATUS.md) is the V1.1 tracker as of October 5, 2026. Where this page and the [rollout plan](../0.2.0-rc.1/ROLLOUT_PLAN.md) differ about hosting, the rollout plan wins.
 
 ## What the exercises are
 
@@ -108,38 +108,11 @@ One limit found on the real stack: a bench container that is recreated (a new ho
 
 ## Pre-publish packages, and their removal
 
-Until StreamOtter 0.2.0-rc.1 was on npm, this branch built and tested the exercises against six locally packed tarballs in `vendor/`: `jfricano/StreamOtter@4e67ef8` (the head of its #56), with every package version set to 0.2.0-rc.1. They arrived in one commit marked temporary (`chore(vendor): TEMPORARY pre-publish StreamOtter 0.2.0-rc.1 tarballs`). While they were here, `scripts/check-release-pins.mjs` kept the Images (`images.yml`) and Deploy static site (`site.yml`) workflows from building the branch, and the Release pins workflow (`release-pins.yml`) kept it out of `main`.
+History, kept for the record (note added October 15, 2026).
 
-The switch, October 5, 2026:
+Until StreamOtter 0.2.0-rc.1 was on npm, the phase 2 branch, `feat/v1.1-source-failure-exercises`, built and tested these exercises against six locally packed tarballs in `vendor/`, from `jfricano/StreamOtter@4e67ef8` with every package version set to 0.2.0-rc.1. While they were there, `scripts/check-release-pins.mjs` kept the Images and Deploy static site workflows from building the branch, and the Release pins workflow kept it out of `main`.
 
-- 0.2.0-rc.1 was published to npm at 03:27 UTC, with provenance, on the `latest` dist-tag, for all six packages: `streamotter`, `@streamotter/cli`, `@streamotter/client`, `@streamotter/contracts`, `@streamotter/gateway` and `@streamotter/workbench`. The GitHub tag `v0.2.0-rc.1` and the npm pages now exist.
-- This branch removed `vendor/`, the `file:` specs, the root `overrides` and the Dockerfile's `COPY vendor vendor` lines, pinned `streamotter@0.2.0-rc.1` exactly in both apps, and regenerated `package-lock.json` from the registry. `scripts/check-release-pins.mjs` now passes.
-- The published packages differ from the pack in one runtime file, `@streamotter/gateway`'s operator IPC (`dist/operator/ipc.js`): an answer to an oversized or overloaded request now lingers briefly so the caller reads it, and an over-long socket path is refused up front. The other differences are README text and dependency order.
-- Every lockfile integrity value changed, so the real-Kafka evidence (`VERIFIED_WITH`) and the site's recordings, both taken from the pack, were retaken on the registry install the same day (steps 4 and 5 below; results above). The workbench seam's version and integrity were unchanged in the published `workbench-host.json`.
-
-After 0.2.0-rc.1 is published and verified on npm (rollout plan, step 1), one commit does all of the following, and passes the checks below before it is pushed:
-
-1. Removes `vendor/`, the `file:` specs in `apps/field-station/package.json` and `apps/site/package.json`, the root `overrides`, and the two `COPY vendor vendor` lines in `deploy/Dockerfile` (with their comment).
-2. Pins `streamotter` to `0.2.0-rc.1` exactly in both apps and regenerates `package-lock.json` from the registry. `node scripts/check-release-pins.mjs` then passes.
-3. Re-pins `PUBLISHED_SEAM` in `apps/site/src/scripts/workbench-seam.ts` (version and the sha384 integrity of `app.js` and `workbench-host.css`) from the **published** tarball's `workbench-host.json`, and drops that file's pre-publish comment. `apps/site/test/workbench-seam.test.ts` and the site build fail until it matches the installed files.
-4. Re-records the real-Kafka evidence for the registry install: `deploy/test/lab-source-failures.test.ts` and `deploy/test/sandbox.test.ts` run again on `npm run dev:lab` built from the new lockfile (under `quarantine` with ACLs, and S06 again under `retry` with `KAFKA_AUTHORIZATION=none`), and `VERIFIED_WITH` gets the registry packages' six integrity values and only the scenarios and profiles that passed (contract §12.3). `apps/field-station/test/lab-capabilities.test.ts` fails until it does, so the commit can't pass `npm test` on the old evidence. The run's date and results replace the October 4 ones here, in STATUS.md, in LOCAL_LAB.md's status, and in the Lab contract (§10.9's evidence, §11, §12.3).
-5. Recaptures both recordings from the registry install ([content verification](../../research/content-verification.md)): `node scripts/capture-demo.ts` (`apps/site/public/recordings/creek.json`) and `node scripts/capture-workbench.mjs` (`apps/site/public/recordings/workbench/`). Their labels then say npm; `scripts/test/capture-provenance.test.mjs` fails until both are retaken. Update the October 4 capture note in `docs/research/content-verification.md`.
-6. Rewrites what describes the pre-publish pack as current, so no link points at the removed `vendor/` and no page says the release isn't on npm:
-   - `README.md`: the "This branch builds against an unpublished release" banner and the `vendor` row of the layout table.
-   - `docs/LOCAL_LAB.md`: the requirements' sentence about `npm ci` installing from `vendor/`, with its link.
-   - This page: the "Pre-publish packages, and their removal" section (its `vendor/README.md` links and the list above become a short record of the switch), the opening line's "against a pre-publish pack", and the evidence paragraphs' "pre-publish pack" wording.
-   - `docs/DEPLOYMENT_PLAN.md`: the npm-only rule's parenthesis about the phase 2 branch and `vendor/`.
-   - `docs/releases/v1.1/STATUS.md`: the phase 2 bullet ("built and tested against a pre-publish pack … in `vendor/`") and the gates that say "not on npm yet" or "uses the pre-publish pack".
-   - `docs/releases/v1.1/IMPLEMENTATION_PLAN.md`: the October 4 update's "not on npm yet … pre-publish pack of it in `vendor/`".
-   - `docs/releases/v1.1/UPSTREAM_REQUIREMENTS.md`: the October 4 update paragraph and the "not on npm yet" states of R7–R12.
-   - `docs/releases/v1.1/README.md`: the state line, the phase 2 heading's "against a pre-publish pack", and the "Only after npm publication" paragraph.
-   - `docs/releases/v1.1/RELEASE_HANDOFF.md` and `docs/releases/0.2.0-rc.1/ROLLOUT_PLAN.md` (step 1's "the branch's temporary pre-publish tarballs (`vendor/`) must be removed"): with their owners, since those plans are kept by the rollout thread.
-   - `docs/PLAN.md` ("not on npm yet") and `docs/research/release-facts.md` ("vendored pre-publish tarballs").
-   - Comments that name the pack: `apps/site/test/site-content.test.ts` and `apps/field-station/src/lab/capabilities.ts` (`VERIFIED_WITH`).
-
-   `grep -rn "pre-publish\|vendor/\|not on npm" --include=*.md --include=*.ts --include=*.mjs .` (outside `node_modules`) then finds only history: dated notes that say what was true on October 4.
-
-Then the usual checks run on Node 24: `npm run typecheck`, `npm test`, the site build, `npm run check:site`, and `npm run test:browser`. The pin PR also re-runs the Lab threat model's §10.2 and checks S1–S6 against the published package (Lab contract R4), and needs its own review and devops reconciliation before Jason merges it.
+On October 5, 2026, 0.2.0-rc.1 was published to npm at 03:27 UTC, with provenance, on the `latest` dist-tag, for all six packages: `streamotter`, `@streamotter/cli`, `@streamotter/client`, `@streamotter/contracts`, `@streamotter/gateway` and `@streamotter/workbench`. The same day the branch removed `vendor/`, the `file:` specs, the root `overrides` and the Dockerfile's `COPY vendor vendor` lines, pinned `streamotter@0.2.0-rc.1` exactly in both apps, and regenerated `package-lock.json` from the registry. The published packages differ from the pack in one runtime file, `@streamotter/gateway`'s operator IPC (`dist/operator/ipc.js`); the other differences are README text and dependency order. Every lockfile integrity value changed, so the real-Kafka evidence (`VERIFIED_WITH`) and both site recordings were retaken on the registry install that day (results above), and the workbench seam's pin was checked against the published `workbench-host.json`, which was unchanged. The branch then merged into `main` as #42, also on October 5, and no longer exists on the remote. The checklist that planned the switch is in this file's git history.
 
 ## Decisions and contracts
 

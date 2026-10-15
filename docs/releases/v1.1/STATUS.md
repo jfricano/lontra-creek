@@ -1,11 +1,13 @@
 # Lontra Creek V1.1 — Status
 
-Updated October 5, 2026 · The live tracker for [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Every slice PR updates its row in the same PR.
+Updated October 5, 2026 · The tracker for [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) while V1.1 was built.
+
+> **Historical (note added October 15, 2026).** This page is no longer updated; it records the slices and their evidence as of October 5, 2026. Later that day the phase 2 branch, `feat/v1.1-source-failure-exercises`, merged into `main` as #42, and it no longer exists on the remote: `main` pins `streamotter@0.2.0-rc.1` from npm. Phase one of the rollout was accepted the same day. Some lines below were already behind then: #40 and #41 had merged on October 4, and "nothing deployed" ended with that acceptance. What has been deployed since is in the [rollout log](../0.2.0-rc.1/ROLLOUT_LOG.md), and how to run the Lab locally is in [LOCAL_LAB.md](../../LOCAL_LAB.md).
 
 **Overall:** two branches, nothing deployed, and each StreamOtter version in its own place.
 
 - **Phase 1 (rc.3):** the slices that needed no new StreamOtter APIs are combined in draft PR #40 (`review/v1.1`; the slice PRs #29–#39 are closed with their branches kept), which passed an [independent review](REVIEW_FINDINGS.md) with every finding fixed, and #41 (`fix/streamotter-dev-domain`) renames the domain to streamotter.dev. Both pin `streamotter@0.1.0-rc.3`, which provides none of the native V1.1 capabilities ([BASELINE.md](BASELINE.md)).
-- **Phase 2 (0.2.0-rc.1):** `feat/v1.1-source-failure-exercises`, stacked on #41, is the branch of the pin PR (not opened yet). It carries W8's update for 0.2.0-rc.1, W9a and W9b. 0.2.0-rc.1 was published to npm on October 5, and the branch now pins `streamotter@0.2.0-rc.1` exactly from the registry, in place of the pre-publish pack it was built against; `scripts/check-release-pins.mjs` passes ([SOURCE_FAILURE_EXERCISES.md](SOURCE_FAILURE_EXERCISES.md#pre-publish-packages-and-their-removal)).
+- **Phase 2 (0.2.0-rc.1):** `feat/v1.1-source-failure-exercises`, stacked on #41, is the branch of the pin PR, #42. It carries W8's update for 0.2.0-rc.1, W9a and W9b. 0.2.0-rc.1 was published to npm on October 5, and the branch now pins `streamotter@0.2.0-rc.1` exactly from the registry, in place of the pre-publish pack it was built against; `scripts/check-release-pins.mjs` passes ([SOURCE_FAILURE_EXERCISES.md](SOURCE_FAILURE_EXERCISES.md#pre-publish-packages-and-their-removal)).
 - **Hosted:** in both phases the Lab benches and the workbench sandbox stay off and read as unavailable; enabling either needs Jason's separate approval with its own acceptance ([rollout plan](../0.2.0-rc.1/ROLLOUT_PLAN.md)).
 
 ## Slices

@@ -1,0 +1,6 @@
+# Cloudflare Pages redirects. StreamOtter's docs (the guides, the API reference, and StreamOtter
+# Under the Hood) live on their own site, built from the StreamOtter repository; this site's old
+# /docs/ page sends visitors there permanently. /docs/* had no pages, so it goes to the root too.
+/docs https://docs.streamotter.dev/ 301
+/docs/ https://docs.streamotter.dev/ 301
+/docs/* https://docs.streamotter.dev/ 301

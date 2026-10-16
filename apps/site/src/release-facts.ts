@@ -1,6 +1,6 @@
 /**
- * Typed facts about the pinned StreamOtter release, for `/when-it-breaks`, `/releases`,
- * and `/docs`. Every value that the package itself can supply (error codes, states,
+ * Typed facts about the pinned StreamOtter release, for `/when-it-breaks` and `/releases`.
+ * Every value that the package itself can supply (error codes, states,
  * default limits) is imported from `streamotter/contracts`, not copied by hand, so this
  * file's `Record<ErrorCode, …>` and friends fail `tsc -p apps/site/tsconfig.json` the
  * moment a code, state, or limit key is added or removed upstream. Values that the

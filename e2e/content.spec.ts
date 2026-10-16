@@ -13,7 +13,7 @@ function labWrites(page: import("@playwright/test").Page): string[] {
   return writes;
 }
 
-const routes = ["/", "/docs/", "/releases/", "/when-it-breaks/", "/playground/", "/workbench/", "/field-station/", "/lab/"];
+const routes = ["/", "/releases/", "/when-it-breaks/", "/playground/", "/workbench/", "/field-station/", "/lab/"];
 
 test("every public route has unique metadata and internal links resolve", async ({ page, request }) => {
   const titles = new Set<string>();
@@ -33,6 +33,40 @@ test("every public route has unique metadata and internal links resolve", async 
   for (const href of links) expect((await request.get(href || "/")).ok(), href).toBe(true);
   const sitemap = await (await request.get("/sitemap.xml")).text();
   for (const route of routes) expect(sitemap).toContain(`https://streamotter.dev${route}</loc>`);
+});
+
+test("Docs and API leaves for the docs site from every page list, its arrow hidden from screen readers", async ({ page }) => {
+  const docs = "https://docs.streamotter.dev/";
+  const check = async (link: import("@playwright/test").Locator) => {
+    await expect(link).toHaveAttribute("href", docs);
+    await expect(link).toHaveText("Docs and API\u00a0↗");
+    await expect(link).not.toHaveAttribute("aria-current", /./);
+    await expect(link.locator('span[aria-hidden="true"]')).toHaveText("\u00a0↗");
+  };
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  await check(page.getByRole("navigation", { name: "Main", exact: true }).getByRole("link", { name: "Docs and API", exact: true }));
+  await check(page.getByRole("navigation", { name: "Explore" }).getByRole("link", { name: "Docs and API", exact: true }));
+  // The explore cards list this site's own pages only.
+  await expect(page.locator(`#explore a[href="${docs}"]`)).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator("[data-menu] summary").click();
+  await check(page.getByRole("navigation", { name: "Main, small screens" }).getByRole("link", { name: "Docs and API", exact: true }));
+  await page.goto("/this-page-does-not-exist-anywhere-on-the-site");
+  await check(page.getByRole("navigation", { name: "Or try" }).getByRole("link", { name: "Docs and API", exact: true }));
+});
+
+test("the header keeps its navigation on one row down to 1161px and switches to the menu at 1160px", async ({ page }) => {
+  await page.setViewportSize({ width: 1161, height: 800 });
+  await page.goto("/");
+  const nav = page.getByRole("navigation", { name: "Main", exact: true });
+  await expect(nav).toBeVisible();
+  await expect(page.locator("[data-menu]")).toBeHidden();
+  const tops = await nav.getByRole("link").evaluateAll(links => links.map(link => Math.round(link.getBoundingClientRect().top)));
+  expect(new Set(tops).size, `link tops ${tops.join(", ")}`).toBe(1);
+  await page.setViewportSize({ width: 1160, height: 800 });
+  await expect(nav).toBeHidden();
+  await expect(page.locator("[data-menu]")).toBeVisible();
 });
 
 test("playground validates real configuration and receives real SDK data", async ({ page }) => {
@@ -185,7 +219,7 @@ test("releases say so when the field station doesn't answer, without filling in 
 
 test("version and availability facts agree across pages (LC11-A40)", async ({ page }) => {
   const versions = new Set<string>();
-  for (const route of ["/", "/field-station/", "/lab/", "/when-it-breaks/", "/docs/", "/releases/", "/playground/"]) {
+  for (const route of ["/", "/field-station/", "/lab/", "/when-it-breaks/", "/releases/", "/playground/"]) {
     await page.goto(route);
     const text = await page.locator("main").innerText();
     for (const match of text.matchAll(/streamotter@(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]*[0-9A-Za-z])?)/g)) versions.add(`${route} ${match[1]}`);

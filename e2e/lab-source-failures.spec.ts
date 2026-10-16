@@ -68,8 +68,8 @@ for (const [link, track, scenario] of [
     await page.waitForTimeout(2_500); // two poll cycles
     expect(posts(requests)).toEqual([]);
     expect(requests.map(request => new URL(request.url()).pathname)).not.toContain("/api/lab/incident");
-    // Navigation keeps the eight routes reachable from the header.
-    for (const href of ["/", "/field-station/", "/lab/", "/playground/", "/workbench/", "/when-it-breaks/", "/docs/", "/releases/"]) await expect(page.locator(`header a[href="${href}"]`).first()).toHaveCount(1);
+    // Navigation keeps the seven routes and the docs site reachable from the header.
+    for (const href of ["/", "/field-station/", "/lab/", "/playground/", "/workbench/", "/when-it-breaks/", "/releases/", "https://docs.streamotter.dev/"]) await expect(page.locator(`header a[href="${href}"]`).first()).toHaveCount(1);
   });
 }
 

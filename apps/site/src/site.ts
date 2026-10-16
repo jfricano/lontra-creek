@@ -43,6 +43,8 @@ export const LINKS = {
   gettingStarted: `https://github.com/jfricano/StreamOtter/blob/${STREAMOTTER_TAG}/docs/guides/getting-started.md`,
   status: `https://github.com/jfricano/StreamOtter/blob/${STREAMOTTER_TAG}/docs/IMPLEMENTATION_STATUS.md`,
   changelog: `https://github.com/jfricano/StreamOtter/blob/${STREAMOTTER_TAG}/CHANGELOG.md`,
+  /** StreamOtter's own docs site: the guides, the API reference, and StreamOtter Under the Hood. `/docs/` redirects here (public/_redirects). */
+  docs: "https://docs.streamotter.dev/",
   demoRepo: "https://github.com/jfricano/lontra-creek"
 } as const;
 
@@ -53,6 +55,8 @@ export interface Page {
   summary: string;
   /** False until the page's real content exists. */
   ready: boolean;
+  /** Set when `href` leaves this site: it is shown with ↗, is never the current page, and stays out of the sitemap. */
+  external?: true;
 }
 
 export const PAGES: readonly Page[] = [
@@ -92,11 +96,12 @@ export const PAGES: readonly Page[] = [
     ready: true
   },
   {
-    href: "/docs/",
-    label: "Docs",
+    href: LINKS.docs,
+    label: "Docs and API",
     question: "How do I build with it?",
-    summary: "The guides and the API reference, where they're maintained: on GitHub and npm.",
-    ready: true
+    summary: "The guides, the API reference, and StreamOtter Under the Hood, on StreamOtter's own docs site.",
+    ready: true,
+    external: true
   },
   {
     href: "/releases/",

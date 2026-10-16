@@ -73,7 +73,7 @@ test("idle walkthrough closes subscriptions until explicitly resumed", async ({ 
 test("back navigation gets fresh field subscriptions", async ({ page }) => {
   await page.goto("/field-station/");
   await expect(page.locator("[data-walk-state]")).toHaveText("live", {timeout:30000});
-  await page.goto("/docs/");
+  await page.goto("/when-it-breaks/");
   // A back-forward cache restore fires no load event (WebKit), so wait only for the navigation to commit.
   await page.goBack({ waitUntil: "commit" });
   await expect(page.locator("[data-walk-state]")).toHaveText("live", {timeout:30000});

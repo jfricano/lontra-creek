@@ -186,7 +186,7 @@ test("reloading and going back revalidate and never allocate", async ({ page }) 
   await expect(ui.root).toHaveAttribute("data-phase", /^(?:idle|ended)$/, { timeout: 15_000 });
   await page.reload();
   await expect(ui.root).toHaveAttribute("data-phase", /^(?:idle|ended)$/, { timeout: 15_000 });
-  await page.goto("/docs/");
+  await page.goto("/when-it-breaks/");
   await page.goBack();
   await expect(ui.root).toHaveAttribute("data-phase", /^(?:idle|ended)$/, { timeout: 15_000 });
   await expect(ui.app).toHaveCount(0);

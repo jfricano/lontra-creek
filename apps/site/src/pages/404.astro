@@ -17,7 +17,7 @@ import { LINKS, LISTED_PAGES } from "../site.ts";
     <nav class="missing-links" aria-labelledby="missing-elsewhere">
       <p class="eyebrow" id="missing-elsewhere">Or try</p>
       <ul>
-        {LISTED_PAGES.map(page => <li><a href={page.href}>{page.label}</a></li>)}
+        {LISTED_PAGES.map(page => <li><a href={page.href}>{page.label}{page.external && <span aria-hidden="true">&nbsp;↗</span>}</a></li>)}
       </ul>
     </nav>
   </section>

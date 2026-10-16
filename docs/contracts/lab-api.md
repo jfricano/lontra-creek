@@ -1014,7 +1014,7 @@ Existing scenarios are available exactly when the Lab has benches (`lab-disabled
 
 ### 12.4 Deep links
 
-`/lab/#source-failures`, `/lab/#connections`, and `/lab/?scenario=<id>` (optionally with a track hash) select explanatory content only: the track shown and a marked scenario card. They never borrow a bench, start a scenario, inject a record, or approve anything (LC11-A01); a visitor still chooses **Borrow a bench**, and starting a scenario will be its own explicit action. An unknown `scenario` value is ignored. A scenario outside the named track opens its own track; `fouled-sensor` alone opens Source failures. Choosing a track or scenario in the page rewrites the URL in place (`history.replaceState`), so it doesn't reload the page (which would return a lease on `pagehide`) or add history entries. The eight routes and the navigation are unchanged.
+`/lab/#source-failures`, `/lab/#connections`, and `/lab/?scenario=<id>` (optionally with a track hash) select explanatory content only: the track shown and a marked scenario card. They never borrow a bench, start a scenario, inject a record, or approve anything (LC11-A01); a visitor still chooses **Borrow a bench**, and starting a scenario will be its own explicit action. An unknown `scenario` value is ignored. A scenario outside the named track opens its own track; `fouled-sensor` alone opens Source failures. Choosing a track or scenario in the page rewrites the URL in place (`history.replaceState`), so it doesn't reload the page (which would return a lease on `pagehide`) or add history entries. The site's routes and the navigation are unchanged.
 
 ### 12.5 Intents on `POST /api/lab/actions`
 

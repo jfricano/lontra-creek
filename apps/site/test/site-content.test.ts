@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import installedPackage from "streamotter/package.json" with { type: "json" };
@@ -100,9 +100,8 @@ test("the old /docs/ address redirects permanently to the docs site, and nothing
   const rules = readFileSync(new URL("../public/_redirects", import.meta.url), "utf8").split("\n").filter(line => line.trim() && !line.startsWith("#")).map(line => line.trim().split(/\s+/));
   assert.deepEqual(rules, [["/docs", LINKS.docs, "301"], ["/docs/", LINKS.docs, "301"], ["/docs/*", LINKS.docs, "301"]]);
   // A built page at a redirected path would shadow or contradict the rule.
-  assert.equal(existsSync(join(SRC, "pages/docs.astro")), false);
-  assert.equal(existsSync(join(SRC, "pages/docs")), false);
-  for (const file of sources(SRC)) assert.doesNotMatch(readFileSync(file, "utf8"), /["']\/docs(?:[/#][^"']*)?["']/, file);
+  assert.deepEqual(readdirSync(join(SRC, "pages")).filter(name => /^docs(?:\.|$)/.test(name)), []);
+  for (const file of sources(SRC)) assert.doesNotMatch(readFileSync(file, "utf8"), /(?:["']|=\{`)\/docs(?:[/#?][^"'`]*)?["'`]/, file);
   const xml = await (await sitemap({ site: new URL("https://streamotter.dev") } as Parameters<typeof sitemap>[0])).text();
   assert.doesNotMatch(xml, /\/docs\/|docs\.streamotter\.dev/);
   assert.match(xml, /<loc>https:\/\/streamotter\.dev\/releases\/<\/loc>/);

@@ -56,6 +56,19 @@ test("Docs and API leaves for the docs site from every page list, its arrow hidd
   await check(page.getByRole("navigation", { name: "Or try" }).getByRole("link", { name: "Docs and API", exact: true }));
 });
 
+test("the header keeps its navigation on one row down to 1161px and switches to the menu at 1160px", async ({ page }) => {
+  await page.setViewportSize({ width: 1161, height: 800 });
+  await page.goto("/");
+  const nav = page.getByRole("navigation", { name: "Main", exact: true });
+  await expect(nav).toBeVisible();
+  await expect(page.locator("[data-menu]")).toBeHidden();
+  const tops = await nav.getByRole("link").evaluateAll(links => links.map(link => Math.round(link.getBoundingClientRect().top)));
+  expect(new Set(tops).size, `link tops ${tops.join(", ")}`).toBe(1);
+  await page.setViewportSize({ width: 1160, height: 800 });
+  await expect(nav).toBeHidden();
+  await expect(page.locator("[data-menu]")).toBeVisible();
+});
+
 test("playground validates real configuration and receives real SDK data", async ({ page }) => {
   await page.goto("/playground/");
   const status = page.locator("#validation-status");

@@ -1,6 +1,6 @@
 /**
  * StreamOtter's source-failure handling, as the installed release ships it, for
- * `/when-it-breaks/`, `/releases/`, `/docs/`, and the home page's panel.
+ * `/when-it-breaks/`, `/releases/`, and the home page's panel.
  *
  * Everything the package exports is imported, not copied: the failure classes, the policy
  * vocabulary, the automatic-advance limit, the operator operations and which of them change

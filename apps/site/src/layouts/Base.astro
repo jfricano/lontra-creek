@@ -5,7 +5,7 @@ import "../styles/global.css";
 import figtreeLatin from "@fontsource-variable/figtree/files/figtree-latin-wght-normal.woff2?url";
 import LockupHorizontal from "../assets/brand/lockup-horizontal.svg";
 import LockupStacked from "../assets/brand/lockup-stacked.svg";
-import { LINKS, LISTED_PAGES, RELEASE, TAGLINE } from "../site.ts";
+import { LINKS, LISTED_PAGES, RELEASE, TAGLINE, type Page } from "../site.ts";
 import { bootstrapTabletNetwork } from "../scripts/tablet-network-bootstrap.ts";
 
 interface Props {
@@ -23,7 +23,7 @@ const { title, description, noindex = false, csp, tabletNetwork = true } = Astro
 const canonical = new URL(Astro.url.pathname, Astro.site);
 const socialImage = new URL("/social-preview.png", Astro.site);
 const current = Astro.url.pathname;
-const isCurrent = (href: string) => (current.startsWith(href) ? "page" : undefined);
+const isCurrent = (page: Page) => (!page.external && current.startsWith(page.href) ? "page" : undefined);
 ---
 
 <!doctype html>
@@ -65,14 +65,14 @@ const isCurrent = (href: string) => (current.startsWith(href) ? "page" : undefin
           <LockupHorizontal class="brand lockup-svg" aria-hidden="true" focusable="false" />
         </a>
         <nav class="nav" aria-label="Main">
-          {LISTED_PAGES.map(page => <a href={page.href} aria-current={isCurrent(page.href)}>{page.label}</a>)}
+          {LISTED_PAGES.map(page => <a href={page.href} aria-current={isCurrent(page)}>{page.label}{page.external && <span aria-hidden="true">&nbsp;↗</span>}</a>)}
         </nav>
         <div class="bar-end">
           <a class="gh" href={LINKS.github}>GitHub</a>
           <details class="menu" data-menu>
             <summary>Menu</summary>
             <nav aria-label="Main, small screens">
-              {LISTED_PAGES.map(page => <a href={page.href} aria-current={isCurrent(page.href)}>{page.label}</a>)}
+              {LISTED_PAGES.map(page => <a href={page.href} aria-current={isCurrent(page)}>{page.label}{page.external && <span aria-hidden="true">&nbsp;↗</span>}</a>)}
               <a href={LINKS.github}>GitHub</a>
             </nav>
           </details>
@@ -96,7 +96,7 @@ const isCurrent = (href: string) => (current.startsWith(href) ? "page" : undefin
         </div>
         <nav class="foot-links" aria-labelledby="foot-explore">
           <p class="eyebrow" id="foot-explore">Explore</p>
-          {LISTED_PAGES.map(page => <a href={page.href}>{page.label}</a>)}
+          {LISTED_PAGES.map(page => <a href={page.href}>{page.label}{page.external && <span aria-hidden="true">&nbsp;↗</span>}</a>)}
         </nav>
         <nav class="foot-links" aria-labelledby="foot-project">
           <p class="eyebrow" id="foot-project">Project</p>
@@ -260,7 +260,8 @@ const isCurrent = (href: string) => (current.startsWith(href) ? "page" : undefin
   .menu nav a[aria-current="page"] {
     box-shadow: inset 3px 0 var(--azure);
   }
-  @media (max-width: 1080px) {
+  /* Below this width the header's links no longer fit on one row (with room to spare for font metrics). */
+  @media (max-width: 1160px) {
     .nav,
     .gh {
       display: none;

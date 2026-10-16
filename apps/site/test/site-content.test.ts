@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import installedPackage from "streamotter/package.json" with { type: "json" };
@@ -12,7 +12,8 @@ import { RECORDING, SITE_RELEASE, SURFACE_LABELS, SURFACES } from "../src/demo-a
 import { NEW_SOURCE_EXERCISES, TRACKS } from "../src/lab-catalog.ts";
 import { RELEASE_VERSION, UPCOMING_STABLE } from "../src/release-facts.ts";
 import { serviceLines } from "../src/scripts/release-service.ts";
-import { PAGES, RELEASE, SITE } from "../src/site.ts";
+import { GET as sitemap } from "../src/pages/sitemap.xml.ts";
+import { LINKS, PAGES, RELEASE, SITE } from "../src/site.ts";
 
 const SRC = new URL("../src/", import.meta.url).pathname;
 
@@ -78,13 +79,33 @@ test("static copy never says the Lab runs: whether it does depends on the deploy
   assert.doesNotMatch(readFileSync(join(SRC, "pages/index.astro"), "utf8"), /on a real bench/);
 });
 
-test("the route set is unchanged and no summary claims a fixed number of Lab failures", () => {
-  assert.deepEqual(PAGES.map(page => page.href), ["/field-station/", "/lab/", "/playground/", "/workbench/", "/when-it-breaks/", "/docs/", "/releases/"]);
+test("the navigation set is unchanged and no summary claims a fixed number of Lab failures", () => {
+  assert.deepEqual(PAGES.map(page => page.href), ["/field-station/", "/lab/", "/playground/", "/workbench/", "/when-it-breaks/", "https://docs.streamotter.dev/", "/releases/"]);
   const lab = PAGES.find(page => page.href === "/lab/")!;
   assert.match(lab.summary, /Source failures track/);
   // Whether an exercise runs is the backend's answer, read at runtime; no summary decides it.
   assert.match(lab.summary, /whether this demo's backend can run each one/);
   for (const page of PAGES) assert.doesNotMatch(page.summary, /\bfour\b/i, page.href);
+});
+
+test("Docs and API is the one external entry: StreamOtter's docs site, listed after launch too", () => {
+  assert.deepEqual(PAGES.filter(page => page.external).map(page => [page.label, page.href]), [["Docs and API", LINKS.docs]]);
+  assert.equal(LINKS.docs, "https://docs.streamotter.dev/");
+  // Ready, so SITE.launched's filter keeps it in the navigation, the footer, and the 404 page.
+  assert.ok(PAGES.find(page => page.external)!.ready);
+  for (const page of PAGES.filter(page => !page.external)) assert.match(page.href, /^\/[\w-]+\/$/, page.label);
+});
+
+test("the old /docs/ address redirects permanently to the docs site, and nothing on this site still serves it", async () => {
+  const rules = readFileSync(new URL("../public/_redirects", import.meta.url), "utf8").split("\n").filter(line => line.trim() && !line.startsWith("#")).map(line => line.trim().split(/\s+/));
+  assert.deepEqual(rules, [["/docs", LINKS.docs, "301"], ["/docs/", LINKS.docs, "301"], ["/docs/*", LINKS.docs, "301"]]);
+  // A built page at a redirected path would shadow or contradict the rule.
+  assert.equal(existsSync(join(SRC, "pages/docs.astro")), false);
+  assert.equal(existsSync(join(SRC, "pages/docs")), false);
+  for (const file of sources(SRC)) assert.doesNotMatch(readFileSync(file, "utf8"), /["']\/docs(?:[/#][^"']*)?["']/, file);
+  const xml = await (await sitemap({ site: new URL("https://streamotter.dev") } as Parameters<typeof sitemap>[0])).text();
+  assert.doesNotMatch(xml, /\/docs\/|docs\.streamotter\.dev/);
+  assert.match(xml, /<loc>https:\/\/streamotter\.dev\/releases\/<\/loc>/);
 });
 
 test("no page or script still says \"four controlled failures\"", () => {

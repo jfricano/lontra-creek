@@ -9,7 +9,7 @@
  */
 import { WORKBENCH_REQUEST_HEADER, type WorkbenchDiscovery } from "streamotter/contracts";
 import type { SandboxConnection, SandboxLease, SandboxReproDownload, SandboxStatus } from "../../../field-station/src/sandbox/contract.ts";
-import { API_BASE, availabilityView, BOOT_ELEMENT_ID, cspConnectSources, MOUNT_ELEMENT_ID, mountDecision, NO_DISCOVERY, problemText, refusal, runtimeLabels, sessionView, type Problem } from "./workbench-model.ts";
+import { API_BASE, availabilityView, BOOT_ELEMENT_ID, cspConnectSources, MOUNT_ELEMENT_ID, mountDecision, NO_DISCOVERY, problemText, refusal, runtimeLabels, sessionView, type Problem, type Refusal } from "./workbench-model.ts";
 import { PUBLISHED_SEAM } from "./workbench-seam.ts";
 
 const origin = (import.meta.env?.PUBLIC_FIELD_STATION_ORIGIN ?? "").replace(/\/+$/, "");
@@ -52,8 +52,8 @@ function mount(root: HTMLElement): void {
   /** The last action's outcome, and the last failed check-in; shown together, cleared separately. */
   let note = "";
   let contact = "";
-  /** Why the field station refused this page's last Start; it holds Start off until Check again. */
-  let refused: string | null = null;
+  /** Why the field station refused this page's last Start; it holds Start off until a later status answer or Check again (see refreshStatus). */
+  let refused: Refusal | null = null;
   let offset = 0;
   let checking = true;
   let busy = false;
@@ -144,6 +144,8 @@ function mount(root: HTMLElement): void {
     root.dataset["layout"] = view.layout;
     text(el("[data-sandbox-headline]"), view.headline);
     text(el("[data-sandbox-detail]"), view.detail);
+    // The no-JS reader's sentence (see workbench.astro): it stays only while there is no sandbox to use.
+    el("[data-sandbox-fallback]").hidden = view.layout !== "off" || view.phase === "checking";
     text(el("[data-sandbox-clock]"), view.clock);
     text(el("[data-sandbox-note]"), [note, contact].filter(Boolean).join(" "));
     text(el("[data-sandbox-pool]"), checking ? "" : availabilityView(status, statusProblem).pool);
@@ -165,10 +167,16 @@ function mount(root: HTMLElement): void {
     text(el("[data-sandbox-mount-note]"), view.phase === "active" ? mountNote : "");
   }
 
-  async function refreshStatus(): Promise<void> {
+  /**
+   * A refusal holds only against the status it was refused under: the refusing act's own refresh keeps it
+   * while the availability is unchanged, and any later answer (the poll) clears it, so an old refusal never
+   * outlives the service's recovery as the headline.
+   */
+  async function refreshStatus(keepRefusal = false): Promise<void> {
     const g = generation; const answer = await call<SandboxStatus>("status"); if (g !== generation) return;
     lastStatusAt = Date.now();
     if (answer.ok) { status = answer.data; statusProblem = null; } else { status = null; statusProblem = answer.problem; }
+    if (refused !== null && (!keepRefusal || refused.under !== (status?.availability ?? "unknown"))) refused = null;
   }
   async function refreshLease(): Promise<void> {
     const g = generation; const answer = await call<SandboxLease>("session"); if (g !== generation) return;
@@ -209,19 +217,23 @@ function mount(root: HTMLElement): void {
     if (busy) return;
     const focused = from !== undefined && document.activeElement === from;
     busy = true; note = ""; render();
-    try { await action(); await refreshStatus(); } finally { busy = false; render(); if (focused) refocus(from); }
+    try { await action(); await refreshStatus(true); } finally { busy = false; render(); if (focused) refocus(from); }
   }
-  /** The pressed button was disabled, and may now be hidden: give focus back to it, to the control that replaces it, or to the new state's headline. */
+  /**
+   * The pressed button was disabled, and may now be hidden: give focus back to it, to the control that replaces it,
+   * or to the new state's headline. In the live layout the headline is visually hidden, so End session comes first.
+   */
   function refocus(from: HTMLButtonElement): void {
     const active = document.activeElement;
     if (active !== null && active !== document.body && active !== from) return; // the visitor has moved on
     const usable = (button: HTMLButtonElement): boolean => !button.hidden && !button.disabled;
-    ([from, buttons.claim, buttons.start].find(usable) ?? el("[data-sandbox-headline]")).focus();
+    const live = root.dataset["layout"] === "live" && usable(buttons.return) ? buttons.return : null;
+    ([from, buttons.claim, buttons.start].find(usable) ?? live ?? el("[data-sandbox-headline]")).focus();
   }
   buttons.start.addEventListener("click", () => { void act(async () => {
     const g = generation; starting = true;
     const answer = await call<SandboxLease>("session", "POST").finally(() => { starting = false; }); if (g !== generation) return;
-    if (!answer.ok) { refused = problemText(answer.problem); return; }
+    if (!answer.ok) { refused = { text: problemText(answer.problem), under: status?.availability ?? "unknown" }; return; }
     autoClaim = true; setLease(answer.data); owned = true;
     if (lease?.status === "ready") await claim();
   }, buttons.start); });

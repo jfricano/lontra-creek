@@ -36,8 +36,8 @@ const stationParams=Object.entries(STATION_SEED.params).map(([k,v])=>`${k}=${v}`
 </section>
 <section class="sandbox" aria-labelledby="sandbox-heading">
   <h2 id="sandbox-heading">Workbench sandbox</h2>
-  <p class="sandbox-lead"><span class="sandbox-headline" role="status" tabindex="-1" data-sandbox-headline>Checking the sandbox…</span> <span data-sandbox-fallback>Below: what the workbench does, in screenshots from <code>streamotter@{capture.version}</code>, and how to run it locally in three commands.</span></p>
-  <noscript><p class="notice">The sandbox needs JavaScript. The step-by-step screenshots below work without it.</p></noscript>
+  {/* Without JavaScript the reader gets the noscript headline and the fallback sentence; workbench.ts fills the headline and hides the sentence when there is a sandbox to use. */}
+  <p class="sandbox-lead"><span class="sandbox-headline" role="status" tabindex="-1" data-sandbox-headline></span><noscript><span class="sandbox-headline">The sandbox needs JavaScript.</span></noscript> <span data-sandbox-fallback>Below: what the workbench does, in screenshots from <code>streamotter@{capture.version}</code>, and how to run it locally in three commands.</span></p>
   <div class="sandbox-controls">
     <p class="sandbox-clock" data-sandbox-clock></p>
     <button type="button" class="button button-primary" data-sandbox-start hidden disabled>Start a sandbox session</button>
@@ -45,9 +45,9 @@ const stationParams=Object.entries(STATION_SEED.params).map(([k,v])=>`${k}=${v}`
     <button type="button" class="button button-quiet" data-sandbox-return hidden disabled>End session</button>
     <button type="button" class="button button-quiet" data-sandbox-reset hidden disabled>Start over</button>
     <button type="button" class="button button-quiet" data-sandbox-repro hidden disabled>Download reproduction bundle</button>
-    <button type="button" class="button button-quiet" data-sandbox-retry>Check again</button>
+    <button type="button" class="button button-quiet" data-sandbox-retry hidden>Check again</button>
   </div>
-  <p class="sandbox-detail" aria-live="polite" data-sandbox-detail>Asking the field station for the sandbox's status and this browser's session.</p>
+  <p class="sandbox-detail" aria-live="polite" data-sandbox-detail></p>
   <p class="sandbox-small" data-sandbox-pool></p>
   <p class="sandbox-note" aria-live="polite" data-sandbox-note></p>
   <p class="sandbox-small" data-sandbox-mount-note></p>
@@ -122,9 +122,6 @@ figcaption {font-size:.85rem;color:var(--ink-3);margin-top:8px;}
 [data-layout="live"] #sandbox-heading {position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;}
 [data-layout="off"] .sandbox-about,
 [data-layout="off"] :global([data-run-locally="late"]),
-[data-phase="checking"] [data-sandbox-fallback],
-[data-layout="available"] [data-sandbox-fallback],
-[data-layout="live"] [data-sandbox-fallback],
 [data-layout="available"] :global([data-run-locally="early"]),
 [data-layout="live"] :global([data-run-locally="early"]),
 [data-layout="live"] .what-it-is,

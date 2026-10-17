@@ -89,18 +89,23 @@ export interface PolicyRow {
 }
 
 /**
- * A Failure Lab control that causes a failure, linked from the failure reference's matrix.
- * Static copy: whether a deployment's benches can run it is the Lab's runtime answer, so
- * the link opens the control and the Lab says the rest. Null is "Not on this Lab yet".
+ * A Failure Lab control or scenario that causes a failure, linked from the failure reference's
+ * matrix. Static copy: whether a deployment's benches can run it is the Lab's runtime answer, so
+ * the link opens the control or scenario and the Lab says the rest. A scenario that needs a
+ * quarantine deployment says so in its label, never that the Lab lacks it. Null is "Not on this
+ * Lab yet": no control or scenario causes that failure.
  */
 export interface LabControl {
-  /** The control's own label on /lab/. */
+  /** The control's or scenario's name on /lab/ (with its story number), and what it needs. */
   label: string;
   href: `/lab/${string}`;
 }
 
 const LAB = {
   fouledSensor: { label: "Fouled sensor", href: "/lab/#control-fouled-sensor" },
+  garbledReading: { label: "Garbled reading (S02), needs quarantine", href: "/lab/?scenario=garbled-reading" },
+  badProjection: { label: "Bad projection (S03), needs quarantine", href: "/lab/?scenario=bad-projection" },
+  conflictingReadings: { label: "Conflicting readings (S05), needs quarantine", href: "/lab/?scenario=conflicting-readings" },
   calibrationBlip: { label: "Calibration lookup blip", href: "/lab/?scenario=calibration-blip" },
   relayCut: { label: "Cut relay", href: "/lab/#control-relay-cut" },
   slowClient: { label: "Start slow client", href: "/lab/#control-slow-client" }
@@ -108,11 +113,11 @@ const LAB = {
 
 /** The release guide's class table (§3), with the package's class names beside each row. */
 export const POLICY_MATRIX: readonly PolicyRow[] = [
-  { failure: "The value isn't UTF-8 JSON within the nesting limit", classes: ["invalid-json"], byDefault: "Pause", optIn: "quarantine-hold or quarantine-resync, set with invalidJson.", onTheLab: null },
-  { failure: "Routing passed, but the mapped data fails the channel's payload schema", classes: ["payload-schema"], byDefault: "Pause", optIn: "quarantine-hold or quarantine-resync, set with invalidPublicPayload.", onTheLab: null },
+  { failure: "The value isn't UTF-8 JSON within the nesting limit", classes: ["invalid-json"], byDefault: "Pause", optIn: "quarantine-hold or quarantine-resync, set with invalidJson.", onTheLab: LAB.garbledReading },
+  { failure: "Routing passed, but the mapped data fails the channel's payload schema", classes: ["payload-schema"], byDefault: "Pause", optIn: "quarantine-hold or quarantine-resync, set with invalidPublicPayload.", onTheLab: LAB.badProjection },
   { failure: "The map handler threw a TransientMappingError on every allowed attempt", classes: ["mapper-transient"], byDefault: "Pause", optIn: "One or two more attempts (transientMapperRetries, 250 ms then 1 s, only with replaySafeMapping), then pause.", onTheLab: LAB.calibrationBlip },
   { failure: "Any other map handler exception, or a map handler past handlerTimeoutMs", classes: ["mapper-error", "mapper-timeout"], byDefault: "Pause", optIn: "Pause. The incident is recorded; nothing moves past the record.", onTheLab: LAB.fouledSensor },
-  { failure: "The map handler returned a bad tenant, parameters, revision, shape, or count; or the same revision maps to different data", classes: ["routing-invalid", "revision-conflict"], byDefault: "Pause", optIn: "Pause; never skipped. Repair and retry the same record.", onTheLab: null },
+  { failure: "The map handler returned a bad tenant, parameters, revision, shape, or count; or the same revision maps to different data", classes: ["routing-invalid", "revision-conflict"], byDefault: "Pause", optIn: "Pause; never skipped. Repair and retry the same record.", onTheLab: LAB.conflictingReadings },
   { failure: "A null value (tombstone), or a record over maxSourceRecordBytes", classes: ["tombstone", "oversize"], byDefault: "Pause", optIn: "Pause.", onTheLab: null },
   { failure: "Broker, network, or authentication failure; rebalance; shutdown; journal or quarantine failure", classes: [], byDefault: "Outage and hold behavior, as without failure handling", optIn: "Not a failure class: never a skippable incident.", onTheLab: LAB.relayCut },
   { failure: "Authorization failure or a slow browser", classes: [], byDefault: "Access and flow-control behavior", optIn: "Not a source failure; existing isolation and overload handling apply.", onTheLab: LAB.slowClient }

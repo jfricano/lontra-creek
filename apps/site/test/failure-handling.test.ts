@@ -64,14 +64,12 @@ test("the policy matrix names every failure class once, and only the eligible on
 test("the matrix's On the Lab links open a control the Lab page has, or a scenario it lists", () => {
   const lab = readFileSync(new URL("../src/pages/lab.astro", import.meta.url), "utf8");
   const linked = POLICY_MATRIX.flatMap(row => row.onTheLab ? [row.onTheLab] : []);
-  assert.deepEqual(linked.map(control => control.label), ["Calibration lookup blip", "Fouled sensor", "Cut relay", "Start slow client"]);
+  assert.deepEqual(linked.map(control => control.label), ["Garbled reading (S02), needs quarantine", "Bad projection (S03), needs quarantine", "Calibration lookup blip", "Fouled sensor", "Conflicting readings (S05), needs quarantine", "Cut relay", "Start slow client"]);
   for (const { href } of linked) {
     const url = new URL(href, "https://site.invalid");
     if (url.hash) assert.ok(lab.includes(`id="${url.hash.slice(1)}"`), href);
     else assert.ok((SOURCE_SCENARIOS as readonly string[]).includes(url.searchParams.get("scenario") ?? ""), href);
   }
-  // Quarantine needs a deployment the hosted Lab isn't: those rows say so instead of linking.
-  for (const row of POLICY_MATRIX.filter(row => row.optIn.includes("quarantine-"))) assert.equal(row.onTheLab, null, row.failure);
 });
 
 test("the circuit breaker's default is the package's own", () => {

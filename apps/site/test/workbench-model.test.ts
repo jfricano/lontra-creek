@@ -96,16 +96,29 @@ describe("sessionView", () => {
     assert.equal(view.headline, "The hosted sandbox isn't on yet."); assert.equal(view.detail, "");
   });
   test("an available pool says what a session is and that nothing starts on its own", () => {
-    assert.equal(sessionView(input()).detail, "Up to ten minutes on an isolated slot with synthetic fixture data. Nothing starts until you press Start.");
+    assert.equal(sessionView(input()).detail, "A timed session on an isolated slot with synthetic fixture data. Nothing starts until you press Start.");
   });
-  test("a refused Start becomes the headline, and Start stays off until Check again clears it", () => {
+  test("the available detail names no session length, which the status doesn't report", () => {
+    // The lease is a deployment setting (SANDBOX_LEASE_SECONDS); a held session's clock shows the real time left.
+    assert.doesNotMatch(sessionView(input()).detail, /\d|\b(?:one|two|three|five|ten|fifteen|twenty|thirty)\b|minute|hour/i);
+  });
+  test("a refused Start becomes the headline, and Start stays off while the status it was refused under holds", () => {
     const text = problemText(refusal(429, { code: "too-many-places" }, null));
-    const view = sessionView(input({ refused: text }));
+    const refused = { text, under: "available" } as const;
+    const view = sessionView(input({ refused }));
     assert.equal(view.phase, "refused"); assert.equal(view.headline, text); assert.match(view.detail, /Check again/);
     assert.deepEqual(Object.values(view.enabled), [false, false, false, false, false]);
     // A session held after all, or a sandbox that went away, outranks an old refusal.
-    assert.equal(sessionView(input({ refused: text, lease: held("active") })).phase, "active");
-    assert.equal(sessionView(input({ refused: text, status: unavailable("service-unavailable") })).phase, "unavailable");
+    assert.equal(sessionView(input({ refused, lease: held("active") })).phase, "active");
+    assert.equal(sessionView(input({ refused, status: unavailable("service-unavailable") })).phase, "unavailable");
+  });
+  test("a refusal from under another status is stale: a pool that has changed since offers Start again", () => {
+    // Refused while the sandbox was unavailable (or unknown); the pool is back, so the old refusal is not the headline.
+    const text = problemText(refusal(503, { code: "sandbox-unavailable" }, null));
+    for (const under of ["unavailable", "unknown"] as const) {
+      const view = sessionView(input({ refused: { text, under } }));
+      assert.equal(view.phase, "idle", under); assert.equal(view.headline, "The workbench sandbox is available."); assert.equal(view.enabled.start, true);
+    }
   });
   test("each phase belongs to one of the page's three layouts", () => {
     const layout = (over: Partial<SessionInput>) => sessionView(input(over)).layout;
@@ -113,7 +126,7 @@ describe("sessionView", () => {
     assert.equal(layout({ status: unavailable("disabled") }), "off");
     assert.equal(layout({ status: null, statusProblem: { kind: "network", message: "x" } }), "off");
     assert.equal(layout({}), "available");
-    assert.equal(layout({ refused: "No." }), "available");
+    assert.equal(layout({ refused: { text: "No.", under: "available" } }), "available");
     assert.equal(layout({ lease: held("ready") }), "available");
     assert.equal(layout({ lease: held("active") }), "live");
     assert.equal(layout({ lease: held("resetting") }), "live");
@@ -130,7 +143,7 @@ describe("sessionView", () => {
   });
   test("a ready slot shows its claim window and the lease's runtime", () => {
     const view = sessionView(input({ lease: held("ready"), now: Date.parse(NOW) + 5_000 }));
-    assert.equal(view.phase, "ready"); assert.equal(view.clock, "0:25 left to claim it · 9:55 left in this session");
+    assert.equal(view.phase, "ready"); assert.equal(view.clock, "0:25 left to claim it · Slot 2 · 9:55 left · synthetic fixture · streamotter@9.9.9-fixture");
     assert.equal(view.runtime, runtime); assert.ok(view.enabled.claim && view.enabled.return && !view.enabled.start);
   });
   test("the claim countdown runs in the clock, so the status text holds still from second to second", () => {
@@ -148,8 +161,10 @@ describe("sessionView", () => {
     assert.equal(sessionView(input({ lease: held("active"), connectedStudy: "study-fixture" })).enabled.claim, false);
     assert.equal(sessionView(input({ lease: held("active"), connectedStudy: "an-older-study" })).enabled.claim, true);
   });
-  test("resetting allows only ending the session", () => {
-    assert.deepEqual(sessionView(input({ lease: held("resetting") })).enabled, { start: false, claim: false, return: true, reset: false, repro: false });
+  test("resetting allows only ending the session, under the same status line as an active one", () => {
+    const view = sessionView(input({ lease: held("resetting") }));
+    assert.deepEqual(view.enabled, { start: false, claim: false, return: true, reset: false, repro: false });
+    assert.equal(view.clock, "Slot 2 · 10:00 left · synthetic fixture · streamotter@9.9.9-fixture");
   });
   test("an ended session explains itself and offers Start only when the sandbox is available", () => {
     const lease: SandboxLease = { status: "ended", now: NOW, reason: "expired", endedAt: NOW };

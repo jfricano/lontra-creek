@@ -85,6 +85,24 @@ for (const [reason, headline] of [
   });
 }
 
+test.describe("without JavaScript", () => {
+  test.use({ javaScriptEnabled: false });
+  test("the page says the sandbox needs JavaScript, points to the screenshots, and offers no dead control", async ({ page }) => {
+    await page.goto("/workbench/");
+    // Playwright's text matching skips <noscript>, so its headline is checked on its own.
+    const headline = page.locator(".sandbox-lead noscript .sandbox-headline");
+    await expect(headline).toBeVisible();
+    await expect(headline).toHaveText("The sandbox needs JavaScript.");
+    await expect(page.locator("[data-sandbox-headline]")).toHaveText("");
+    await expect(page.locator(".sandbox")).not.toContainText("Checking");
+    await expect(page.locator("[data-sandbox-fallback]")).toBeVisible();
+    await expect(page.locator("[data-sandbox-fallback]")).toContainText(`in screenshots from streamotter@${capture.version}`);
+    await expect(page.locator("[data-sandbox-retry]")).toBeHidden();
+    await expect(page.locator(".sandbox-controls button:visible")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Step by step" })).toBeVisible();
+  });
+});
+
 test("the dev field station, which serves no sandbox routes, is reported as not enabled", async ({ page }) => {
   await page.goto("/workbench/");
   await expect(panel(page).headline).toHaveText("The hosted sandbox isn't on yet.");
@@ -111,7 +129,7 @@ test("opening, reloading, and going back never allocate", async ({ page }) => {
   await expect(ui.root).toHaveAttribute("data-phase", "idle");
   await expect(ui.root).toHaveAttribute("data-layout", "available");
   await expect(ui.start).toBeEnabled();
-  await expect(ui.detail).toHaveText("Up to ten minutes on an isolated slot with synthetic fixture data. Nothing starts until you press Start.");
+  await expect(ui.detail).toHaveText("A timed session on an isolated slot with synthetic fixture data. Nothing starts until you press Start.");
   // The runtime facts sit in About the sandbox, not in tiles above the fold.
   await expect(ui.mode).toBeHidden();
   await page.locator(".sandbox-about summary").click();

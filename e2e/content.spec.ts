@@ -145,7 +145,9 @@ test("the failure reference shows the installed release's policy matrix and reco
   const matrix = policies.getByRole("table", { name: "Failure-policy matrix" });
   await expect(matrix.locator("tbody tr")).toHaveCount(8);
   await expect(matrix.locator("tbody tr").first()).toContainText("invalid-json");
-  await expect(matrix.locator("tbody tr").first()).toContainText("Not on this Lab yet");
+  // Quarantine exercises link to their Lab scenario and say what they need; the Lab answers whether this deployment runs them.
+  await expect(matrix.getByRole("link", { name: "Garbled reading (S02), needs quarantine" })).toHaveAttribute("href", "/lab/?scenario=garbled-reading");
+  await expect(matrix.locator("tbody tr").filter({ hasText: "tombstone" })).toContainText("Not on this Lab yet");
   await expect(matrix.getByRole("link", { name: "Fouled sensor" })).toHaveAttribute("href", "/lab/#control-fouled-sensor");
   await expect(policies.locator(".lifecycle .not-proof")).toHaveCount(5);
   await expect(policies.locator(".lifecycle h4")).toHaveText(["Held", "Evidence saved", "Hold, or ask the recovery guard", "Source advanced", "Views resynchronized"]);
@@ -160,6 +162,8 @@ test("the failure reference shows the installed release's policy matrix and reco
   await page.goto("/when-it-breaks/");
   await expect(page.locator("#source-failure-policies")).toContainText("The live creek runs none of them");
   await expect(page.getByRole("link", { name: "Read the policies" })).toHaveAttribute("href", "/failure-reference/#source-failure-policies");
+  // The old public anchor still lands on a pointer to where record disposition moved.
+  await expect(page.locator("#source-failure-policies #record-disposition a")).toHaveAttribute("href", "/failure-reference/#record-disposition");
   // What the demo runs is the backend's answer, not this page's.
   await expect(page.locator("#what-this-demo-runs")).toContainText("asks the demo's backend which of them its benches can run");
 });

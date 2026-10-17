@@ -15,7 +15,7 @@ const status = (over: Partial<SandboxStatus> = {}): SandboxStatus => ({ now: NOW
 const unavailable = (reason: NonNullable<SandboxStatus["reason"]>): SandboxStatus => ({ now: NOW, availability: "unavailable", reason, runtime: null, slots: [], queueLength: 0, nextFreeAt: null });
 const held = (state: "ready" | "active" | "resetting", over: Partial<Extract<SandboxLease, { leaseId: string }>> = {}): SandboxLease =>
   ({ status: state, now: NOW, leaseId: "lease-fixture", studyId: "study-fixture", slot: 2, grantedAt: NOW, expiresAt: at(600), claimBy: state === "ready" ? at(30) : null, runtime, ...over });
-const input = (over: Partial<SessionInput> = {}): SessionInput => ({ status: status(), statusProblem: null, lease: null, checking: false, busy: false, now: Date.parse(NOW), connectedStudy: null, ...over });
+const input = (over: Partial<SessionInput> = {}): SessionInput => ({ status: status(), statusProblem: null, lease: null, checking: false, busy: false, now: Date.parse(NOW), connectedStudy: null, refused: null, ...over });
 
 describe("problems", () => {
   test("refusal keeps only known codes and a usable Retry-After", () => {
@@ -60,8 +60,8 @@ describe("availability", () => {
 describe("labels", () => {
   test("mode and versions come from the service's runtime, and are absent without one", () => {
     assert.equal(runtimeLabels(null), null);
-    assert.deepEqual(runtimeLabels(runtime), { mode: "Synthetic fixture", packages: "streamotter@9.9.9-fixture · @streamotter/workbench@9.9.9-fixture", contract: "Host contract 1" });
-    assert.equal(runtimeLabels({ ...runtime, contractVersion: null })?.contract, "No host contract reported");
+    assert.deepEqual(runtimeLabels(runtime), { mode: "Synthetic fixture", packages: "streamotter@9.9.9-fixture · @streamotter/workbench@9.9.9-fixture", contract: "Version 1" });
+    assert.equal(runtimeLabels({ ...runtime, contractVersion: null })?.contract, "None reported");
   });
   test("every end reason has its own sentence", () => {
     const reasons: SandboxEndReason[] = ["left", "returned", "expired", "idle", "unclaimed", "session-ended", "slot-failed", "sandbox-restarted"];
@@ -91,6 +91,49 @@ describe("sessionView", () => {
     }
     assert.equal(sessionView(input({ status: null, statusProblem: { kind: "network", message: "x" } })).phase, "unavailable");
   });
+  test("the disabled sandbox, the public site's answer today, says it in one line and leaves the rest to the page", () => {
+    const view = sessionView(input({ status: unavailable("disabled") }));
+    assert.equal(view.headline, "The hosted sandbox isn't on yet."); assert.equal(view.detail, "");
+  });
+  test("an available pool says what a session is and that nothing starts on its own", () => {
+    assert.equal(sessionView(input()).detail, "A timed session on an isolated slot with synthetic fixture data. Nothing starts until you press Start.");
+  });
+  test("the available detail names no session length, which the status doesn't report", () => {
+    // The lease is a deployment setting (SANDBOX_LEASE_SECONDS); a held session's clock shows the real time left.
+    assert.doesNotMatch(sessionView(input()).detail, /\d|\b(?:one|two|three|five|ten|fifteen|twenty|thirty)\b|minute|hour/i);
+  });
+  test("a refused Start becomes the headline, and Start stays off while the status it was refused under holds", () => {
+    const text = problemText(refusal(429, { code: "too-many-places" }, null));
+    const refused = { text, under: "available" } as const;
+    const view = sessionView(input({ refused }));
+    assert.equal(view.phase, "refused"); assert.equal(view.headline, text); assert.match(view.detail, /Check again/);
+    assert.deepEqual(Object.values(view.enabled), [false, false, false, false, false]);
+    // A session held after all, or a sandbox that went away, outranks an old refusal.
+    assert.equal(sessionView(input({ refused, lease: held("active") })).phase, "active");
+    assert.equal(sessionView(input({ refused, status: unavailable("service-unavailable") })).phase, "unavailable");
+  });
+  test("a refusal from under another status is stale: a pool that has changed since offers Start again", () => {
+    // Refused while the sandbox was unavailable (or unknown); the pool is back, so the old refusal is not the headline.
+    const text = problemText(refusal(503, { code: "sandbox-unavailable" }, null));
+    for (const under of ["unavailable", "unknown"] as const) {
+      const view = sessionView(input({ refused: { text, under } }));
+      assert.equal(view.phase, "idle", under); assert.equal(view.headline, "The workbench sandbox is available."); assert.equal(view.enabled.start, true);
+    }
+  });
+  test("each phase belongs to one of the page's three layouts", () => {
+    const layout = (over: Partial<SessionInput>) => sessionView(input(over)).layout;
+    assert.equal(layout({ checking: true }), "off");
+    assert.equal(layout({ status: unavailable("disabled") }), "off");
+    assert.equal(layout({ status: null, statusProblem: { kind: "network", message: "x" } }), "off");
+    assert.equal(layout({}), "available");
+    assert.equal(layout({ refused: { text: "No.", under: "available" } }), "available");
+    assert.equal(layout({ lease: held("ready") }), "available");
+    assert.equal(layout({ lease: held("active") }), "live");
+    assert.equal(layout({ lease: held("resetting") }), "live");
+    const ended: SandboxLease = { status: "ended", now: NOW, reason: "returned", endedAt: NOW };
+    assert.equal(layout({ lease: ended }), "available");
+    assert.equal(layout({ lease: ended, status: unavailable("service-unavailable") }), "off");
+  });
   test("a place in line shows its position and can be left", () => {
     const view = sessionView(input({ lease: { status: "queued", now: NOW, position: 2, queueLength: 3, joinedAt: NOW, nextFreeAt: at(90), sessionExpiresAt: at(3600) } }));
     assert.equal(view.phase, "queued"); assert.match(view.headline, /number 2 of 3/); assert.match(view.detail, /within 2 min/);
@@ -100,7 +143,7 @@ describe("sessionView", () => {
   });
   test("a ready slot shows its claim window and the lease's runtime", () => {
     const view = sessionView(input({ lease: held("ready"), now: Date.parse(NOW) + 5_000 }));
-    assert.equal(view.phase, "ready"); assert.equal(view.clock, "0:25 left to claim it · 9:55 left in this session");
+    assert.equal(view.phase, "ready"); assert.equal(view.clock, "0:25 left to claim it · Slot 2 · 9:55 left · synthetic fixture · streamotter@9.9.9-fixture");
     assert.equal(view.runtime, runtime); assert.ok(view.enabled.claim && view.enabled.return && !view.enabled.start);
   });
   test("the claim countdown runs in the clock, so the status text holds still from second to second", () => {
@@ -113,11 +156,15 @@ describe("sessionView", () => {
   test("an active session can reset, download, and end; claim only until this page holds the study's connection", () => {
     const active = sessionView(input({ lease: held("active") }));
     assert.equal(active.phase, "active"); assert.deepEqual(active.enabled, { start: false, claim: true, return: true, reset: true, repro: true });
+    // One line above the mounted workbench, all from the lease; the workbench's own banner describes the study, so no detail repeats it.
+    assert.equal(active.clock, "Slot 2 · 10:00 left · synthetic fixture · streamotter@9.9.9-fixture"); assert.equal(active.detail, "");
     assert.equal(sessionView(input({ lease: held("active"), connectedStudy: "study-fixture" })).enabled.claim, false);
     assert.equal(sessionView(input({ lease: held("active"), connectedStudy: "an-older-study" })).enabled.claim, true);
   });
-  test("resetting allows only ending the session", () => {
-    assert.deepEqual(sessionView(input({ lease: held("resetting") })).enabled, { start: false, claim: false, return: true, reset: false, repro: false });
+  test("resetting allows only ending the session, under the same status line as an active one", () => {
+    const view = sessionView(input({ lease: held("resetting") }));
+    assert.deepEqual(view.enabled, { start: false, claim: false, return: true, reset: false, repro: false });
+    assert.equal(view.clock, "Slot 2 · 10:00 left · synthetic fixture · streamotter@9.9.9-fixture");
   });
   test("an ended session explains itself and offers Start only when the sandbox is available", () => {
     const lease: SandboxLease = { status: "ended", now: NOW, reason: "expired", endedAt: NOW };

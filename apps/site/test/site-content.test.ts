@@ -12,7 +12,7 @@ import { RECORDING, SITE_RELEASE, SURFACE_LABELS, SURFACES } from "../src/demo-a
 import { NEW_SOURCE_EXERCISES, TRACKS } from "../src/lab-catalog.ts";
 import { RELEASE_VERSION, UPCOMING_STABLE } from "../src/release-facts.ts";
 import { serviceLines } from "../src/scripts/release-service.ts";
-import { PAGES, RELEASE, SITE } from "../src/site.ts";
+import { PAGES, REFERENCE_PAGES, RELEASE, SITE } from "../src/site.ts";
 
 const SRC = new URL("../src/", import.meta.url).pathname;
 
@@ -85,6 +85,17 @@ test("the route set is unchanged and no summary claims a fixed number of Lab fai
   // Whether an exercise runs is the backend's answer, read at runtime; no summary decides it.
   assert.match(lab.summary, /whether this demo's backend can run each one/);
   for (const page of PAGES) assert.doesNotMatch(page.summary, /\bfour\b/i, page.href);
+});
+
+test("reference pages stay out of the main navigation, and each is linked from the page it belongs to", () => {
+  assert.deepEqual(REFERENCE_PAGES.map(page => page.href), ["/failure-reference/"]);
+  const main = new Set(PAGES.map(page => page.href));
+  for (const page of REFERENCE_PAGES) assert.ok(!main.has(page.href), page.href);
+  const explainer = readFileSync(join(SRC, "pages/when-it-breaks.astro"), "utf8");
+  assert.match(explainer, /href="\/failure-reference\/#source-failure-policies"/);
+  assert.match(explainer, /href="\/failure-reference\/#error-reference"/);
+  // The old anchor stays alive on the explainer, as the policies' summary.
+  assert.match(explainer, /<section id="source-failure-policies"/);
 });
 
 test("no page or script still says \"four controlled failures\"", () => {

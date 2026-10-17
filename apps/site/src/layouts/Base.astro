@@ -5,7 +5,7 @@ import "../styles/global.css";
 import figtreeLatin from "@fontsource-variable/figtree/files/figtree-latin-wght-normal.woff2?url";
 import LockupHorizontal from "../assets/brand/lockup-horizontal.svg";
 import LockupStacked from "../assets/brand/lockup-stacked.svg";
-import { LINKS, LISTED_PAGES, RELEASE, TAGLINE } from "../site.ts";
+import { LINKS, LISTED_PAGES, LISTED_REFERENCE_PAGES, RELEASE, TAGLINE } from "../site.ts";
 import { bootstrapTabletNetwork } from "../scripts/tablet-network-bootstrap.ts";
 
 interface Props {
@@ -96,7 +96,7 @@ const isCurrent = (href: string) => (current.startsWith(href) ? "page" : undefin
         </div>
         <nav class="foot-links" aria-labelledby="foot-explore">
           <p class="eyebrow" id="foot-explore">Explore</p>
-          {LISTED_PAGES.map(page => <a href={page.href}>{page.label}</a>)}
+          {[...LISTED_PAGES, ...LISTED_REFERENCE_PAGES].map(page => <a href={page.href}>{page.label}</a>)}
         </nav>
         <nav class="foot-links" aria-labelledby="foot-project">
           <p class="eyebrow" id="foot-project">Project</p>

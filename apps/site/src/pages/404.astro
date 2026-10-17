@@ -1,7 +1,7 @@
 ---
 import Mark from "../assets/brand/mark.svg";
 import Base from "../layouts/Base.astro";
-import { LINKS, LISTED_PAGES } from "../site.ts";
+import { LINKS, LISTED_PAGES, LISTED_REFERENCE_PAGES } from "../site.ts";
 ---
 
 <Base title="Not found · StreamOtter" description="This page doesn't exist on streamotter.dev." noindex>
@@ -17,7 +17,7 @@ import { LINKS, LISTED_PAGES } from "../site.ts";
     <nav class="missing-links" aria-labelledby="missing-elsewhere">
       <p class="eyebrow" id="missing-elsewhere">Or try</p>
       <ul>
-        {LISTED_PAGES.map(page => <li><a href={page.href}>{page.label}</a></li>)}
+        {[...LISTED_PAGES, ...LISTED_REFERENCE_PAGES].map(page => <li><a href={page.href}>{page.label}</a></li>)}
       </ul>
     </nav>
   </section>

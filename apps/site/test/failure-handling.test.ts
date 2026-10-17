@@ -21,6 +21,7 @@ import {
 import { RELEASE_TAG } from "../src/release-facts.ts";
 import { benchConfig, benchEnvironment } from "../../field-station/src/lab/bench.ts";
 import { capabilityOptions } from "../../field-station/src/lab/leases.ts";
+import { SOURCE_SCENARIOS } from "../../field-station/src/lab/capabilities.ts";
 
 const FIELD_STATION = new URL("../../field-station/", import.meta.url);
 
@@ -57,6 +58,17 @@ test("the policy matrix names every failure class once, and only the eligible on
       assert.equal(policyFor(none, failureClass), "pause", failureClass);
       assert.equal(policyFor(strongest, failureClass) !== "pause", QUARANTINE_ELIGIBLE_CLASSES.includes(failureClass), failureClass);
     }
+  }
+});
+
+test("the matrix's On the Lab links open a control the Lab page has, or a scenario it lists", () => {
+  const lab = readFileSync(new URL("../src/pages/lab.astro", import.meta.url), "utf8");
+  const linked = POLICY_MATRIX.flatMap(row => row.onTheLab ? [row.onTheLab] : []);
+  assert.deepEqual(linked.map(control => control.label), ["Garbled reading (S02), needs quarantine", "Bad projection (S03), needs quarantine", "Calibration lookup blip", "Fouled sensor", "Conflicting readings (S05), needs quarantine", "Cut relay", "Start slow client"]);
+  for (const { href } of linked) {
+    const url = new URL(href, "https://site.invalid");
+    if (url.hash) assert.ok(lab.includes(`id="${url.hash.slice(1)}"`), href);
+    else assert.ok((SOURCE_SCENARIOS as readonly string[]).includes(url.searchParams.get("scenario") ?? ""), href);
   }
 });
 

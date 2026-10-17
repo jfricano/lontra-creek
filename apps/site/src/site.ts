@@ -88,7 +88,7 @@ export const PAGES: readonly Page[] = [
     href: "/when-it-breaks/",
     label: "When it breaks",
     question: "How does it fail, exactly?",
-    summary: "Every failure mode in this release: the state it produces, the error your code receives, whether it retries, and how to handle it. Plus the opt-in source-failure policies: quarantine, the recovery guard, and the operator commands.",
+    summary: "What a view's state tells you when something fails, one failure seen from both sides, and how to handle state and errors. The failure reference beside it has every error code and the opt-in source-failure policies.",
     ready: true
   },
   {
@@ -109,3 +109,20 @@ export const PAGES: readonly Page[] = [
 
 /** The pages the navigation, the footer, and the 404 page offer: all of them before launch, then only ready ones. */
 export const LISTED_PAGES: readonly Page[] = SITE.launched ? PAGES.filter(page => page.ready) : PAGES;
+
+/**
+ * Reference pages outside the main navigation: each is linked from the page it belongs to,
+ * and listed in the footer, the 404 page, and the sitemap, after the main pages.
+ */
+export const REFERENCE_PAGES: readonly Page[] = [
+  {
+    href: "/failure-reference/",
+    label: "Failure reference",
+    question: "What does each failure do, exactly?",
+    summary: "Every error code in this release, and the opt-in source-failure policies: the failure-policy matrix, record disposition step by step, and the operator commands.",
+    ready: true
+  }
+];
+
+/** The reference pages the footer and the 404 page offer, by the same rule as LISTED_PAGES. */
+export const LISTED_REFERENCE_PAGES: readonly Page[] = SITE.launched ? REFERENCE_PAGES.filter(page => page.ready) : REFERENCE_PAGES;

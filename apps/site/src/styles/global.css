@@ -307,6 +307,20 @@ kbd,
 .chip[data-state="failed"],
 .chip[data-state="closed"] { color: var(--failed); background: var(--failed-bg); }
 
+/* Above a table that scrolls sideways on narrow screens; hidden where tables fit. */
+.scroll-hint {
+  display: none;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+  color: var(--ink-2);
+}
+
+@media (max-width: 760px) {
+  .scroll-hint {
+    display: block;
+  }
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

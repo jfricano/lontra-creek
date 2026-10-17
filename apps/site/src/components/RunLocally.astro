@@ -1,0 +1,10 @@
+---
+/** /workbench/'s three commands, shown where its layout puts them (see workbench.astro). */
+import { INSTALL_COMMAND } from "../site.ts";
+interface Props { place: "early" | "late" }
+const { place } = Astro.props;
+---
+<section class="run-locally" data-run-locally={place}><h2>Run it locally</h2><pre tabindex="0"><code>{`${INSTALL_COMMAND}
+npx streamotter init .
+npx streamotter dev --config streamotter.json \\
+  --handlers server/handlers.mjs`}</code></pre><p>Open the printed workbench URL and enter its per-run token. The token stays in memory, so reloading asks for it again. Never expose the development workbench publicly.</p></section>

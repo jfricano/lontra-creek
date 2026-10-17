@@ -25,6 +25,9 @@ export interface Scenarios {
   onStart(handler: (scenario: LabScenarioId) => void): void;
 }
 
+/** The visitor taking the page over: from then on the reading position is theirs. */
+const TAKEOVER = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
+
 /** A click the browser handles itself: another button, or a modifier that opens a new tab or window. */
 function modified(event: MouseEvent): boolean { return event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey; }
 
@@ -40,13 +43,30 @@ export function mountScenarios(root: ParentNode): Scenarios | null {
       if (mark) mark.hidden = !on;
     }
     // A shared link lands on its card, or on the bench controls a scenario runs with; in-page links leave the reading position alone.
-    if (!reveal || scenario === null) return;
-    const controls = SCENARIOS[scenario].controls;
+    if (!reveal) return;
+    const controls = scenario === null ? null : SCENARIOS[scenario].controls;
     const heading = controls === null ? null : root.querySelector<HTMLElement>(`#${controls}`);
-    const target = cards.find(card => card.dataset["labScenario"] === scenario) ?? heading?.closest<HTMLElement>(".lab-control") ?? heading;
-    const scroll = (): void => target?.scrollIntoView({ block: "start" });
+    // With no scenario, a plain hash (`#source-failures`, `#control-relay-cut`) is landed on again too: the browser's own fragment
+    // scroll can run before the page's styles and fonts arrive (the dev server loads them as modules), so with the columns not yet laid
+    // out it lands on the wrong spot.
+    const hashed = scenario === null && location.hash.length > 1 ? document.getElementById(decodeURIComponent(location.hash.slice(1))) : null;
+    const target = scenario === null ? hashed : cards.find(card => card.dataset["labScenario"] === scenario) ?? heading?.closest<HTMLElement>(".lab-control") ?? heading;
+    if (!target) return;
+    const scroll = (): void => target.scrollIntoView({ block: "start" });
+    // The browser lands on a hash while the page still loads, and what the page learns afterwards (the Lab unavailable notice,
+    // the pool line, the lease clock) is inserted above the target and pushes it down, off screen on a short viewport. So land
+    // after load, and again whenever the page's height changes, until the visitor takes over or ten seconds pass.
+    const land = (): void => {
+      scroll();
+      if (typeof ResizeObserver === "undefined") return;
+      const observer = new ResizeObserver(scroll);
+      const stop = (): void => { observer.disconnect(); for (const type of TAKEOVER) window.removeEventListener(type, stop); };
+      observer.observe(document.body);
+      for (const type of TAKEOVER) window.addEventListener(type, stop, { once: true, passive: true });
+      setTimeout(stop, 10_000);
+    };
     // An older link's hash (`?scenario=fouled-sensor#source-failures`) scrolls to its section while the page loads; land after it.
-    if (document.readyState === "complete") scroll(); else window.addEventListener("load", scroll, { once: true });
+    if (document.readyState === "complete") land(); else window.addEventListener("load", land, { once: true });
   }
   for (const card of cards) card.querySelector<HTMLAnchorElement>("[data-lab-scenario-link]")?.addEventListener("click", event => {
     const id = card.dataset["labScenario"] ?? null;

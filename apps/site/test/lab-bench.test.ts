@@ -45,6 +45,11 @@ test("every bench action has a sentence and a slot under its own buttons", () =>
   assert.equal(scenarioSlot("calibration-blip"), "blip");
   assert.equal(scenarioSlot("bad-projection"), "scenario:bad-projection");
   assert.equal(retriedSlot("gateway.restart"), "gateway");
+  assert.equal(retriedSlot("gateway.restart", "calibration-blip"), "gateway");
   assert.equal(retriedSlot("source.resume"), "sensor");
+  assert.equal(retriedSlot("source.resume", "calibration-blip"), "sensor");
   assert.equal(retriedSlot(null), "sensor");
+  // An incident intent retried it (no bench action in the feed): under the story holding the record.
+  assert.equal(retriedSlot(null, "calibration-blip"), "blip");
+  assert.equal(retriedSlot(null, "garbled-reading"), "scenario:garbled-reading");
 });

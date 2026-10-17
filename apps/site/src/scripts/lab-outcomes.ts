@@ -36,7 +36,13 @@ export function scenarioSlot(id: LabScenarioId): OutcomeSlot {
   return `scenario:${id}`;
 }
 
-/** Where a retried record's line goes: under the control that let it be read again. */
-export function retriedSlot(after: Recovery | null): OutcomeSlot {
-  return after === "gateway.restart" ? "gateway" : "sensor";
+/**
+ * Where a retried record's line goes: under the bench control that let it be read again,
+ * or, when no bench action did (an incident intent retried it), under the story that holds
+ * the record; Fouled sensor when nothing says which.
+ */
+export function retriedSlot(after: Recovery | null, scenario: LabScenarioId | null = null): OutcomeSlot {
+  if (after === "gateway.restart") return "gateway";
+  if (after === "source.resume" || scenario === null) return "sensor";
+  return scenarioSlot(scenario);
 }

@@ -48,7 +48,7 @@ npm run dev</code></pre><p>The fixture demo does not include failure benches. Th
         <div class="lab-control" data-lab-scenario="calibration-blip">
           <p class="lab-selected" data-lab-selected-mark hidden><span aria-hidden="true">◆</span> Linked scenario</p>
           <h3 id="control-calibration-blip"><a href="?scenario=calibration-blip" data-lab-scenario-link>{blip.title}</a></h3><p class="lab-meta"><span class="mono">{blip.story}</span> · {DELIVERY_LABELS[blip.delivery!]}</p>
-          <p class="lab-mech">One calibration lookup times out; the gateway's bounded retry for transient mapper errors absorbs it, and nothing is held. Start it again in the same lease and the lookups keep timing out past the retries, so the record is held: Restore calibration ends the timeouts, and a retry then processes it.</p>
+          <p class="lab-mech">One calibration lookup times out; the gateway's bounded retry for transient mapper errors absorbs it, and nothing is held. Start it again in the same lease and the lookups keep timing out past the retries, so the record is held. The calibration table is still present, so the bench's Restore calibration stays off: Current incident's <strong>Restore calibration (application action)</strong> ends the timeouts, and its <strong>Retry the held record</strong> then processes it.</p>
           <p class="why"><strong>Why it matters:</strong> only an error marked transient gets retried, and only a bounded number of times. A blip recovers on its own; a real outage holds the record instead of looping.</p>
           <p class="lab-availability" id="scenario-calibration-blip-availability" data-lab-availability data-state={blipAvailability.state}><span aria-hidden="true" data-lab-availability-icon>{AVAILABILITY_ICONS[blipAvailability.state]}</span> <span data-lab-availability-text>{blipAvailability.text}</span></p>
           <button type="button" class="button button-quiet" aria-disabled="true" aria-describedby="scenario-calibration-blip-availability" data-lab-start="calibration-blip">Start a lookup blip</button>
@@ -78,7 +78,7 @@ npm run dev</code></pre><p>The fixture demo does not include failure benches. Th
       </fieldset></section>
       <section class="content-card" id="source-failures" aria-labelledby="source-failures-title">
         <h2 id="source-failures-title">Source failures</h2>
-        <p>Send your bench one bad LC-03 record and work the incident through in Current incident below: the record is held, the evidence is kept, and the source continues only under control. Fouled sensor and the lookup blip, in Bench controls, are the first two of these nine stories.</p>
+        <p>Send your bench one bad LC-03 record and work the incident through in Current incident below: the record is held, the evidence is kept, and the source continues only under control. Fouled sensor and the lookup blip, in Bench controls, are two of these nine stories.</p>
         <ol class="lab-stories">
           {rows.map(id => {
             const entry = SCENARIOS[id]; const availability = scenarioAvailability(id, pending);
@@ -159,11 +159,13 @@ npm run dev</code></pre><p>The fixture demo does not include failure benches. Th
 .lab-bench-note:empty { display:none; }
 .lab-actions { align-items:start; }
 .lab-control { border-top:1px solid var(--line); padding-top:8px; margin-top:18px; scroll-margin-top:200px; }
+/* Hash and deep-link targets clear the sticky strip (global scroll-padding clears only the header). */
+#connections, #source-failures, .lab-control h3[id] { scroll-margin-top:200px; }
 .lab-control:first-of-type { border-top:0; margin-top:0; }
 .lab-control h3 { margin-bottom:2px; } .lab-control h3 a { color:inherit; }
 .lab-mech { font-size:.9rem; color:var(--ink-2); margin-top:2px; }
 .lab-outcome { padding:10px 14px; border-radius:10px; background:var(--surface-2); border-inline-start:3px solid var(--stale); font-size:.95rem; }
-.lab-outcome:empty { display:none; }
+.lab-outcome:empty { padding:0; border:0; margin:0; } /* kept in the tree so the live region announces its first sentence */
 .lab-stories { list-style:none; padding:0; margin:12px 0 0; }
 .lab-story { padding:12px 0; border-top:1px solid var(--line); scroll-margin-top:200px; }
 .lab-story[aria-current="true"], .lab-control[aria-current="true"] { box-shadow:inset 3px 0 0 var(--accent); padding-inline-start:12px; }

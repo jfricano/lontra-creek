@@ -59,7 +59,7 @@ export const SCENARIOS: Record<LabScenarioId, LabScenarioEntry> = {
   "calibration-blip": {
     id: "calibration-blip", story: "LC11-S06", title: "Calibration lookup blip", delivery: "advanced", controls: null,
     establishes: "Only a trusted, explicitly transient mapper error gets a bounded retry. Success and exhausted retries are different outcomes.",
-    onPage: "start it once for a blip that one retry absorbs: nothing is held. Start it again in the same lease for lookups that keep timing out past the retries, and the record is held. The calibration table is still present; Restore calibration ends the timeouts, and a retry then processes the record."
+    onPage: "start it once for a blip that one retry absorbs: nothing is held. Start it again in the same lease for lookups that keep timing out past the retries, and the record is held. The calibration table is still present, so the bench's Restore calibration stays off; Current incident's Restore calibration (application action) ends the timeouts, and its retry then processes the record."
   },
   "too-many-bad-readings": {
     id: "too-many-bad-readings", story: "LC11-S07", title: "Too many bad readings", delivery: "local-ci", controls: null,

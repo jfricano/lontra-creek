@@ -1,5 +1,5 @@
 import type { Client } from "streamotter/client";
-import type { LabStatus, LabLease, LabToken, LabAction, LabActionResult, LabFeedPage, LabBenchState, LabErrorCode, LabIncidentView, LabIntentRequest, LabOperation } from "../../../field-station/src/lab/contract.ts";
+import type { LabStatus, LabLease, LabToken, LabAction, LabActionResult, LabFeedPage, LabBenchState, LabErrorCode, LabIncidentView, LabIntentRequest, LabOperation, LabScenarioId } from "../../../field-station/src/lab/contract.ts";
 import { channelVersions, type AppChannels } from "../generated/streamotter.generated.ts";
 import { LabFeedModel, retriedOutcome } from "./lab-feed.ts";
 import { benchChips, positionText, staleNote } from "./lab-bench.ts";
@@ -90,6 +90,8 @@ async function mount(root: HTMLElement): Promise<void> {
   const browserSteps: BrowserStep[] = [];
   /** The incident state last announced, so polling announces only changes. */
   let announced: string | null = null;
+  /** The story last started in this lease: where a retry no bench action caused is reported. */
+  let startedScenario: LabScenarioId | null = null;
   function observe(text: string): void { browserSteps.push({ at: new Date(Date.now() + offset).toISOString(), text }); if (browserSteps.length > 50) browserSteps.shift(); }
   /** The bench strip: one chip per part of the bench, the stale note, and the Kafka position from the feed. */
   function renderBench(): void {
@@ -120,7 +122,7 @@ async function mount(root: HTMLElement): Promise<void> {
     el("[data-lab-snapshot-note]").textContent = "";
     clearOutcomes();
     benchStateNow = undefined; viewState = "idle"; revision = undefined; satelliteFrom = undefined;
-    connection = "idle"; viewReason = undefined; lastValue = undefined; browserSteps.length = 0; announced = null; incident.clear();
+    connection = "idle"; viewReason = undefined; lastValue = undefined; browserSteps.length = 0; announced = null; startedScenario = null; incident.clear();
     // An intent belongs to the lease it was sent under: stop following it, and drop any review with it.
     intentRun?.abort(); intentRun = undefined; setIntentBusy(false); incident.operation(""); approval.close();
     model.clear(); renderFeed(); renderBench();
@@ -243,7 +245,7 @@ async function mount(root: HTMLElement): Promise<void> {
       const moved = satelliteFrom && revision && satelliteFrom !== revision ? ` and moved from revision ${satelliteFrom} to ${revision} since you started it` : "";
       say("satellite", `${satellite.overloaded ? `The slow client missed its ${timeout}receipt deadline and the gateway disconnected it (OVERLOADED).` : "The slow client disconnected."} Your LC-03 view is ${viewState}${moved}.`);
     } else if (kind === "retried" && retried) {
-      say(retriedSlot(retried.after), retriedOutcome(retried));
+      say(retriedSlot(retried.after, incident.incident?.scenario ?? startedScenario), retriedOutcome(retried));
     }
   }
   async function feed(background = false): Promise<void> {
@@ -322,7 +324,7 @@ async function mount(root: HTMLElement): Promise<void> {
       }
     }).finally(() => { if (intentRun === run) { intentRun = undefined; if (intentBusy) setIntentBusy(false); } });
   }
-  scenarios?.onStart(scenario => { if (!intentBusy && leased()) { say(scenarioSlot(scenario), SCENARIO_SENT); sendIntent(startRequest(scenario, newRequestId())); } });
+  scenarios?.onStart(scenario => { if (!intentBusy && leased()) { startedScenario = scenario; say(scenarioSlot(scenario), SCENARIO_SENT); sendIntent(startRequest(scenario, newRequestId())); } });
   incident.onAct((current, button) => {
     if (intentBusy || !leaseId) return;
     if (current.nextIntent !== "incident.approve-reprocess") { const body = nextRequest(current, newRequestId()); if (body) sendIntent(body); return; }
@@ -342,9 +344,9 @@ async function mount(root: HTMLElement): Promise<void> {
   root.querySelectorAll<HTMLButtonElement>("[data-lab-action]").forEach(button => button.addEventListener("click", () => {
     if (actionBusy) return; actionBusy = true; actions.disabled = true;
     const action = button.dataset["labAction"] as LabAction; const from = revision;
-    // A new action starts a new story: the last one's outcome and the last request's operation line no longer describe the bench.
-    clearOutcomes(); incident.operation("");
     void request<LabActionResult>("actions", { action }).then(result => {
+      // A new action starts a new story: the last one's outcome and the last request's operation line no longer describe the bench. A refusal leaves them.
+      clearOutcomes(); incident.operation("");
       nextActionAt = Date.parse(result.nextActionAt); benchState(result.benchState);
       if (action === "satellite.start") satelliteFrom = from;
       // Feedback where the visitor pressed: what to watch for, written the moment the bench accepts the action.

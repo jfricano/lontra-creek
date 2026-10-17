@@ -106,6 +106,12 @@ test("the Kafka position follows the feed: held at the failed record until it is
   assert.deepEqual(position(), { held: at("246"), last: at("245") });
   model.add([item(3, { kind: "action", action: "source.resume" }), record(4, "processed")]);
   assert.deepEqual(position(), { held: null, last: at("246") });
+  // The source advanced past a failed record (quarantine, or an exhausted blip continued): no longer held.
+  model.add([record(5, "failed", "247"), record(6, "processed", "248")]);
+  assert.deepEqual(position(), { held: null, last: at("248") });
+  // The source reports healthy: nothing is held, whatever the feed showed last.
+  model.add([record(7, "failed", "249"), item(8, { kind: "source", sourceId: "field", status: "healthy" })]);
+  assert.deepEqual(position(), { held: null, last: at("248") });
   model.clear();
   assert.deepEqual(position(), { held: null, last: null });
 });

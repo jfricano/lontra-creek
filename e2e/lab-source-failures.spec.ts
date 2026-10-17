@@ -60,6 +60,9 @@ for (const [link, scenario, target] of [
     // One page, no tracks: a link lands on its card, or on the bench controls its scenario runs with.
     await expect(page.locator("[data-lab-track-link]")).toHaveCount(0);
     await expect(page.locator(target)).toBeInViewport();
+    // In view and not under the sticky bench strip (toBeInViewport ignores overlays).
+    const strip = (await page.locator("[data-lab-bench]").boundingBox())!; const box = (await page.locator(target).boundingBox())!;
+    expect(box.y, `${target} top ${box.y} vs strip bottom ${strip.y + strip.height}`).toBeGreaterThanOrEqual(strip.y + strip.height - 1);
     if (scenario) {
       const card = page.locator(`[data-lab-scenario="${scenario}"]`);
       await expect(card).toHaveAttribute("aria-current", "true");

@@ -42,7 +42,8 @@ export function mountScenarios(root: ParentNode): Scenarios | null {
     // A shared link lands on its card, or on the bench controls a scenario runs with; in-page links leave the reading position alone.
     if (!reveal || scenario === null) return;
     const controls = SCENARIOS[scenario].controls;
-    const target = cards.find(card => card.dataset["labScenario"] === scenario) ?? (controls === null ? null : root.querySelector<HTMLElement>(`#${controls}`));
+    const heading = controls === null ? null : root.querySelector<HTMLElement>(`#${controls}`);
+    const target = cards.find(card => card.dataset["labScenario"] === scenario) ?? heading?.closest<HTMLElement>(".lab-control") ?? heading;
     const scroll = (): void => target?.scrollIntoView({ block: "start" });
     // An older link's hash (`?scenario=fouled-sensor#source-failures`) scrolls to its section while the page loads; land after it.
     if (document.readyState === "complete") scroll(); else window.addEventListener("load", scroll, { once: true });

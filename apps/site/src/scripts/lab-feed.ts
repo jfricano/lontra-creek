@@ -134,6 +134,7 @@ export class LabFeedModel {
         if (item.action === "source.resume" || item.action === "gateway.restart") this.#recovery = item.action;
         return { ...line, text: `You: ${ACTION_LABELS[item.action]}` };
       case "source":
+        if (item.status === "healthy") this.#held = null; // consuming again: nothing is held
         return { ...line, text: `Source ${item.sourceId}: ${item.status}${item.reason ? ` (${item.reason})` : ""}` };
       case "record": {
         const key = coordinates(item);
@@ -144,9 +145,11 @@ export class LabFeedModel {
           return { ...line, text: `${item.stationId} record ${place(item)}: map failed${again ? " again (the same record, retried)" : ""}` };
         }
         this.#last = { topic: item.topic, partition: item.partition, offset: item.offset };
-        if (this.#held && coordinates(this.#held) === key) this.#held = null;
+        // The hold ends when that record, or a later one on its partition, is mapped: the source moved on.
+        if (this.#held && this.#held.topic === item.topic && this.#held.partition === item.partition && BigInt(item.offset) >= BigInt(this.#held.offset)) this.#held = null;
         if (this.#failed.delete(key)) {
           this.#retried = { topic: item.topic, partition: item.partition, offset: item.offset, after: this.#recovery };
+          this.#recovery = null; // consumed: a later retry with no action before it isn't "after Resume"
           return { ...line, retried: true, text: `Retried ${item.stationId} record ${place(item)}: mapper returned` };
         }
         return { ...line, scenario: false, text: `${item.stationId} record ${place(item)}: mapper returned` };

@@ -2,15 +2,15 @@
  * What the `/lab/` page selects from its URL and how it describes each scenario's
  * availability, from the backend's capability summary (Lab contract section 12).
  *
- * A deep link (`#source-failures`, `?scenario=<id>`) selects explanation only: it never
- * borrows a bench, starts a scenario, or approves anything. A new source-failures
- * scenario is available only when the backend reports it, its intents, and its incident
- * projection available *and* this build of the page has an exercise for it. A missing
- * summary (404, as the fixture `npm run dev` answers), an unreachable one, or a summary
- * that doesn't list a scenario all leave it unavailable. There is no mock fallback.
+ * A deep link (`?scenario=<id>`) selects explanation only: it never borrows a bench,
+ * starts a scenario, or approves anything. A new source-failures scenario is available
+ * only when the backend reports it, its intents, and its incident projection available
+ * *and* this build of the page has an exercise for it. A missing summary (404, as the
+ * fixture `npm run dev` answers), an unreachable one, or a summary that doesn't list a
+ * scenario all leave it unavailable. There is no mock fallback.
  */
-import type { LabCapabilities, LabScenarioId, LabTrack } from "../../../field-station/src/lab/contract.ts";
-import { NEW_SOURCE_EXERCISES, SCENARIOS, TRACKS, homeTrack } from "../lab-catalog.ts";
+import type { LabCapabilities, LabScenarioId } from "../../../field-station/src/lab/contract.ts";
+import { NEW_SOURCE_EXERCISES, SCENARIOS } from "../lab-catalog.ts";
 
 export type CapabilityAnswer =
   | { kind: "pending" }
@@ -20,19 +20,17 @@ export type CapabilityAnswer =
   /** No usable answer: a network failure, a timeout, or a 5xx. */
   | { kind: "unreachable" };
 
-export interface Selection {
-  track: LabTrack;
-  scenario: LabScenarioId | null;
-}
-
 export interface Availability {
-  /** `existing`: runs with the bench controls when the backend has benches; `pending`: not checked yet (and unavailable meanwhile). */
-  state: "existing" | "pending" | "available" | "unavailable";
+  /**
+   * `existing`: runs with the bench controls when the backend has benches; `pending`: not checked yet (and unavailable meanwhile);
+   * `restricted`: this deployment doesn't run it at all (`deployment-restricted`), so the page offers no Start button for it.
+   */
+  state: "existing" | "pending" | "available" | "unavailable" | "restricted";
   text: string;
 }
 
 /** Shown beside the availability text, never instead of it. */
-export const AVAILABILITY_ICONS: Record<Availability["state"], string> = { existing: "▶", pending: "⊘", available: "✓", unavailable: "⊘" };
+export const AVAILABILITY_ICONS: Record<Availability["state"], string> = { existing: "▶", pending: "⊘", available: "✓", unavailable: "⊘", restricted: "◇" };
 
 /**
  * New scenarios this build of the page has an exercise for: each starts with `scenario.start`
@@ -42,6 +40,10 @@ export const AVAILABILITY_ICONS: Record<Availability["state"], string> = { exist
 export const PAGE_RUNS: ReadonlySet<LabScenarioId> = new Set<LabScenarioId>(["garbled-reading", "bad-projection", "inspect-old-reading", "conflicting-readings", "calibration-blip", "too-many-bad-readings", "restart-recovery", "unavailable-evidence"]);
 
 export const UNSUPPORTED = "This backend does not support this scenario.";
+/** A `deployment-restricted` story the plan delivers on the public site. */
+export const NOT_HERE = "Not on this Lab yet: it needs failure handling this Lab doesn't turn on.";
+/** A `deployment-restricted` story the plan delivers in local and CI stacks only. */
+export const LOCAL_ONLY = "Runs only on a local Lab and in CI.";
 
 export function isScenario(value: string | null): value is LabScenarioId {
   return value !== null && Object.hasOwn(SCENARIOS, value);
@@ -56,21 +58,16 @@ export function capabilityAnswer(body: unknown): CapabilityAnswer {
   return usable ? { kind: "summary", summary: summary as LabCapabilities } : { kind: "unreachable" };
 }
 
-/** The track and scenario a URL selects. An unknown scenario is ignored; a scenario outside the named track opens its own. */
-export function selectionFromUrl(url: { search: string; hash: string }): Selection {
+/** The scenario a URL selects; an unknown one is ignored. */
+export function scenarioFromUrl(url: { search: string }): LabScenarioId | null {
   const id = new URLSearchParams(url.search).get("scenario");
-  const scenario = isScenario(id) ? id : null;
-  const hash = url.hash.replace(/^#/, "");
-  const named = hash === "connections" || hash === "source-failures" ? hash : null;
-  if (scenario === null) return { track: named ?? "connections", scenario };
-  return { track: named !== null && TRACKS[named].includes(scenario) ? named : homeTrack(scenario), scenario };
+  return isScenario(id) ? id : null;
 }
 
-/** The URL for a selection, keeping the page's path and any unrelated query. */
-export function urlFor(current: URL, selection: Selection): string {
+/** The URL for a selection, keeping the page's path, any unrelated query, and the hash. */
+export function urlFor(current: URL, scenario: LabScenarioId | null): string {
   const url = new URL(current.href);
-  if (selection.scenario === null) url.searchParams.delete("scenario"); else url.searchParams.set("scenario", selection.scenario);
-  url.hash = selection.track;
+  if (scenario === null) url.searchParams.delete("scenario"); else url.searchParams.set("scenario", scenario);
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
@@ -90,6 +87,8 @@ export function scenarioAvailability(id: LabScenarioId, answer: CapabilityAnswer
   if (answer.kind === "absent") return { state: "unavailable", text: UNSUPPORTED };
   const reported = answer.summary.scenarios.find(scenario => scenario.id === id);
   if (reported === undefined) return { state: "unavailable", text: UNSUPPORTED };
+  // This deployment never runs it: say so in a few words rather than repeat the backend's sentence on every card.
+  if (!reported.available && reported.reason?.code === "deployment-restricted") return { state: "restricted", text: entry.delivery === "local-ci" ? LOCAL_ONLY : NOT_HERE };
   if (!reported.available) return { state: "unavailable", text: reported.reason?.text ?? UNSUPPORTED };
   if (!pageRuns.has(id)) return { state: "unavailable", text: "This backend reports this exercise, but this version of the site can't run it yet." };
   // The exercise needs both: intents to start and continue it, and the incident projection to follow it.
@@ -121,7 +120,7 @@ export function startState(availability: Availability, bench: BenchContext): Sta
   return { enabled: true, text: "Available on your bench." };
 }
 
-/** One line about the backend, for the Source failures track. `builtWith` is the StreamOtter version this page was built against. */
+/** One line about the backend, for the Source failures section. `builtWith` is the StreamOtter version this page was built against. */
 export function capabilityNote(answer: CapabilityAnswer, builtWith: string): string {
   switch (answer.kind) {
     case "pending": return "Checking which exercises this backend can run…";

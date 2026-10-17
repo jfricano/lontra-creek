@@ -8,13 +8,13 @@ import { capabilityAnswer, type CapabilityAnswer } from "./lab-catalog-model.ts"
 import type { BrowserStep } from "./lab-incident.ts";
 import { IncidentPanel } from "./lab-incident-panel.ts";
 import { abortableWait, approveRequest, isPending, newRequestId, nextRequest, operationText, runIntent, startRequest, type RunIo } from "./lab-operation.ts";
-import { mountTracks } from "./lab-tracks.ts";
+import { mountScenarios } from "./lab-scenarios.ts";
 import { HttpStatusError, SignInRetry } from "./sign-in-retry.ts";
 import { installTabletNetwork } from "./tablet-network.ts";
 installTabletNetwork();
 const origin = (import.meta.env?.PUBLIC_FIELD_STATION_ORIGIN ?? "").replace(/\/+$/, "");
-// The chooser and catalog work without the Lab: selecting a track or scenario only explains.
-const tracks = mountTracks(document);
+// The cards and deep links work without the Lab: selecting a scenario only explains.
+const scenarios = mountScenarios(document);
 const root = document.querySelector<HTMLElement>("[data-lab]");
 if (root) void mount(root);
 /** What each Lab error means to a visitor; the API's own codes, not its messages. */
@@ -115,7 +115,7 @@ async function mount(root: HTMLElement): Promise<void> {
   }
   async function disconnect(): Promise<void> {
     sequence++; const old = client; client = undefined; leaseId = undefined; connectingLeaseId = undefined; cursor = "";
-    tracks?.showBench({ leased: leased(), busy: intentBusy });
+    scenarios?.showBench({ leased: leased(), busy: intentBusy });
     signIn?.stop(); signIn = undefined;
     await old?.close(); actions.disabled = true;
   }
@@ -148,7 +148,7 @@ async function mount(root: HTMLElement): Promise<void> {
         getToken: ({ signal }) => retry.token(async () => (await request<LabToken>("lease/token", {}, "POST", signal)).token) });
       retry.attach(next);
       client = next; signIn = retry; leaseId = current.leaseId;
-      tracks?.showBench({ leased: leased(), busy: intentBusy });
+      scenarios?.showBench({ leased: leased(), busy: intentBusy });
       next.on("state", ({ state }) => { if (activeSequence !== sequence) return; connection = state; observe(`Connection ${state}`); applicationView(); });
       const view = client.subscribe("station", { channelVersion: channelVersions.station, params: { stationId: "LC-03" } });
       view.on("state", ({ state, reason }) => { if (activeSequence !== sequence) return; viewState = state; viewReason = reason; el("[data-lab-view-state]").textContent = `${state}${reason ? ` · ${reason}` : ""}`; observe(`LC-03 subscription ${state}${reason ? ` (${reason})` : ""}`); applicationView(); });
@@ -167,7 +167,7 @@ async function mount(root: HTMLElement): Promise<void> {
     const changed = lease?.status !== next.status || ("leaseId" in next && (!lease || !("leaseId" in lease) || lease.leaseId !== next.leaseId));
     lease = next; offset = Date.parse(next.now) - Date.now();
     incident.explain(capabilities, next.status === "ready" || next.status === "active");
-    tracks?.showBench({ leased: leased(), busy: intentBusy });
+    scenarios?.showBench({ leased: leased(), busy: intentBusy });
     returns.disabled = next.status === "none" || next.status === "ended";
     joins.disabled = !returns.disabled;
     if (next.status === "queued") { text(message, `All benches are busy. Your place in line: ${next.position} of ${next.queueLength}.`); await disconnect(); resetPanel(); }
@@ -254,7 +254,7 @@ async function mount(root: HTMLElement): Promise<void> {
   async function loadCapabilities(): Promise<void> {
     try { capabilities = capabilityAnswer(await request<unknown>("capabilities")); }
     catch (error) { capabilities = error instanceof HttpStatusError && error.status === 404 ? { kind: "absent" } : { kind: "unreachable" }; }
-    tracks?.showCapabilities(capabilities);
+    scenarios?.showCapabilities(capabilities);
     incident.explain(capabilities, lease?.status === "ready" || lease?.status === "active");
   }
   /** Numbers each projection fetch; `incidentShown` is the latest one rendered. */
@@ -284,7 +284,7 @@ async function mount(root: HTMLElement): Promise<void> {
   function leased(): boolean { return leaseId !== undefined; }
   function setIntentBusy(on: boolean): void {
     intentBusy = on; incident.busy(on);
-    tracks?.showBench({ leased: leased(), busy: on });
+    scenarios?.showBench({ leased: leased(), busy: on });
   }
   /** Sends one intent and follows its operation until the bench reports how it ended (lab-operation.ts). */
   function sendIntent(body: LabIntentRequest): void {
@@ -309,7 +309,7 @@ async function mount(root: HTMLElement): Promise<void> {
       }
     }).finally(() => { if (intentRun === run) { intentRun = undefined; if (intentBusy) setIntentBusy(false); } });
   }
-  tracks?.onStart(scenario => { if (!intentBusy && leased()) sendIntent(startRequest(scenario, newRequestId())); });
+  scenarios?.onStart(scenario => { if (!intentBusy && leased()) sendIntent(startRequest(scenario, newRequestId())); });
   incident.onAct((current, button) => {
     if (intentBusy || !leaseId) return;
     if (current.nextIntent !== "incident.approve-reprocess") { const body = nextRequest(current, newRequestId()); if (body) sendIntent(body); return; }

@@ -287,7 +287,7 @@ a minute without a check-in from the page.
 
 ## Source-failure exercises
 
-The Lab page's **Source failures** track has nine stories. The first, Fouled
+The Lab page's **Source failures** section has nine stories. The first, Fouled
 sensor, is the existing bench control; the other eight are new exercises you
 start on a borrowed bench. Open `https://localhost:8443/lab/#source-failures`,
 choose **Borrow a bench**, then **Start this scenario** on a story the page

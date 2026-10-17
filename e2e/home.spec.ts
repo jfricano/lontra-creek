@@ -95,7 +95,7 @@ test.describe("home page live panel", () => {
 test.describe("home page source-failure panel (LC11-A01, A02, A40)", () => {
   const release = (JSON.parse(readFileSync(new URL("../node_modules/streamotter/package.json", import.meta.url), "utf8")) as { version: string }).version;
 
-  test("describes the installed release's opt-in policies, keeps what this demo runs separate, and links to the Source failures track without borrowing a bench", async ({ page }) => {
+  test("describes the installed release's opt-in policies, keeps what this demo runs separate, and links to the Source failures section without borrowing a bench", async ({ page }) => {
     const lab: string[] = [];
     page.on("request", request => { const { pathname } = new URL(request.url()); if (pathname.startsWith("/api/lab/") && request.method() !== "GET") lab.push(pathname); });
     await page.goto("/");
@@ -109,8 +109,7 @@ test.describe("home page source-failure panel (LC11-A01, A02, A40)", () => {
     await expect(page.locator("[data-live-creek] [data-card] [data-state]").first()).toHaveAttribute("data-state", "live", { timeout: 30_000 });
     await panel.getByRole("link", { name: "Try source failures" }).click();
     await expect(page).toHaveURL(/\/lab\/#source-failures$/);
-    await expect(page.locator('[data-lab-track-link="source-failures"]')).toHaveAttribute("aria-current", "true");
-    await expect(page.locator('[data-lab-track="source-failures"]')).toBeVisible();
+    await expect(page.locator("#source-failures")).toBeInViewport();
     await page.waitForTimeout(2_000);
     expect(lab).toEqual([]);
   });
@@ -118,7 +117,7 @@ test.describe("home page source-failure panel (LC11-A01, A02, A40)", () => {
   test("the explore cards carry the updated Lab summary", async ({ page }) => {
     await page.goto("/");
     const card = page.locator('#explore a[href="/lab/"]');
-    await expect(card).toContainText("The Source failures track lists the quarantine exercises and whether this demo's backend can run each one.");
+    await expect(card).toContainText("The Source failures section lists the quarantine exercises and whether this demo's backend can run each one.");
     await expect(page.locator("main")).not.toContainText(/four controlled failures/i);
   });
 });

@@ -13,7 +13,7 @@ function labWrites(page: import("@playwright/test").Page): string[] {
   return writes;
 }
 
-const routes = ["/", "/docs/", "/releases/", "/when-it-breaks/", "/playground/", "/workbench/", "/field-station/", "/lab/"];
+const routes = ["/", "/docs/", "/releases/", "/when-it-breaks/", "/failure-reference/", "/playground/", "/workbench/", "/field-station/", "/lab/"];
 
 test("every public route has unique metadata and internal links resolve", async ({ page, request }) => {
   const titles = new Set<string>();
@@ -98,13 +98,15 @@ test("playground ends idle sessions and leaves an explicit reconnect control", a
   await expect(page.getByRole("button", { name: "Connect to field station" })).toBeEnabled();
 });
 
-test("state reference works from the keyboard and workbench media is labeled", async ({ page }) => {
+test("every subscription state is shown along its path, errors open from the keyboard, and workbench media is labeled", async ({ page }) => {
   await page.goto("/when-it-breaks/");
-  await page.getByLabel("Subscription state").focus();
-  await page.keyboard.press("s");
-  await page.getByLabel("Subscription state").selectOption("stale");
-  await expect(page.locator('[data-state-detail="stale"]')).toBeVisible();
-  await expect(page.locator('[data-state-detail="live"]')).toBeHidden();
+  await expect(page.getByRole("list", { name: "Typical path" }).locator(".chip")).toHaveText(["idle", "authorizing", "synchronizing", "live", "stale", "resync-required"]);
+  await expect(page.getByRole("list", { name: "Where a subscription ends" }).locator(".chip")).toHaveText(["failed", "closed"]);
+  await expect(page.locator("#state-stale")).toContainText("SOURCE_UNAVAILABLE");
+  await expect(page.locator("main")).toContainText("This is an explanatory diagram, not a connection to the demo.");
+  await expect(page.getByRole("link", { name: "Try it on a bench" })).toHaveAttribute("href", "/lab/#control-fouled-sensor");
+  await expect(page.locator("main details")).toHaveCount(0);
+  await page.goto("/failure-reference/");
   await page.locator("summary").filter({ hasText: "SOURCE_UNAVAILABLE" }).focus();
   await page.keyboard.press("Enter");
   await expect(page.locator("details[open]")).toContainText("Browser SDK");
@@ -133,7 +135,7 @@ test("the walkthrough keeps six chapters and offers an optional next step into S
 });
 
 test("the failure reference shows the installed release's policy matrix and record-disposition lifecycle as opt-in", async ({ page }) => {
-  await page.goto("/when-it-breaks/");
+  await page.goto("/failure-reference/");
   const policies = page.locator("[data-failure-policies]");
   await expect(policies.getByRole("heading", { level: 2 })).toHaveText(`Source-failure policies in streamotter@${release}`);
   await expect(policies.locator(".notice")).toContainText("Opt-in.");
@@ -143,18 +145,23 @@ test("the failure reference shows the installed release's policy matrix and reco
   const matrix = policies.getByRole("table", { name: "Failure-policy matrix" });
   await expect(matrix.locator("tbody tr")).toHaveCount(8);
   await expect(matrix.locator("tbody tr").first()).toContainText("invalid-json");
+  await expect(matrix.locator("tbody tr").first()).toContainText("Not on this Lab yet");
+  await expect(matrix.getByRole("link", { name: "Fouled sensor" })).toHaveAttribute("href", "/lab/#control-fouled-sensor");
+  await expect(policies.locator(".lifecycle .not-proof")).toHaveCount(5);
   await expect(policies.locator(".lifecycle h4")).toHaveText(["Held", "Evidence saved", "Hold, or ask the recovery guard", "Source advanced", "Views resynchronized"]);
   await expect(policies).toContainText("Subscription states don't change.");
   await expect(policies.getByRole("region", { name: "Operator actions" }).locator("tbody tr")).toHaveCount(10);
-  // What the demo runs is the backend's answer, not this page's.
-  await expect(policies).toContainText("asks the demo's backend which of them its benches can run");
   // Every source is the release's own documentation at its tag, never main or a planning commit.
   const hrefs = await policies.locator('a[href^="https://github.com/jfricano/StreamOtter/"]').evaluateAll(nodes => nodes.map(node => node.getAttribute("href")!));
   expect(hrefs.length).toBeGreaterThan(5);
   for (const href of hrefs) expect(href).toMatch(new RegExp(`/(?:blob|tree)/v${release.replaceAll(".", "\\.")}/docs/`));
-  // The installed release's reference is still first and unchanged in kind.
-  await expect(page.getByLabel("Subscription state")).toBeVisible();
-  await expect(page.locator("details summary").filter({ hasText: "HANDLER_FAILED" })).toHaveCount(1);
+  // The error reference comes first and is unchanged in kind; the explainer keeps a summary that links here.
+  await expect(page.locator("#error-reference details summary").filter({ hasText: "HANDLER_FAILED" })).toHaveCount(1);
+  await page.goto("/when-it-breaks/");
+  await expect(page.locator("#source-failure-policies")).toContainText("The live creek runs none of them");
+  await expect(page.getByRole("link", { name: "Read the policies" })).toHaveAttribute("href", "/failure-reference/#source-failure-policies");
+  // What the demo runs is the backend's answer, not this page's.
+  await expect(page.locator("#what-this-demo-runs")).toContainText("asks the demo's backend which of them its benches can run");
 });
 
 test("releases keep the site release, library package, demo availability, and verified boundary apart (LC11-A40)", async ({ page }) => {
@@ -185,7 +192,7 @@ test("releases say so when the field station doesn't answer, without filling in 
 
 test("version and availability facts agree across pages (LC11-A40)", async ({ page }) => {
   const versions = new Set<string>();
-  for (const route of ["/", "/field-station/", "/lab/", "/when-it-breaks/", "/docs/", "/releases/", "/playground/"]) {
+  for (const route of ["/", "/field-station/", "/lab/", "/when-it-breaks/", "/failure-reference/", "/docs/", "/releases/", "/playground/"]) {
     await page.goto(route);
     const text = await page.locator("main").innerText();
     for (const match of text.matchAll(/streamotter@(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]*[0-9A-Za-z])?)/g)) versions.add(`${route} ${match[1]}`);

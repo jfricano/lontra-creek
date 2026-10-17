@@ -1,0 +1,52 @@
+---
+import ReferencePage from "../layouts/ReferencePage.astro";
+import {ERROR_FACTS} from "../release-facts.ts";
+import {RELEASE} from "../site.ts";
+import {AUTOMATIC_ADVANCE_LIMIT,DISPOSITION_LIFECYCLE,FAILURE_SOURCES,INSTALLED_VALIDATOR_ON_FAILURE_HANDLING,NOT_OFFERED,OPERATOR_TABLE,POLICIES,POLICY_MATRIX,REDRIVE_OUTCOMES} from "../failure-handling.ts";
+const accepted=INSTALLED_VALIDATOR_ON_FAILURE_HANDLING.valid;
+---
+<ReferencePage title={`Failure reference for streamotter ${RELEASE}`} heading={`Failure reference for streamotter@${RELEASE}`} description="Every error code in this release, then the opt-in source-failure policies: what each failure class may do, what happens to one bad record, and the operator's commands.">
+<p>For what a failure looks like from a browser, and how to handle it, start with <a href="/when-it-breaks/">When it breaks</a>.</p>
+<section id="error-reference" aria-labelledby="errors-title"><h2 id="errors-title">Error reference</h2><p>The retryable flag below is the package default. Read the situation and any override: the flag alone does not describe the complete recovery policy.</p>{Object.entries(ERROR_FACTS).map(([code,fact])=><details><summary>{code} — {fact.publicMessage}</summary><p>{fact.meaning}</p><p><strong>Default retryable:</strong> {String(fact.defaultRetryable)}. {fact.retryableNotes}</p><ul>{fact.situations.map(s=><li>{s}</li>)}</ul><p><strong>Browser SDK:</strong> {fact.visibility.browserSdk}</p><p><strong>Gateway trace:</strong> {fact.visibility.gatewayTrace}</p><p><strong>Operator log:</strong> {fact.visibility.operatorLog}</p><p><a href={fact.sources[0]}>Pinned release reference ↗</a></p></details>)}</section>
+<section id="source-failure-policies" aria-labelledby="policies-title" data-failure-policies>
+<h2 id="policies-title">Source-failure policies in streamotter@{RELEASE}</h2>
+<p class="notice"><strong>Opt-in.</strong> Everything above is what happens without a <code>failureHandling</code> section, and it stays the default: a bad record pauses its source. {RELEASE} adds policies you can turn on per source and per failure class; the installed validator accepts a <code>failureHandling</code> section{accepted && <> (this demo's own configuration passes with a <code>quarantine-hold</code> policy added)</>}. The <a href={FAILURE_SOURCES.guide}>Handle bad records guide ↗</a> is the runbook. This section describes the library; <a href="/when-it-breaks/#what-this-demo-runs">what this demo runs</a> is on When it breaks.</p>
+<p>A class with no policy pauses. The policies:</p>
+<dl class="policy-terms">{Object.entries(POLICIES).map(([name,text])=><><dt><code>{name}</code></dt><dd>{text}</dd></>)}</dl>
+<p>There is no {NOT_OFFERED.map((name,i)=><>{i>0&&(i===NOT_OFFERED.length-1?", or ":", ")}<code>{name}</code></>)} option. Automatic continuation stops after {AUTOMATIC_ADVANCE_LIMIT.incidents} distinct incidents in {AUTOMATIC_ADVANCE_LIMIT.windowMs/1000} seconds on one source, by default; the next one is held until an operator reopens the circuit after a repair. A record with several problems takes the most serious class, so a quarantine policy never moves past a record that also has a mapping or integrity problem.</p>
+<div id="policy-matrix"><p class="scroll-hint" aria-hidden="true">Scroll sideways for the whole table.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="matrix-title"><table class="matrix"><caption id="matrix-title">Failure-policy matrix</caption><thead><tr><th scope="col">Failure</th><th scope="col">Failure class</th><th scope="col">With no policy</th><th scope="col">The most a policy may do</th><th scope="col">On the Lab</th></tr></thead><tbody>{POLICY_MATRIX.map(row=><tr><th scope="row">{row.failure}</th><td>{row.classes.length?row.classes.map((name,i)=><>{i>0&&", "}<code>{name}</code></>):"Not a record failure"}</td><td>{row.byDefault}</td><td>{row.optIn}</td><td>{row.onTheLab?<a href={row.onTheLab.href}>{row.onTheLab.label}</a>:"Not on this Lab yet"}</td></tr>)}</tbody></table></div></div>
+<p class="source-line"><a href={FAILURE_SOURCES.policy}>Guide §3: choose a policy ↗</a> · <a href={FAILURE_SOURCES.barrier}>ADR-15B: failure classes ↗</a></p>
+<h3 id="record-disposition">Record disposition, step by step</h3>
+<p>One failing record under a quarantine policy. Each step is recorded separately, and none of them stands in for another.</p>
+<ol class="lifecycle">{DISPOSITION_LIFECYCLE.map(stage=><li><h4>{stage.name}</h4><p class="what">{stage.what}</p><p class="not-proof"><strong>What this stage doesn't prove:</strong> {stage.notProof}</p><p class="source-line">Terms: {stage.terms.map((term,i)=><>{i>0&&", "}<code>{term}</code></>)} · <a href={stage.source}>Source ↗</a></p></li>)}</ol>
+<h3>What the browser sees</h3>
+<p>Subscription states don't change. <code>held</code>, <code>quarantine-unknown</code>, <code>advance-confirmed</code>, and the rest are incident facts for operators, not SDK states. An affected view goes stale with <code>SOURCE_UNAVAILABLE</code>, as without a policy, and becomes live again only through a fresh snapshot that satisfies the recovery boundary. There is no “live with gaps” state.</p>
+<h3>Operator actions on one incident</h3>
+<p>Commands of the local <code>streamotter</code> CLI, which reaches the gateway through its operator socket on the gateway's own machine. They are never browser controls, and visitors to this site can't reach them. Every action that changes state names the revision it expects; there is no force, wildcard, or bulk form.</p>
+<p class="scroll-hint" aria-hidden="true">Scroll sideways for the whole table.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Operator actions"><table><thead><tr><th scope="col">Command</th><th scope="col">What it does</th><th scope="col">Changes state</th></tr></thead><tbody>{OPERATOR_TABLE.map(action=><tr><th scope="row"><code>streamotter {action.command}</code></th><td>{action.what}</td><td>{action.mutates?"Yes":"No"}</td></tr>)}</tbody></table></div>
+<p>A redrive records one of four outcomes. None of them means a business action completed or that every browser rendered the result.</p>
+<dl class="policy-terms">{Object.entries(REDRIVE_OUTCOMES).map(([name,text])=><><dt><code>{name}</code></dt><dd>{text}</dd></>)}</dl>
+<p class="source-line"><a href={FAILURE_SOURCES.operate}>Guide §5.2: act ↗</a> · <a href={FAILURE_SOURCES.operator}>V1.1 API §6: operator service ↗</a> · <a href={FAILURE_SOURCES.redrive}>ADR-15C ↗</a></p>
+</section>
+</ReferencePage>
+<style>
+.policy-terms { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:10px 18px; margin-block:16px; }
+.policy-terms dd { margin:0; }
+caption { text-align:left; font-weight:700; padding-bottom:10px; }
+/* The failure column keeps a readable width, and class names never break mid-word, when the matrix scrolls sideways. */
+.matrix tbody th { min-width:12rem; }
+.matrix td code { white-space:nowrap; }
+.lifecycle { display:grid; gap:14px; padding-inline-start:24px; }
+.lifecycle li { display:grid; grid-template-columns:minmax(0,3fr) minmax(0,2fr); gap:8px 24px; padding:16px 18px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); }
+.lifecycle h4, .lifecycle .source-line { grid-column:1 / -1; }
+.lifecycle h4 { margin:0; }
+.lifecycle li > p { margin:0; }
+.lifecycle li > p.not-proof { margin-top:0; }
+.lifecycle .not-proof { padding-left:14px; border-left:3px solid var(--line-strong); color:var(--ink-2); font-size:.94rem; }
+.lifecycle .not-proof strong { display:block; font-size:.8rem; }
+.source-line { font-size:.88rem; color:var(--ink-2); }
+[data-failure-policies] h3 { margin-top:32px; }
+@media (max-width:560px) { .policy-terms { grid-template-columns:minmax(0,1fr); } .policy-terms dd { margin-bottom:8px; } .lifecycle li { grid-template-columns:minmax(0,1fr); } }
+</style>

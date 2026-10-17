@@ -54,7 +54,8 @@ export function problemText(problem: Problem): string {
 export type UnavailableReason = NonNullable<SandboxStatus["reason"]> | "unreachable";
 
 const UNAVAILABLE: Readonly<Record<NonNullable<SandboxStatus["reason"]>, { headline: string; detail: string }>> = {
-  "disabled": { headline: "The workbench sandbox is not enabled on this deployment.", detail: "This field station runs no sandbox service, so no session can start here." },
+  // The public site's answer today: the page's own fallback line says what follows, so there is nothing to add.
+  "disabled": { headline: "The hosted sandbox isn't on yet.", detail: "" },
   "seam-unavailable": {
     headline: "The workbench sandbox is not available yet.",
     detail: "A sandbox session runs the published StreamOtter workbench, which needs a release that publishes its host contract (WHC-1). The StreamOtter the sandbox service runs does not, so it has nothing to run and no session can start. Nothing on this page simulates one."
@@ -91,7 +92,8 @@ export function availabilityView(status: SandboxStatus | null, problem: Problem 
   const pool = free > 0
     ? `${free} of ${status.slots.length} sandbox ${status.slots.length === 1 ? "slot is" : "slots are"} free.${waiting}`
     : `All ${status.slots.length} sandbox ${status.slots.length === 1 ? "slot is" : "slots are"} in use. Starting a session puts you in line.${waiting}${status.nextFreeAt ? ` One frees within ${minutesUntil(status.nextFreeAt, status.now)} min at the latest.` : ""}`;
-  return { available: true, reason: null, headline: "The workbench sandbox is available.", detail: "Start a session to borrow an isolated slot running synthetic fixture data. Nothing is allocated until you press Start.", pool };
+  // Ten minutes is the sandbox contract's default lease (§8, SANDBOX_LEASE_SECONDS), never past the browser session's expiry: hence "up to".
+  return { available: true, reason: null, headline: "The workbench sandbox is available.", detail: "Up to ten minutes on an isolated slot with synthetic fixture data. Nothing starts until you press Start.", pool };
 }
 
 const MODE_LABELS: Readonly<Record<SandboxRuntime["mode"], string>> = { "synthetic-fixture": "Synthetic fixture" };
@@ -104,7 +106,7 @@ export function runtimeLabels(runtime: SandboxRuntime | null): RuntimeLabels | n
   return {
     mode: MODE_LABELS[runtime.mode] ?? runtime.mode,
     packages: `streamotter@${runtime.packages.streamotter} · @streamotter/workbench@${runtime.packages.workbench}`,
-    contract: runtime.contractVersion === null ? "No host contract reported" : `Host contract ${runtime.contractVersion}`
+    contract: runtime.contractVersion === null ? "None reported" : `Version ${runtime.contractVersion}`
   };
 }
 
@@ -127,7 +129,13 @@ export function formatRemaining(ms: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export type Phase = "checking" | "unavailable" | "idle" | "queued" | "ready" | "active" | "resetting" | "ended";
+export type Phase = "checking" | "unavailable" | "idle" | "refused" | "queued" | "ready" | "active" | "resetting" | "ended";
+/**
+ * The page's three layouts: no sandbox to use (the screenshots and Run it locally lead), one to
+ * start (Start leads), or a session on screen (the mounted workbench leads). Checking counts as
+ * off, so a page without JavaScript, which never leaves it, keeps the screenshot layout.
+ */
+export type Layout = "off" | "available" | "live";
 export type Control = "start" | "claim" | "return" | "reset" | "repro";
 
 export interface SessionInput {
@@ -143,10 +151,13 @@ export interface SessionInput {
   connectedStudy: string | null;
   /** The service's clock, corrected for this browser's offset from it. */
   now: number;
+  /** Why the field station refused this page's last Start, until the visitor asks again with Check again. */
+  refused: string | null;
 }
 
 export interface SessionView {
   phase: Phase;
+  layout: Layout;
   headline: string;
   detail: string;
   clock: string;
@@ -160,8 +171,15 @@ export interface SessionView {
 const NONE: Record<Control, boolean> = { start: false, claim: false, return: false, reset: false, repro: false };
 
 export function sessionView(input: SessionInput): SessionView {
+  const availability = availabilityView(input.status, input.statusProblem);
+  const view = phaseView(input, availability);
+  const layout: Layout = view.phase === "active" || view.phase === "resetting" ? "live"
+    : view.phase === "checking" || view.phase === "unavailable" || (view.phase === "ended" && !availability.available) ? "off" : "available";
+  return { ...view, layout };
+}
+
+function phaseView(input: SessionInput, availability: AvailabilityView): Omit<SessionView, "layout"> {
   const { status, lease, busy, now } = input;
-  const availability = availabilityView(status, input.statusProblem);
   const base = { clock: "", enabled: { ...NONE }, returnLabel: "End session", claimLabel: "Open the workbench", runtime: status?.runtime ?? null };
   if (input.checking) return { ...base, phase: "checking", headline: "Checking the sandbox…", detail: "Asking the field station for the sandbox's status and this browser's session." };
   if (lease && lease.status === "queued") {
@@ -183,14 +201,18 @@ export function sessionView(input: SessionInput): SessionView {
       return { ...held, phase: "resetting", enabled: { ...NONE, return: !busy }, headline: `Starting a fresh study on slot ${lease.slot}…`,
         detail: "The previous study's candidate, traces, and previews are being discarded. The workbench reopens when the slot is ready." };
     }
+    // One status line above the mounted workbench, from the lease alone; the workbench's own banner says what the study is.
+    const mode = (MODE_LABELS[lease.runtime.mode] ?? lease.runtime.mode).toLowerCase();
     return { ...held, phase: "active", enabled: { ...NONE, claim: !busy && input.connectedStudy !== lease.studyId, return: !busy, reset: !busy, repro: !busy },
-      headline: `Your sandbox session is running on slot ${lease.slot}.`,
-      detail: "An isolated synthetic study: nothing in it reaches the field station, its Kafka topics, or another visitor." };
+      clock: `Slot ${lease.slot} · ${formatRemaining(Date.parse(lease.expiresAt) - now)} left · ${mode} · streamotter@${lease.runtime.packages.streamotter}`,
+      headline: `Your sandbox session is running on slot ${lease.slot}.`, detail: "" };
   }
   const start = { ...NONE, start: availability.available && !busy };
+  // A refused Start is the state's headline, and Start stays off until Check again asks the field station afresh.
+  if (input.refused !== null && availability.available) return { ...base, phase: "refused", headline: input.refused, detail: "Start is off until you press Check again." };
   if (lease && lease.status === "ended") {
     return { ...base, phase: "ended", enabled: start, headline: endedText(lease.reason),
-      detail: availability.available ? "Start a new session when you are ready. Nothing starts on its own." : `${availability.headline} ${availability.detail}` };
+      detail: availability.available ? "Start a new session when you are ready. Nothing starts on its own." : [availability.headline, availability.detail].filter(Boolean).join(" ") };
   }
   if (!availability.available) return { ...base, phase: "unavailable", headline: availability.headline, detail: availability.detail };
   return { ...base, phase: "idle", enabled: start, headline: availability.headline, detail: availability.detail };

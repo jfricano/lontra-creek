@@ -1,6 +1,7 @@
 /**
  * /workbench/: the sandbox panel's states against stubbed /api/sandbox/* answers
- * (sandbox contract §4), the design-fixture seed, and the labeled fallback screenshots.
+ * (sandbox contract §4), its three layouts (off, available, live), the design-fixture seed,
+ * and the labeled fallback screenshots.
  * Every stubbed answer here is a test fixture; versions use "0.0.0-design-fixture" so
  * a label that leaked the site's own build would show. The mounted workbench is the
  * real published app.js, served by the dev server from the pinned release, talking to
@@ -51,12 +52,20 @@ test("today's production answer, seam-unavailable, is first-class: nothing to st
   const ui = panel(page);
   await page.goto("/workbench/");
   await expect(ui.root).toHaveAttribute("data-phase", "unavailable");
+  await expect(ui.root).toHaveAttribute("data-layout", "off");
   await expect(ui.headline).toHaveText("The workbench sandbox is not available yet.");
   await expect(ui.detail).toContainText("The StreamOtter the sandbox service runs does not");
+  // Off: Check again is the only control, and the screenshots and Run it locally lead.
+  await expect(ui.start).toBeHidden();
   await expect(ui.start).toBeDisabled();
+  await expect(page.locator("[data-sandbox-retry]")).toBeVisible();
+  await expect(page.locator("[data-sandbox-fallback]")).toContainText(`in screenshots from streamotter@${capture.version}`);
+  await expect(page.locator('[data-run-locally="early"]')).toBeVisible();
+  await expect(page.locator('[data-run-locally="late"]')).toBeHidden();
+  // The runtime is never invented: not reported, and not even shown, while there is no sandbox.
   await expect(ui.mode).toHaveText("Not reported");
   await expect(ui.packages).toHaveText("Not reported");
-  await expect(page.locator("[data-sandbox-runtime-note]")).toBeVisible();
+  await expect(page.locator(".sandbox-about")).toBeHidden();
   await expect(page.locator("#streamotter-workbench-host")).toHaveCount(0);
   await expect(page.locator("[data-sandbox-mount]")).toBeHidden();
   // Status only: an unavailable sandbox is not even asked for a session.
@@ -64,7 +73,7 @@ test("today's production answer, seam-unavailable, is first-class: nothing to st
 });
 
 for (const [reason, headline] of [
-  ["disabled", "The workbench sandbox is not enabled on this deployment."],
+  ["disabled", "The hosted sandbox isn't on yet."],
   ["service-unavailable", "The sandbox service is not answering."],
   ["all-slots-unavailable", "Every sandbox slot is out of service."]
 ] as const) {
@@ -78,7 +87,7 @@ for (const [reason, headline] of [
 
 test("the dev field station, which serves no sandbox routes, is reported as not enabled", async ({ page }) => {
   await page.goto("/workbench/");
-  await expect(panel(page).headline).toHaveText("The workbench sandbox is not enabled on this deployment.");
+  await expect(panel(page).headline).toHaveText("The hosted sandbox isn't on yet.");
   await expect(panel(page).detail).toHaveText("This field station does not serve the sandbox API, so no session can start here.");
   await expect(panel(page).start).toBeDisabled();
 });
@@ -100,7 +109,13 @@ test("opening, reloading, and going back never allocate", async ({ page }) => {
   const ui = panel(page);
   await page.goto("/workbench/");
   await expect(ui.root).toHaveAttribute("data-phase", "idle");
+  await expect(ui.root).toHaveAttribute("data-layout", "available");
   await expect(ui.start).toBeEnabled();
+  await expect(ui.detail).toHaveText("Up to ten minutes on an isolated slot with synthetic fixture data. Nothing starts until you press Start.");
+  // The runtime facts sit in About the sandbox, not in tiles above the fold.
+  await expect(ui.mode).toBeHidden();
+  await page.locator(".sandbox-about summary").click();
+  await expect(ui.mode).toHaveText("Synthetic fixture");
   await page.reload();
   await expect(ui.root).toHaveAttribute("data-phase", "idle");
   await page.goto("/docs/");
@@ -215,10 +230,16 @@ test("an explicit start claims at once; labels come from the service; the mount 
   await ui.start.click();
   await expect(ui.root).toHaveAttribute("data-phase", "active");
   await expect(ui.headline).toHaveText("Your sandbox session is running on slot 2.");
-  await expect(page.locator("[data-sandbox-clock]")).toContainText("left in this session");
+  // Live: one line above the workbench; the runtime moves into About this session.
+  await expect(ui.root).toHaveAttribute("data-layout", "live");
+  await expect(page.locator("[data-sandbox-clock]")).toHaveText(/^Slot 2 · \d+:\d\d left · synthetic fixture · streamotter@0\.0\.0-design-fixture$/);
+  // The headline stays for screen readers only; the line above says it.
+  await expect(page.locator(".sandbox-lead")).toHaveCSS("position", "absolute");
+  await expect(page.locator("[data-sandbox-about-title]")).toHaveText("About this session");
+  await expect(page.locator(".screens-link a")).toHaveAttribute("href", "#workbench-steps");
   await expect(ui.mode).toHaveText("Synthetic fixture");
   await expect(ui.packages).toHaveText("streamotter@0.0.0-design-fixture · @streamotter/workbench@0.0.0-design-fixture");
-  await expect(page.locator("[data-sandbox-contract]")).toHaveText("No host contract reported");
+  await expect(page.locator("[data-sandbox-contract]")).toHaveText("None reported");
   await expect(ui.mountNote).toContainText("The sandbox service reports no host contract; this page mounts host contract 1.");
   await expect(page.locator("#streamotter-workbench-host")).toHaveCount(0);
   await expect(page.locator("[data-sandbox-mount]")).toBeHidden();
@@ -274,7 +295,11 @@ for (const [code, status, text] of [
     const ui = panel(page);
     await page.goto("/workbench/");
     await ui.start.click();
-    await expect(ui.note).toContainText(text);
+    // The refusal is the state's headline, and Start stays off until Check again asks afresh.
+    await expect(ui.headline).toContainText(text);
+    await expect(ui.root).toHaveAttribute("data-phase", "refused");
+    await expect(ui.start).toBeDisabled();
+    await page.locator("[data-sandbox-retry]").click();
     await expect(ui.root).toHaveAttribute("data-phase", "idle");
     await expect(ui.start).toBeEnabled();
   });
@@ -308,10 +333,9 @@ test("reset discards the study, waits, and claims the new study; the reproductio
 test("the seed is labeled a design fixture and the screenshots carry their own capture provenance", async ({ page }) => {
   await stubSandbox(page, ({ path }) => path === "status" ? { json: unavailable("seam-unavailable") } : undefined);
   await page.goto("/workbench/");
-  await expect(page.locator("[data-design-fixture]")).toContainText("Design fixture.");
-  await expect(page.getByRole("heading", { name: "The creek's station channel" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "The init example's jobProgress channel" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "In your app" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Same shape as your app" })).toBeVisible();
+  await expect(page.locator("[data-design-fixture]")).toHaveText("These example records are fixed on this page and checked by the site's tests; a session shows live ones.");
+  await expect(page.locator(".same-shape pre")).toHaveCount(2);
   await expect(page.locator("table")).toContainText("jobId: \"job_1\"");
   const provenance = page.locator("[data-recording-provenance]");
   await expect(provenance).toContainText("Fallback: screenshots, not a sandbox session.");
@@ -383,14 +407,14 @@ test("leaving the page while Start is in flight still returns the place", async 
 });
 
 for (const phase of ["idle", "ready"] as const) {
-  test(`the polite status region holds still in the ${phase} phase: the panel's once-a-second render rewrites nothing in it`, async ({ page }) => {
+  test(`the polite status regions hold still in the ${phase} phase: the panel's once-a-second render rewrites nothing in them`, async ({ page }) => {
     await stubSandbox(page, ({ path }) => path === "status" ? { json: available() } : path === "session" ? (phase === "ready" ? { json: lease("ready") } : { status: 401, json: { error: "No session.", code: "no-session" } }) : undefined);
     await page.goto("/workbench/");
     await expect(panel(page).root).toHaveAttribute("data-phase", phase);
     const mutations = await page.evaluate(() => new Promise<number>(resolve => {
       let count = 0;
       const observer = new MutationObserver(records => { count += records.length; });
-      observer.observe(document.querySelector(".sandbox-state")!, { subtree: true, childList: true, characterData: true });
+      document.querySelectorAll("[data-sandbox-headline], [data-sandbox-detail]").forEach(region => observer.observe(region, { subtree: true, childList: true, characterData: true }));
       setTimeout(() => { observer.disconnect(); resolve(count); }, 3_000);
     }));
     expect(mutations).toBe(0);
@@ -505,6 +529,7 @@ test("with an active lease on the pinned release and host contract 1, the real p
   await expect(page.locator("[data-sandbox-mount] link[rel=stylesheet]")).toHaveAttribute("integrity", PUBLISHED_SEAM!.integrity.hostStyle);
   await expect(page.locator("[data-sandbox-mount] script[type=module]")).toHaveAttribute("src", PUBLISHED_SEAM!.script);
   await expect(page.locator("[data-sandbox-mount] script[type=module]")).toHaveAttribute("integrity", PUBLISHED_SEAM!.integrity.script);
+  await page.locator(".sandbox-about summary").click();
   await expect(page.locator(`a[href="${PUBLISHED_SEAM!.licenses}"]`)).toBeVisible();
   // The site keeps its own heading and tokens (R12).
   await expect(h1).toHaveText("Meet the workbench");

@@ -1,7 +1,8 @@
 ---
 import ReferencePage from "../layouts/ReferencePage.astro";
-import {INSTALL_COMMAND,LINKS} from "../site.ts";
-import {IN_YOUR_APP,JOB_SEED,STATION_SEED} from "../data/workbench-seed.ts";
+import {LINKS} from "../site.ts";
+import RunLocally from "../components/RunLocally.astro";
+import {IN_YOUR_APP,STATION_SEED} from "../data/workbench-seed.ts";
 import workbenchHost from "virtual:lontra/workbench-host";
 import {workbenchCsp} from "../scripts/workbench-model.ts";
 import {PUBLISHED_SEAM} from "../scripts/workbench-seam.ts";
@@ -16,95 +17,130 @@ const json=(value:unknown)=>JSON.stringify(value,null,2);
 // with no field station origin (same-origin), 'self' covers both. frame-ancestors is a header.
 const apiOrigin=(import.meta.env.PUBLIC_FIELD_STATION_ORIGIN??"").replace(/\/+$/,"")||null;
 const csp=import.meta.env.PROD&&workbenchHost?workbenchCsp(workbenchHost.csp,{apiOrigin,gatewayOrigin:apiOrigin}):undefined;
-const seeds=[
-{id:"seed-station",title:"The creek's station channel",seed:STATION_SEED,record:{topic:"field.gauges",key:STATION_SEED.record.key,value:STATION_SEED.record.value},origin:"From the creek simulation's first tick, mapped by the field station's own Kafka handler."},
-{id:"seed-job",title:"The init example's jobProgress channel",seed:JOB_SEED,record:{source:"jobs (fixture)",key:JOB_SEED.record.key,value:JOB_SEED.record.value},origin:"The first jobs fixture record of the streamotter init scaffold this site pins, mapped by that scaffold's handler."}
-];
 const panels=[
-{key:"connect",title:"Connect",description:"See source health and staged connection checks. This capture uses the installed CLI’s fixture source; no Kafka broker is involved."},
-{key:"define",title:"Define",description:"Inspect channel versions, parameters, payload schemas, and delivery. Candidate configuration edits do not change the running gateway."},
-{key:"preview",title:"Preview",description:"Subscribe as the development principal to jobProgress with jobId job_1. The real SDK receives snapshot revision 1 and enters live."},
-{key:"inspect",title:"Inspect",description:"After advancing a fixture, follow payload-free metadata through the gateway. A source commit is not evidence of browser delivery; a receipt is not evidence of application rendering."},
-{key:"export",title:"Export",description:"Export canonical configuration for review. The workbench never writes files or changes the running gateway; validate and generate locally before restarting it."}
+{key:"connect",title:"Connect",summary:"Source health and staged connection checks.",description:"See source health and staged connection checks. This capture uses the installed CLI’s fixture source; no Kafka broker is involved."},
+{key:"define",title:"Define",summary:"Channel versions, parameters, payload schemas, and delivery; candidate edits never change the running gateway.",description:"Inspect channel versions, parameters, payload schemas, and delivery. Candidate configuration edits do not change the running gateway."},
+{key:"preview",title:"Preview",summary:"Subscribe as the development principal and watch the real SDK take its snapshot and go live.",description:"Subscribe as the development principal to jobProgress with jobId job_1. The real SDK receives snapshot revision 1 and enters live."},
+{key:"inspect",title:"Inspect",summary:"Advance a fixture and follow its payload-free metadata through the gateway.",description:"After advancing a fixture, follow payload-free metadata through the gateway. A source commit is not evidence of browser delivery; a receipt is not evidence of application rendering."},
+{key:"export",title:"Export",summary:"Export canonical configuration for review; the workbench never writes files.",description:"Export canonical configuration for review. The workbench never writes files or changes the running gateway; validate and generate locally before restarting it."}
 ];
+const stationRecord={topic:"field.gauges",key:STATION_SEED.record.key,value:STATION_SEED.record.value};
+const stationParams=Object.entries(STATION_SEED.params).map(([k,v])=>`${k}=${v}`).join(", ");
 ---
 <ReferencePage title="Meet the workbench" description="Open the published StreamOtter workbench in an isolated sandbox when one is available, or follow its Connect, Define, Preview, Inspect, and Export steps in screenshots." csp={csp} tabletNetwork={false}>
-<section class="sandbox" data-sandbox data-phase="checking" aria-labelledby="sandbox-heading">
+{/* One layout, three states: workbench.ts sets data-layout from the model to "off" (no sandbox to use), "available", or "live". */}
+<div class="workbench-page" data-sandbox data-phase="checking" data-layout="off">
+<section class="what-it-is" aria-labelledby="what-heading">
+  <h2 id="what-heading">What it is</h2>
+  <dl class="what-list">{panels.map(panel=><div><dt>{panel.title}</dt><dd>{panel.summary}</dd></div>)}</dl>
+</section>
+<section class="sandbox" aria-labelledby="sandbox-heading">
   <h2 id="sandbox-heading">Workbench sandbox</h2>
-  <div class="sandbox-state" role="status"><p class="sandbox-headline" tabindex="-1" data-sandbox-headline>Checking the sandbox…</p><p data-sandbox-detail>Asking the field station for the sandbox's status and this browser's session.</p></div>
+  <p class="sandbox-lead"><span class="sandbox-headline" role="status" tabindex="-1" data-sandbox-headline>Checking the sandbox…</span> <span data-sandbox-fallback>Below: what the workbench does, in screenshots from <code>streamotter@{capture.version}</code>, and how to run it locally in three commands.</span></p>
   <noscript><p class="notice">The sandbox needs JavaScript. The step-by-step screenshots below work without it.</p></noscript>
-  <p data-sandbox-pool></p>
   <div class="sandbox-controls">
-    <button type="button" class="button button-primary" data-sandbox-start disabled>Start a sandbox session</button>
+    <p class="sandbox-clock" data-sandbox-clock></p>
+    <button type="button" class="button button-primary" data-sandbox-start hidden disabled>Start a sandbox session</button>
     <button type="button" class="button button-primary" data-sandbox-claim hidden disabled>Claim your slot</button>
-    <button type="button" class="button button-quiet" data-sandbox-reset hidden disabled>Start over with a fresh study</button>
-    <button type="button" class="button button-quiet" data-sandbox-repro hidden disabled>Download reproduction bundle</button>
     <button type="button" class="button button-quiet" data-sandbox-return hidden disabled>End session</button>
+    <button type="button" class="button button-quiet" data-sandbox-reset hidden disabled>Start over</button>
+    <button type="button" class="button button-quiet" data-sandbox-repro hidden disabled>Download reproduction bundle</button>
     <button type="button" class="button button-quiet" data-sandbox-retry>Check again</button>
   </div>
-  <p class="sandbox-clock" data-sandbox-clock></p>
+  <p class="sandbox-detail" aria-live="polite" data-sandbox-detail>Asking the field station for the sandbox's status and this browser's session.</p>
+  <p class="sandbox-small" data-sandbox-pool></p>
   <p class="sandbox-note" aria-live="polite" data-sandbox-note></p>
-  <dl class="sandbox-runtime" aria-label="Sandbox runtime, as the sandbox service reports it">
-    <div><dt>Mode</dt><dd data-sandbox-mode>Not reported</dd></div>
-    <div><dt>Packages</dt><dd data-sandbox-packages>Not reported</dd></div>
-    <div><dt>Workbench seam</dt><dd data-sandbox-contract>Not reported</dd></div>
-  </dl>
-  <p class="sandbox-small" data-sandbox-runtime-note hidden>The sandbox service reports its mode and exact package versions only when it has a runtime to run. This page never fills them in from the site's own build.</p>
   <p class="sandbox-small" data-sandbox-mount-note></p>
   <div class="sandbox-mount" data-sandbox-mount hidden></div>
-  <p class="sandbox-small" data-sandbox-creek-note>In a session's Preview, the creek fixture has one <code>station</code> record per gauge for each study tick, LC-01 to LC-04 in turn, so advancing <code>creek</code> by 1 changes the station you preview only every fourth time.</p>
-  {PUBLISHED_SEAM&&<p class="sandbox-small" data-sandbox-licenses>A session runs StreamOtter's published <code>{PUBLISHED_SEAM.package}@{PUBLISHED_SEAM.version}</code>, served from this site. <a href={PUBLISHED_SEAM.licenses}>Its third-party licenses</a>.</p>}
-  <p class="sandbox-small">A session is never started for you: not when this page opens, reloads, or comes back from your browser's history. Leaving the page returns your slot. A session also ends after a minute without a check-in from this page, which can happen when your browser slows a tab left in the background for several minutes. <a href="#workbench-steps">See the steps in screenshots instead</a>.</p>
+  <details class="sandbox-about">
+    <summary data-sandbox-about-title>About the sandbox</summary>
+    <dl class="sandbox-runtime" aria-label="Sandbox runtime, as the sandbox service reports it">
+      <div><dt>Mode</dt><dd data-sandbox-mode>Not reported</dd></div>
+      <div><dt>Packages</dt><dd data-sandbox-packages>Not reported</dd></div>
+      <div><dt>Host contract</dt><dd data-sandbox-contract>Not reported</dd></div>
+    </dl>
+    <p class="sandbox-small" data-sandbox-runtime-note hidden>The sandbox service reports its mode and exact package versions only when it has a runtime to run. This page never fills them in from the site's own build.</p>
+    {PUBLISHED_SEAM&&<p class="sandbox-small" data-sandbox-licenses>A session runs StreamOtter's published <code>{PUBLISHED_SEAM.package}@{PUBLISHED_SEAM.version}</code>, served from this site. <a href={PUBLISHED_SEAM.licenses}>Its third-party licenses</a>.</p>}
+    <p class="sandbox-small" data-sandbox-creek-note>In a session's Preview, the creek fixture has one <code>station</code> record per gauge for each study tick, LC-01 to LC-04 in turn, so advancing <code>creek</code> by 1 changes the station you preview only every fourth time.</p>
+    <p class="sandbox-small">A session is never started for you: not when this page opens, reloads, or comes back from your browser's history. Leaving the page returns your slot. A session also ends after a minute without a check-in from this page, which can happen when your browser slows a tab left in the background for several minutes.</p>
+  </details>
 </section>
-<section aria-labelledby="seed-heading">
-  <h2 id="seed-heading">What a session opens with</h2>
-  <p>Each sandbox session runs two channels side by side on synthetic fixture sources: the creek's own <code>station</code> channel and the <code>jobProgress</code> channel from the example <code>streamotter init</code> creates. In each, a source record goes in, and the channel's map handler returns the full state that browsers receive.</p>
-  <p class="notice" data-design-fixture><strong>Design fixture.</strong> The records and states below are written into this page; they are not read from a running sandbox. The site's tests check them against their sources: the creek simulation and the field station's map handler, and the pinned <code>streamotter init</code> scaffold and its map handler.</p>
-  <div class="reference-grid">
-    {seeds.map(item=><article class="reference-card seed" aria-labelledby={item.id}>
-      <h3 id={item.id}>{item.title}</h3>
-      <p class="sandbox-small">{item.origin}</p>
-      <p><span class="badge-soon">Design fixture</span> Source record · {item.seed.source}</p>
-      <pre tabindex="0" aria-label={`${item.seed.channel} source record (design fixture)`}><code>{json(item.record)}</code></pre>
-      <p><span class="badge-soon">Design fixture</span> State the map handler returns · <code>{item.seed.channel}</code> {Object.entries(item.seed.params).map(([k,v])=>`${k}=${v}`).join(", ")}</p>
-      <pre tabindex="0" aria-label={`${item.seed.channel} mapped state (design fixture)`}><code>{json(item.seed.state)}</code></pre>
-    </article>)}
-  </div>
-  <section class="in-your-app" aria-labelledby="in-your-app-heading">
-    <h3 id="in-your-app-heading">In your app</h3>
-    <p>The creek and the scaffold are the same shape. Swap the creek's words for your own:</p>
-    <div class="table-scroll" tabindex="0" aria-label="Lontra Creek and your app"><table><thead><tr><th scope="col">Lontra Creek</th><th scope="col">Your app (the init example)</th><th scope="col">What it is</th></tr></thead>
-    <tbody>{IN_YOUR_APP.map(row=><tr><td><code>{row.creek}</code></td><td><code>{row.app}</code></td><td>{row.meaning}</td></tr>)}</tbody></table></div>
-  </section>
-</section>
+<p class="screens-link"><a href="#workbench-steps">Prefer screenshots? See the five steps below</a></p>
+{/* Run it locally leads when there is no sandbox to use, and closes the page otherwise; CSS shows one of the two. */}
+<RunLocally place="early" />
 <section id="workbench-steps" aria-labelledby="steps-heading"><h2 id="steps-heading">Step by step</h2>
 <p class="notice" data-recording-provenance><strong>Fallback: screenshots, not a sandbox session.</strong> Captured locally on {capturedOn} with <code>streamotter@{capture.version}</code> and Node.js {node}. Capture source: {capture.source}. These are real product captures of that version, not the hosted field station or a sandbox. That workbench and its management API exist only in development mode and listen on loopback.</p>
 <p><a href="/recordings/workbench/capture.json">Capture provenance</a> · <a href={LINKS.gettingStarted}>Run these steps yourself ↗</a></p></section>
 {panels.map(panel=><section><h2>{panel.title}</h2><p>{panel.description}</p><figure><a href={`/recordings/workbench/${panel.key}.png`} aria-label={`Open full-size ${panel.title} screenshot`}><img src={`/recordings/workbench/${panel.key}.png`} alt={`Recorded ${panel.title} panel in StreamOtter ${capture.version}: ${panel.description}`} loading="lazy" width="1280" /></a><figcaption>{panel.title} · recorded with streamotter@{capture.version} · local fixture capture · {capturedOn}</figcaption></figure></section>)}
-<section><h2>Run it locally</h2><pre tabindex="0"><code>{`${INSTALL_COMMAND}
-npx streamotter init .
-npx streamotter dev --config streamotter.json \\
-  --handlers server/handlers.mjs`}</code></pre><p>Open the printed workbench URL and enter its per-run token. The token stays in memory, so reloading asks for it again. Never expose the development workbench publicly.</p></section>
+<section class="same-shape" aria-labelledby="shape-heading">
+  <h2 id="shape-heading">Same shape as your app</h2>
+  <p>A sandbox session runs the creek's own <code>station</code> channel beside the <code>jobProgress</code> channel the example <code>streamotter init</code> creates, each on a synthetic fixture source. Swap the creek's words for your own:</p>
+  <div class="table-scroll" tabindex="0" aria-label="Lontra Creek and your app"><table><thead><tr><th scope="col">Lontra Creek</th><th scope="col">Your app (the init example)</th><th scope="col">What it is</th></tr></thead>
+  <tbody>{IN_YOUR_APP.map(row=><tr><td><code>{row.creek}</code></td><td><code>{row.app}</code></td><td>{row.meaning}</td></tr>)}</tbody></table></div>
+  <p class="notice" data-design-fixture>These example records are fixed on this page and checked by the site's tests; a session shows live ones.</p>
+  <h3>One <code>station</code> record, and the state its map handler returns</h3>
+  <p class="sandbox-small">From the creek simulation's first tick, mapped by the field station's own Kafka handler.</p>
+  <div class="seed-pair">
+    <div><p>Source record · {STATION_SEED.source}</p><pre tabindex="0" aria-label="station source record (example)"><code>{json(stationRecord)}</code></pre></div>
+    <div><p>State the map handler returns · <code>{STATION_SEED.channel}</code> {stationParams}</p><pre tabindex="0" aria-label="station mapped state (example)"><code>{json(STATION_SEED.state)}</code></pre></div>
+  </div>
+</section>
+<RunLocally place="late" />
+</div>
 </ReferencePage>
 <script>import "../scripts/workbench.ts";</script>
 <style>
 img {display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);}
 figure {margin:20px 0;}
 figcaption {font-size:.85rem;color:var(--ink-3);margin-top:8px;}
+.what-list {display:grid;gap:8px;margin:0;}
+.what-list div {display:grid;grid-template-columns:7rem minmax(0,1fr);gap:16px;}
+.what-list dt {font-weight:700;}
+.what-list dd {margin:0;color:var(--ink-2);}
 .sandbox {padding:24px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);}
+.sandbox > * + * {margin-top:14px;}
 .sandbox-headline {font-weight:700;font-size:1.1rem;}
-.sandbox-controls {display:flex;gap:12px;flex-wrap:wrap;margin-block:20px;}
+.sandbox-controls {display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:16px;}
 .sandbox-controls button[hidden] {display:none;}
 .sandbox-controls button:disabled {opacity:.6;cursor:not-allowed;transform:none;}
 .sandbox-clock {font:600 .95rem/1.4 var(--mono);}
-.sandbox-clock:empty,.sandbox-note:empty,[data-sandbox-pool]:empty,[data-sandbox-mount-note]:empty {display:none;}
-.sandbox-runtime {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px;margin-block:20px;}
+.sandbox-clock:empty,.sandbox-detail:empty,.sandbox-note:empty,[data-sandbox-pool]:empty,[data-sandbox-mount-note]:empty {display:none;}
+.sandbox-runtime {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px;margin-block:16px;}
 .sandbox-runtime div {padding:12px;background:var(--surface-2);border-radius:8px;}
 .sandbox-runtime dt {font-size:.8rem;color:var(--ink-2);}
 .sandbox-runtime dd {margin:4px 0 0;font:600 .9rem/1.4 var(--mono);overflow-wrap:anywhere;}
+.sandbox-about {margin-block:20px 0;}
 .sandbox-small {font-size:.9rem;color:var(--ink-2);}
-.sandbox-mount {margin-block:20px;}
-.seed pre {font-size:.8rem;}
-.seed p {margin-block:12px 8px;}
-.in-your-app {margin-top:28px;}
+.screens-link {font-weight:600;}
+.seed-pair {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:18px;}
+.seed-pair p {margin-bottom:8px;font-size:.9rem;color:var(--ink-2);}
+.seed-pair pre {font-size:.8rem;margin:0;}
+.same-shape > * + * {margin-top:16px;}
+.same-shape h3 {margin-top:28px;}
+/* Off: no sandbox to use. The status line and Check again only; Run it locally comes first. */
+[data-layout="off"] #sandbox-heading,
+[data-layout="live"] #sandbox-heading {position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;}
+[data-layout="off"] .sandbox-about,
+[data-layout="off"] :global([data-run-locally="late"]),
+[data-phase="checking"] [data-sandbox-fallback],
+[data-layout="available"] [data-sandbox-fallback],
+[data-layout="live"] [data-sandbox-fallback],
+[data-layout="available"] :global([data-run-locally="early"]),
+[data-layout="live"] :global([data-run-locally="early"]),
+[data-layout="live"] .what-it-is,
+[data-layout="live"] .same-shape,
+[data-layout="live"] [data-sandbox-pool],
+.workbench-page:not([data-layout="live"]) .screens-link {display:none;}
+/* Live: the mounted workbench is the page, under one status line with its controls inline. */
+[data-layout="off"] .sandbox-lead {margin-top:0;}
+[data-layout="live"] .sandbox {padding:0;border:0;background:none;}
+[data-layout="live"] .sandbox-lead {position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;margin:0;}
+[data-layout="live"] .sandbox-controls {padding:10px 14px;gap:8px 10px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);}
+[data-layout="live"] .sandbox-controls .button {padding:8px 12px;font-size:.88rem;}
+[data-layout="live"] .sandbox-clock {margin-inline-end:auto;}
+[data-layout="live"] .sandbox-mount {margin-top:12px;}
+@media (max-width:560px) {
+  .sandbox {padding:18px;}
+  .what-list div {grid-template-columns:minmax(0,1fr);gap:2px;}
+}
 </style>

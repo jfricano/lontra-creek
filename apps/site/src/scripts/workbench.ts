@@ -52,6 +52,8 @@ function mount(root: HTMLElement): void {
   /** The last action's outcome, and the last failed check-in; shown together, cleared separately. */
   let note = "";
   let contact = "";
+  /** Why the field station refused this page's last Start; it holds Start off until Check again. */
+  let refused: string | null = null;
   let offset = 0;
   let checking = true;
   let busy = false;
@@ -137,17 +139,19 @@ function mount(root: HTMLElement): void {
   function text(element: HTMLElement, value: string): void { if (element.textContent !== value) element.textContent = value; }
 
   function render(): void {
-    const view = sessionView({ status, statusProblem, lease, checking, busy, now: now(), connectedStudy: connection?.studyId ?? null });
+    const view = sessionView({ status, statusProblem, lease, checking, busy, now: now(), connectedStudy: connection?.studyId ?? null, refused });
     root.dataset["phase"] = view.phase;
+    root.dataset["layout"] = view.layout;
     text(el("[data-sandbox-headline]"), view.headline);
     text(el("[data-sandbox-detail]"), view.detail);
     text(el("[data-sandbox-clock]"), view.clock);
     text(el("[data-sandbox-note]"), [note, contact].filter(Boolean).join(" "));
     text(el("[data-sandbox-pool]"), checking ? "" : availabilityView(status, statusProblem).pool);
     // Revalidating mid-action would drop the action's answer, such as the place a Start was given.
-    el<HTMLButtonElement>("[data-sandbox-retry]").disabled = busy;
+    const retry = el<HTMLButtonElement>("[data-sandbox-retry]");
+    retry.disabled = busy; retry.hidden = view.layout === "live";
     const shown: Record<keyof typeof buttons, boolean> = {
-      start: ["checking", "unavailable", "idle", "ended"].includes(view.phase), claim: view.phase === "ready" || (view.phase === "active" && view.enabled.claim),
+      start: view.layout === "available" && ["idle", "refused", "ended"].includes(view.phase), claim: view.phase === "ready" || (view.phase === "active" && view.enabled.claim),
       return: ["queued", "ready", "active", "resetting"].includes(view.phase), reset: view.phase === "active", repro: view.phase === "active"
     };
     for (const [name, button] of Object.entries(buttons) as [keyof typeof buttons, HTMLButtonElement][]) { button.hidden = !shown[name]; button.disabled = !view.enabled[name]; }
@@ -157,6 +161,7 @@ function mount(root: HTMLElement): void {
     text(el("[data-sandbox-packages]"), labels?.packages ?? "Not reported");
     text(el("[data-sandbox-contract]"), labels?.contract ?? "Not reported");
     el("[data-sandbox-runtime-note]").hidden = labels !== null || checking;
+    text(el("[data-sandbox-about-title]"), view.layout === "live" ? "About this session" : "About the sandbox");
     text(el("[data-sandbox-mount-note]"), view.phase === "active" ? mountNote : "");
   }
 
@@ -216,7 +221,7 @@ function mount(root: HTMLElement): void {
   buttons.start.addEventListener("click", () => { void act(async () => {
     const g = generation; starting = true;
     const answer = await call<SandboxLease>("session", "POST").finally(() => { starting = false; }); if (g !== generation) return;
-    if (!answer.ok) { note = problemText(answer.problem); return; }
+    if (!answer.ok) { refused = problemText(answer.problem); return; }
     autoClaim = true; setLease(answer.data); owned = true;
     if (lease?.status === "ready") await claim();
   }, buttons.start); });
@@ -262,7 +267,7 @@ function mount(root: HTMLElement): void {
   async function revalidate(): Promise<void> {
     const g = ++generation; clearTimeout(poll); ticking = false; // a heartbeat in flight is now stale
     const held = holding();
-    checking = true; render();
+    checking = true; refused = null; render();
     await refreshStatus(); if (g !== generation) return;
     if (held || status?.availability === "available") await refreshLease();
     if (g !== generation) return;

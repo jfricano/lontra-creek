@@ -127,7 +127,7 @@ test("the walkthrough keeps six chapters and offers an optional next step into S
   await expect(link).toHaveAttribute("href", "/lab/?scenario=fouled-sensor#source-failures");
   await link.click();
   await expect(page).toHaveURL(/\/lab\/\?scenario=fouled-sensor#source-failures$/);
-  await expect(page.locator('[data-lab-track="source-failures"] [data-lab-scenario="fouled-sensor"]')).toHaveAttribute("aria-current", "true");
+  await expect(page.locator("#control-fouled-sensor")).toBeInViewport();
   await page.waitForTimeout(2_000);
   expect(writes).toEqual([]);
 });
@@ -213,10 +213,10 @@ for (const [name, summary, runs] of [
   test(`the Lab and the releases page count the same runnable source-failure exercises for ${name}`, async ({ page }) => {
     await page.route("**/api/lab/capabilities", route => route.fulfill({ json: summary }));
     await page.goto("/lab/#source-failures");
-    const track = page.locator('[data-lab-track="source-failures"]');
     await expect(page.locator("[data-lab-capability]")).toContainText(`${runs} of 8 new exercises can run here.`);
-    const stories = await track.locator("[data-lab-start]").count();
-    const available = await track.locator('[data-lab-scenario]:has([data-lab-start]) [data-lab-availability][data-state="available"]').count();
+    // Seven story rows under Source failures plus the lookup blip, which is a bench control.
+    const stories = await page.locator("[data-lab-scenario] [data-lab-start]").count();
+    const available = await page.locator('[data-lab-scenario]:has([data-lab-start]) [data-lab-availability][data-state="available"]').count();
     expect([stories, available]).toEqual([8, runs]);
     await page.goto("/releases/");
     // The static row counts the stories and leaves whether they run to the report below it, which reads the same summary.

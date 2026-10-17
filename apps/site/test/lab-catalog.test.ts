@@ -2,26 +2,25 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { LabCapabilities, LabScenarioId } from "../../field-station/src/lab/contract.ts";
 import { labCapabilities } from "../../field-station/src/lab/capabilities.ts";
-import { SCENARIOS, TRACKS } from "../src/lab-catalog.ts";
-import { PAGE_RUNS, UNSUPPORTED, capabilityAnswer, capabilityNote, scenarioAvailability, selectionFromUrl, startState, urlFor, type CapabilityAnswer } from "../src/scripts/lab-catalog-model.ts";
+import { NEW_SOURCE_EXERCISES, SCENARIOS, SOURCE_FAILURES } from "../src/lab-catalog.ts";
+import { PAGE_RUNS, UNSUPPORTED, capabilityAnswer, capabilityNote, scenarioAvailability, scenarioFromUrl, startState, urlFor, type CapabilityAnswer } from "../src/scripts/lab-catalog-model.ts";
 
-const NEW = TRACKS["source-failures"].filter(id => id !== "fouled-sensor");
+const NEW = SOURCE_FAILURES.filter(id => id !== "fouled-sensor");
 const rc3: CapabilityAnswer = { kind: "summary", summary: labCapabilities({ labEnabled: true, now: 0, version: "0.1.0-rc.3" }) };
-const url = (search: string, hash = "") => ({ search, hash });
 
 test("the catalog covers LC11-S01 to S09 once each, with the plan's delivery labels", () => {
-  const stories = TRACKS["source-failures"].map(id => SCENARIOS[id].story);
+  const stories = SOURCE_FAILURES.map(id => SCENARIOS[id].story);
   assert.deepEqual(stories, ["LC11-S01", "LC11-S02", "LC11-S03", "LC11-S04", "LC11-S05", "LC11-S06", "LC11-S07", "LC11-S08", "LC11-S09"]);
-  assert.deepEqual(TRACKS["source-failures"].map(id => SCENARIOS[id].delivery), ["public", "public", "public", "public", "advanced", "advanced", "local-ci", "local-ci", "local-ci"]);
-  // Fouled sensor is the bridge: in both indexes, one implementation with the existing controls.
-  assert.ok(TRACKS.connections.includes("fouled-sensor"));
+  assert.deepEqual(SOURCE_FAILURES.map(id => SCENARIOS[id].delivery), ["public", "public", "public", "public", "advanced", "advanced", "local-ci", "local-ci", "local-ci"]);
+  // Fouled sensor (S01) and the connection scenarios run with the bench controls; the rest are the page's cards.
   assert.equal(SCENARIOS["fouled-sensor"].controls, "control-fouled-sensor");
-  assert.deepEqual(TRACKS.connections.filter(id => SCENARIOS[id].controls === null), []);
+  for (const id of ["relay-cut", "slow-client", "relay-restart"] as const) assert.equal(SCENARIOS[id].controls, `control-${id}`, id);
   for (const id of NEW) assert.equal(SCENARIOS[id].controls, null, id);
+  assert.deepEqual(NEW_SOURCE_EXERCISES, NEW);
 });
 
 test("cards whose lesson the page shows only in part say what the page shows, and where the rest is checked", () => {
-  assert.deepEqual(TRACKS["source-failures"].filter(id => SCENARIOS[id].onPage !== undefined), ["calibration-blip", "restart-recovery", "unavailable-evidence"]);
+  assert.deepEqual(SOURCE_FAILURES.filter(id => SCENARIOS[id].onPage !== undefined), ["calibration-blip", "restart-recovery", "unavailable-evidence"]);
   // S06 has two outcomes: the first Start in a study recovers, the next runs out of retries (field-station lab/runtime.ts).
   assert.match(SCENARIOS["calibration-blip"].onPage!, /^start it once .* Start it again in the same lease .* held\./);
   // S08's restart and S09's deleted copy happen only in the real-Kafka suite, never from the page.
@@ -32,17 +31,13 @@ test("cards whose lesson the page shows only in part say what the page shows, an
 });
 
 test("a deep link selects explanation only, and an unknown scenario is ignored", () => {
-  assert.deepEqual(selectionFromUrl(url("")), { track: "connections", scenario: null });
-  assert.deepEqual(selectionFromUrl(url("", "#source-failures")), { track: "source-failures", scenario: null });
-  assert.deepEqual(selectionFromUrl(url("?scenario=bad-projection")), { track: "source-failures", scenario: "bad-projection" });
-  assert.deepEqual(selectionFromUrl(url("?scenario=relay-cut")), { track: "connections", scenario: "relay-cut" });
-  assert.deepEqual(selectionFromUrl(url("?scenario=fouled-sensor")), { track: "source-failures", scenario: "fouled-sensor" });
-  assert.deepEqual(selectionFromUrl(url("?scenario=fouled-sensor", "#connections")), { track: "connections", scenario: "fouled-sensor" });
-  // A scenario outside the named track opens its own track.
-  assert.deepEqual(selectionFromUrl(url("?scenario=garbled-reading", "#connections")), { track: "source-failures", scenario: "garbled-reading" });
-  for (const junk of ["?scenario=toString", "?scenario=__proto__", "?scenario=%3Cscript%3E", "?scenario="]) assert.deepEqual(selectionFromUrl(url(junk, "#source-failures")), { track: "source-failures", scenario: null }, junk);
-  assert.equal(urlFor(new URL("https://streamotter.dev/lab/?x=1"), { track: "source-failures", scenario: "calibration-blip" }), "/lab/?x=1&scenario=calibration-blip#source-failures");
-  assert.equal(urlFor(new URL("https://streamotter.dev/lab/?scenario=calibration-blip#source-failures"), { track: "connections", scenario: null }), "/lab/#connections");
+  assert.equal(scenarioFromUrl({ search: "" }), null);
+  assert.equal(scenarioFromUrl({ search: "?scenario=bad-projection" }), "bad-projection");
+  assert.equal(scenarioFromUrl({ search: "?scenario=fouled-sensor" }), "fouled-sensor");
+  for (const junk of ["?scenario=toString", "?scenario=__proto__", "?scenario=%3Cscript%3E", "?scenario="]) assert.equal(scenarioFromUrl({ search: junk }), null, junk);
+  assert.equal(urlFor(new URL("https://streamotter.dev/lab/?x=1"), "calibration-blip"), "/lab/?x=1&scenario=calibration-blip");
+  // An older link's hash stays where it was; the page has no tracks to switch.
+  assert.equal(urlFor(new URL("https://streamotter.dev/lab/?scenario=calibration-blip#source-failures"), null), "/lab/#source-failures");
 });
 
 test("against 0.1.0-rc.3 every new exercise is unavailable with the capability it lacks", () => {
@@ -100,7 +95,7 @@ test("this page runs every new exercise, each only where the backend reports it,
 
 test("Start sends only on a borrowed bench with nothing waiting, and its line says why otherwise", () => {
   const available = { state: "available" as const, text: "Available on a leased bench." };
-  assert.deepEqual(startState(available, { leased: false, busy: false }), { enabled: false, text: "Available on a leased bench. Borrow a bench below, then start it here." });
+  assert.deepEqual(startState(available, { leased: false, busy: false }), { enabled: false, text: "Available on a leased bench. Borrow a bench above, then start it here." });
   assert.deepEqual(startState(available, { leased: true, busy: false }), { enabled: true, text: "Available on your bench." });
   assert.deepEqual(startState(available, { leased: true, busy: true }), { enabled: false, text: "Available on your bench once its current request finishes; follow it in Current incident below." });
   for (const state of ["existing", "pending", "unavailable"] as const) assert.deepEqual(startState({ state, text: "Why." }, { leased: true, busy: false }), { enabled: false, text: "Why." }, state);

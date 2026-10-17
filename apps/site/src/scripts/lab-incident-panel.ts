@@ -1,26 +1,21 @@
 /**
- * The incident panel's DOM: an empty, explained state, or three areas (application
- * view, record disposition, observed steps) from a served `LabIncidentSummary`.
+ * The incident panel's DOM: an empty, explained state, or two areas (record disposition,
+ * observed steps) from a served `LabIncidentSummary`. What the page's own SDK sees is in
+ * the bench strip, which stays on screen, so the panel doesn't repeat it.
  *
  * Updates only change text inside nodes that already exist, so polling never moves
  * focus or closes the coordinates disclosure. The steps list keeps its scroll position.
  * The next-intent button is one node: its label changes with the incident, it stays
  * focusable (`aria-disabled`) while a request waits, and if the incident stops offering
  * an intent while it has focus, focus moves to the text that says so. When the panel
- * empties with focus inside it, focus moves to the panel's heading.
+ * empties with focus inside it, focus moves to the panel's heading. The next step is
+ * always the backend's intent, even where a bench control sounds alike: the intents go
+ * through the library's failure handling (and clear an armed lookup blip), which the
+ * bench's own Restore calibration and Resume source buttons don't.
  */
 import type { LabIncidentSummary, LabIncidentView } from "../../../field-station/src/lab/contract.ts";
 import type { CapabilityAnswer } from "./lab-catalog-model.ts";
 import { incidentView, type BrowserStep, type Mark } from "./lab-incident.ts";
-
-/** What the page's own SDK reports for its LC-03 view. */
-export interface ApplicationView {
-  connection: string;
-  subscription: string;
-  reason: string | undefined;
-  revision: string | undefined;
-  value: string | undefined;
-}
 
 export class IncidentPanel {
   readonly #root: HTMLElement;
@@ -125,17 +120,6 @@ export class IncidentPanel {
     steps.replaceChildren(...(model.gap ? [node("li", "Some earlier steps are missing here; they can't be reconstructed.", "lab-step-gap")] : []),
       ...model.steps.map(step => node("li", `${step.at.slice(11, 19)} · ${step.origin} · ${step.text}`)));
     return model.announcement;
-  }
-
-  /** The application view area: only ever the page's own SDK observations. */
-  application(view: ApplicationView): void {
-    if (!this.#shown) return;
-    this.#el("[data-lab-incident-connection]").textContent = view.connection;
-    const chip = node("span", view.subscription, "chip"); chip.dataset["state"] = view.subscription;
-    this.#el("[data-lab-incident-subscription]").replaceChildren(chip, ...(view.reason ? [document.createTextNode(` ${view.reason}`)] : []));
-    this.#el("[data-lab-incident-last]").textContent = view.revision ? `${view.value ?? "—"} · revision ${view.revision}` : "Nothing received yet.";
-    this.#el("[data-lab-incident-stale]").textContent = view.subscription === "stale" && view.revision
-      ? `Stale: this is the last value your SDK received (revision ${view.revision}), kept on screen, not current data.` : "";
   }
 }
 

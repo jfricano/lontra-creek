@@ -2,15 +2,15 @@
  * What the `/lab/` page selects from its URL and how it describes each scenario's
  * availability, from the backend's capability summary (Lab contract section 12).
  *
- * A deep link (`#source-failures`, `?scenario=<id>`) selects explanation only: it never
- * borrows a bench, starts a scenario, or approves anything. A new source-failures
- * scenario is available only when the backend reports it, its intents, and its incident
- * projection available *and* this build of the page has an exercise for it. A missing
- * summary (404, as the fixture `npm run dev` answers), an unreachable one, or a summary
- * that doesn't list a scenario all leave it unavailable. There is no mock fallback.
+ * A deep link (`?scenario=<id>`) selects explanation only: it never borrows a bench,
+ * starts a scenario, or approves anything. A new source-failures scenario is available
+ * only when the backend reports it, its intents, and its incident projection available
+ * *and* this build of the page has an exercise for it. A missing summary (404, as the
+ * fixture `npm run dev` answers), an unreachable one, or a summary that doesn't list a
+ * scenario all leave it unavailable. There is no mock fallback.
  */
-import type { LabCapabilities, LabScenarioId, LabTrack } from "../../../field-station/src/lab/contract.ts";
-import { NEW_SOURCE_EXERCISES, SCENARIOS, TRACKS, homeTrack } from "../lab-catalog.ts";
+import type { LabCapabilities, LabScenarioId } from "../../../field-station/src/lab/contract.ts";
+import { NEW_SOURCE_EXERCISES, SCENARIOS } from "../lab-catalog.ts";
 
 export type CapabilityAnswer =
   | { kind: "pending" }
@@ -19,11 +19,6 @@ export type CapabilityAnswer =
   | { kind: "absent" }
   /** No usable answer: a network failure, a timeout, or a 5xx. */
   | { kind: "unreachable" };
-
-export interface Selection {
-  track: LabTrack;
-  scenario: LabScenarioId | null;
-}
 
 export interface Availability {
   /** `existing`: runs with the bench controls when the backend has benches; `pending`: not checked yet (and unavailable meanwhile). */
@@ -56,21 +51,16 @@ export function capabilityAnswer(body: unknown): CapabilityAnswer {
   return usable ? { kind: "summary", summary: summary as LabCapabilities } : { kind: "unreachable" };
 }
 
-/** The track and scenario a URL selects. An unknown scenario is ignored; a scenario outside the named track opens its own. */
-export function selectionFromUrl(url: { search: string; hash: string }): Selection {
+/** The scenario a URL selects; an unknown one is ignored. */
+export function scenarioFromUrl(url: { search: string }): LabScenarioId | null {
   const id = new URLSearchParams(url.search).get("scenario");
-  const scenario = isScenario(id) ? id : null;
-  const hash = url.hash.replace(/^#/, "");
-  const named = hash === "connections" || hash === "source-failures" ? hash : null;
-  if (scenario === null) return { track: named ?? "connections", scenario };
-  return { track: named !== null && TRACKS[named].includes(scenario) ? named : homeTrack(scenario), scenario };
+  return isScenario(id) ? id : null;
 }
 
-/** The URL for a selection, keeping the page's path and any unrelated query. */
-export function urlFor(current: URL, selection: Selection): string {
+/** The URL for a selection, keeping the page's path, any unrelated query, and the hash. */
+export function urlFor(current: URL, scenario: LabScenarioId | null): string {
   const url = new URL(current.href);
-  if (selection.scenario === null) url.searchParams.delete("scenario"); else url.searchParams.set("scenario", selection.scenario);
-  url.hash = selection.track;
+  if (scenario === null) url.searchParams.delete("scenario"); else url.searchParams.set("scenario", scenario);
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
@@ -116,12 +106,12 @@ export interface StartState {
 /** Whether Start can send `scenario.start` now, and the line that says why or why not. */
 export function startState(availability: Availability, bench: BenchContext): StartState {
   if (availability.state !== "available") return { enabled: false, text: availability.text };
-  if (!bench.leased) return { enabled: false, text: "Available on a leased bench. Borrow a bench below, then start it here." };
+  if (!bench.leased) return { enabled: false, text: "Available on a leased bench. Borrow a bench above, then start it here." };
   if (bench.busy) return { enabled: false, text: "Available on your bench once its current request finishes; follow it in Current incident below." };
   return { enabled: true, text: "Available on your bench." };
 }
 
-/** One line about the backend, for the Source failures track. `builtWith` is the StreamOtter version this page was built against. */
+/** One line about the backend, for the Source failures section. `builtWith` is the StreamOtter version this page was built against. */
 export function capabilityNote(answer: CapabilityAnswer, builtWith: string): string {
   switch (answer.kind) {
     case "pending": return "Checking which exercises this backend can run…";

@@ -1,13 +1,13 @@
 /**
- * The Failure Lab's two tracks and their scenario indexes, for `/lab/` (companion plan
- * sections 3 and 4). Each scenario has one implementation: Fouled sensor appears in both
- * indexes but has one set of controls, the existing bench actions.
+ * The Failure Lab's scenarios, for `/lab/` (companion plan sections 3 and 4). The ones with
+ * `controls` run with the bench's own actions and are described there, beside their buttons;
+ * the rest are the source-failure exercises the page lists as cards, each with a Start button.
  *
  * `Record<LabScenarioId, …>` keeps this list and the field station's capability summary
  * (`apps/field-station/src/lab/capabilities.ts`) on the same IDs: adding a scenario to the
  * contract fails the typecheck until it is described here.
  */
-import type { LabScenarioId, LabTrack } from "../../field-station/src/lab/contract.ts";
+import type { LabScenarioId } from "../../field-station/src/lab/contract.ts";
 
 /** Where a story is delivered: on the public site, as a public advanced exercise, or in local and CI stacks only. */
 export type LabDelivery = "public" | "advanced" | "local-ci";
@@ -35,11 +35,6 @@ export const DELIVERY_LABELS: Record<LabDelivery, string> = {
   "local-ci": "Local and CI only"
 };
 
-export const TRACK_LABELS: Record<LabTrack, string> = {
-  connections: "Connections and clients",
-  "source-failures": "Source failures"
-};
-
 export const SCENARIOS: Record<LabScenarioId, LabScenarioEntry> = {
   "fouled-sensor": {
     id: "fouled-sensor", story: "LC11-S01", title: "Fouled sensor: fix and retry", delivery: "public", controls: "control-fouled-sensor", note: "existing scenario",
@@ -64,7 +59,7 @@ export const SCENARIOS: Record<LabScenarioId, LabScenarioEntry> = {
   "calibration-blip": {
     id: "calibration-blip", story: "LC11-S06", title: "Calibration lookup blip", delivery: "advanced", controls: null,
     establishes: "Only a trusted, explicitly transient mapper error gets a bounded retry. Success and exhausted retries are different outcomes.",
-    onPage: "start it once for a blip that one retry absorbs: nothing is held. Start it again in the same lease for lookups that keep timing out past the retries, and the record is held. The calibration table is still present; Restore calibration ends the timeouts, and a retry then processes the record."
+    onPage: "start it once for a blip that one retry absorbs: nothing is held. Start it again in the same lease for lookups that keep timing out past the retries, and the record is held. The calibration table is still present, so the bench's Restore calibration stays off; Current incident's Restore calibration (application action) ends the timeouts, and its retry then processes the record."
   },
   "too-many-bad-readings": {
     id: "too-many-bad-readings", story: "LC11-S07", title: "Too many bad readings", delivery: "local-ci", controls: null,
@@ -94,19 +89,11 @@ export const SCENARIOS: Record<LabScenarioId, LabScenarioEntry> = {
   }
 };
 
-/** Each track's index, in reading order. Fouled sensor is the bridge, listed in both. */
-export const TRACKS: Record<LabTrack, LabScenarioId[]> = {
-  connections: ["relay-cut", "slow-client", "relay-restart", "fouled-sensor"],
-  "source-failures": ["fouled-sensor", "garbled-reading", "bad-projection", "inspect-old-reading", "conflicting-readings", "calibration-blip", "too-many-bad-readings", "restart-recovery", "unavailable-evidence"]
-};
+/** The source-failure stories LC11-S01 to S09, in reading order. Fouled sensor (S01) runs with the bench controls. */
+export const SOURCE_FAILURES: readonly LabScenarioId[] = ["fouled-sensor", "garbled-reading", "bad-projection", "inspect-old-reading", "conflicting-readings", "calibration-blip", "too-many-bad-readings", "restart-recovery", "unavailable-evidence"];
 
 /**
  * The source-failure stories beyond Fouled sensor: the new scenarios the field station's
- * capability summary reports on. Whether each one runs is that summary's answer, never this list's.
+ * capability summary reports on, and the page's cards. Whether each one runs is that summary's answer, never this list's.
  */
-export const NEW_SOURCE_EXERCISES: readonly LabScenarioId[] = TRACKS["source-failures"].filter(id => SCENARIOS[id].controls === null);
-
-/** The track a scenario link opens when the URL names no track: Fouled sensor opens Source failures, where it is LC11-S01. */
-export function homeTrack(id: LabScenarioId): LabTrack {
-  return TRACKS["source-failures"].includes(id) ? "source-failures" : "connections";
-}
+export const NEW_SOURCE_EXERCISES: readonly LabScenarioId[] = SOURCE_FAILURES.filter(id => SCENARIOS[id].controls === null);

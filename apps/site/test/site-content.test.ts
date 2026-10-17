@@ -9,7 +9,7 @@ import lockfile from "../../../package-lock.json" with { type: "json" };
 import capture from "../public/recordings/workbench/capture.json" with { type: "json" };
 import sitePackage from "../package.json" with { type: "json" };
 import { RECORDING, SITE_RELEASE, SURFACE_LABELS, SURFACES } from "../src/demo-availability.ts";
-import { NEW_SOURCE_EXERCISES, TRACKS } from "../src/lab-catalog.ts";
+import { NEW_SOURCE_EXERCISES, SOURCE_FAILURES } from "../src/lab-catalog.ts";
 import { RELEASE_VERSION, UPCOMING_STABLE } from "../src/release-facts.ts";
 import { serviceLines } from "../src/scripts/release-service.ts";
 import { PAGES, RELEASE, SITE } from "../src/site.ts";
@@ -42,7 +42,7 @@ test("demo availability reads its facts from their sources", () => {
   assert.deepEqual(RECORDING, { version: capture.version, install: capture.install, capturedOn: capture.capturedAt.slice(0, 10) });
   // The stories the page counts are the new scenarios the backend's capability summary reports on.
   assert.deepEqual([...NEW_SOURCE_EXERCISES].sort(), [...NEW_SCENARIOS].sort());
-  assert.deepEqual(NEW_SOURCE_EXERCISES, TRACKS["source-failures"].slice(1));
+  assert.deepEqual(NEW_SOURCE_EXERCISES, SOURCE_FAILURES.slice(1));
   const row = SURFACES.find(surface => surface.href === "/lab/#source-failures")!;
   assert.match(row.runs, new RegExp(`^Fouled sensor, on the same benches, and ${NEW_SOURCE_EXERCISES.length} more stories, each only where this field station's backend reports it can run it\\.`));
   const routes = new Set(PAGES.map(page => page.href));
@@ -81,7 +81,7 @@ test("static copy never says the Lab runs: whether it does depends on the deploy
 test("the route set is unchanged and no summary claims a fixed number of Lab failures", () => {
   assert.deepEqual(PAGES.map(page => page.href), ["/field-station/", "/lab/", "/playground/", "/workbench/", "/when-it-breaks/", "/docs/", "/releases/"]);
   const lab = PAGES.find(page => page.href === "/lab/")!;
-  assert.match(lab.summary, /Source failures track/);
+  assert.match(lab.summary, /Source failures section/);
   // Whether an exercise runs is the backend's answer, read at runtime; no summary decides it.
   assert.match(lab.summary, /whether this demo's backend can run each one/);
   for (const page of PAGES) assert.doesNotMatch(page.summary, /\bfour\b/i, page.href);

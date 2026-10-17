@@ -21,16 +21,13 @@ export type CapabilityAnswer =
   | { kind: "unreachable" };
 
 export interface Availability {
-  /**
-   * `existing`: runs with the bench controls when the backend has benches; `pending`: not checked yet (and unavailable meanwhile);
-   * `restricted`: this deployment doesn't run it at all (`deployment-restricted`), so the page offers no Start button for it.
-   */
-  state: "existing" | "pending" | "available" | "unavailable" | "restricted";
+  /** `existing`: runs with the bench controls when the backend has benches; `pending`: not checked yet (and unavailable meanwhile). */
+  state: "existing" | "pending" | "available" | "unavailable";
   text: string;
 }
 
 /** Shown beside the availability text, never instead of it. */
-export const AVAILABILITY_ICONS: Record<Availability["state"], string> = { existing: "▶", pending: "⊘", available: "✓", unavailable: "⊘", restricted: "◇" };
+export const AVAILABILITY_ICONS: Record<Availability["state"], string> = { existing: "▶", pending: "⊘", available: "✓", unavailable: "⊘" };
 
 /**
  * New scenarios this build of the page has an exercise for: each starts with `scenario.start`
@@ -40,10 +37,6 @@ export const AVAILABILITY_ICONS: Record<Availability["state"], string> = { exist
 export const PAGE_RUNS: ReadonlySet<LabScenarioId> = new Set<LabScenarioId>(["garbled-reading", "bad-projection", "inspect-old-reading", "conflicting-readings", "calibration-blip", "too-many-bad-readings", "restart-recovery", "unavailable-evidence"]);
 
 export const UNSUPPORTED = "This backend does not support this scenario.";
-/** A `deployment-restricted` story the plan delivers on the public site. */
-export const NOT_HERE = "Not on this Lab yet: it needs failure handling this Lab doesn't turn on.";
-/** A `deployment-restricted` story the plan delivers in local and CI stacks only. */
-export const LOCAL_ONLY = "Runs only on a local Lab and in CI.";
 
 export function isScenario(value: string | null): value is LabScenarioId {
   return value !== null && Object.hasOwn(SCENARIOS, value);
@@ -87,8 +80,6 @@ export function scenarioAvailability(id: LabScenarioId, answer: CapabilityAnswer
   if (answer.kind === "absent") return { state: "unavailable", text: UNSUPPORTED };
   const reported = answer.summary.scenarios.find(scenario => scenario.id === id);
   if (reported === undefined) return { state: "unavailable", text: UNSUPPORTED };
-  // This deployment never runs it: say so in a few words rather than repeat the backend's sentence on every card.
-  if (!reported.available && reported.reason?.code === "deployment-restricted") return { state: "restricted", text: entry.delivery === "local-ci" ? LOCAL_ONLY : NOT_HERE };
   if (!reported.available) return { state: "unavailable", text: reported.reason?.text ?? UNSUPPORTED };
   if (!pageRuns.has(id)) return { state: "unavailable", text: "This backend reports this exercise, but this version of the site can't run it yet." };
   // The exercise needs both: intents to start and continue it, and the incident projection to follow it.
@@ -115,7 +106,7 @@ export interface StartState {
 /** Whether Start can send `scenario.start` now, and the line that says why or why not. */
 export function startState(availability: Availability, bench: BenchContext): StartState {
   if (availability.state !== "available") return { enabled: false, text: availability.text };
-  if (!bench.leased) return { enabled: false, text: "Available on a leased bench. Borrow a bench below, then start it here." };
+  if (!bench.leased) return { enabled: false, text: "Available on a leased bench. Borrow a bench above, then start it here." };
   if (bench.busy) return { enabled: false, text: "Available on your bench once its current request finishes; follow it in Current incident below." };
   return { enabled: true, text: "Available on your bench." };
 }

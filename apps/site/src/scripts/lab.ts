@@ -2,6 +2,8 @@ import type { Client } from "streamotter/client";
 import type { LabStatus, LabLease, LabToken, LabAction, LabActionResult, LabFeedPage, LabBenchState, LabErrorCode, LabIncidentView, LabIntentRequest, LabOperation } from "../../../field-station/src/lab/contract.ts";
 import { channelVersions, type AppChannels } from "../generated/streamotter.generated.ts";
 import { LabFeedModel, retriedOutcome } from "./lab-feed.ts";
+import { benchChips, positionText, staleNote } from "./lab-bench.ts";
+import { ACTION_SENT, ACTION_SLOT, SCENARIO_SENT, retriedSlot, scenarioSlot, type OutcomeSlot } from "./lab-outcomes.ts";
 import { RequestBudget, refusedPauseMs } from "./lab-budget.ts";
 import { ApprovalDialog, reviewFrom } from "./lab-approval.ts";
 import { capabilityAnswer, type CapabilityAnswer } from "./lab-catalog-model.ts";
@@ -71,7 +73,9 @@ async function mount(root: HTMLElement): Promise<void> {
   const joins = el<HTMLButtonElement>("[data-lab-join]");
   const returns = el<HTMLButtonElement>("[data-lab-return]");
   const actions = el<HTMLFieldSetElement>("[data-lab-actions]");
-  const outcome = el("[data-lab-outcome]");
+  /** The outcome slot under the control or story a line belongs to (lab-outcomes.ts). Polls repeat; only a change touches the DOM. */
+  function say(slot: OutcomeSlot, value: string): void { const element = root.querySelector<HTMLElement>(`[data-lab-outcome="${slot}"]`); if (element) text(element, value); }
+  function clearOutcomes(): void { for (const element of root.querySelectorAll<HTMLElement>("[data-lab-outcome]")) element.textContent = ""; }
   const fullFeed = el<HTMLInputElement>("[data-lab-feed-all]");
   const incident = new IncidentPanel(el("[data-lab-incident]"));
   const approval = new ApprovalDialog(el<HTMLDialogElement>("[data-lab-approval]"));
@@ -87,7 +91,17 @@ async function mount(root: HTMLElement): Promise<void> {
   /** The incident state last announced, so polling announces only changes. */
   let announced: string | null = null;
   function observe(text: string): void { browserSteps.push({ at: new Date(Date.now() + offset).toISOString(), text }); if (browserSteps.length > 50) browserSteps.shift(); }
-  function applicationView(): void { incident.application({ connection, subscription: viewState, reason: viewReason, revision, value: lastValue }); }
+  /** The bench strip: one chip per part of the bench, the stale note, and the Kafka position from the feed. */
+  function renderBench(): void {
+    const view = { state: viewState, reason: viewReason, revision };
+    for (const chip of benchChips(benchStateNow, view)) {
+      const element = root.querySelector<HTMLElement>(`[data-lab-chip="${chip.key}"]`);
+      if (!element) continue;
+      text(element, chip.text); if (element.dataset["state"] !== chip.state) element.dataset["state"] = chip.state;
+    }
+    text(el("[data-lab-stale-note]"), staleNote(view));
+    text(el("[data-lab-position]"), positionText(model.position));
+  }
   /** `background` is the poll loop's own requests, which wait behind the visitor's (lab-budget.ts). */
   async function request<T>(path: string, body?: unknown, method = body === undefined ? "GET" : "POST", signal?: AbortSignal, background = false): Promise<T> {
     await budget.acquire(signal, background);
@@ -102,16 +116,14 @@ async function mount(root: HTMLElement): Promise<void> {
     return data;
   }
   function resetPanel(): void {
-    el("[data-lab-state]").textContent = "Not leased.";
-    el("[data-lab-view-state]").textContent = "idle";
-    for (const selector of ["[data-lab-stage]", "[data-lab-flow]", "[data-lab-revision]"]) el(selector).textContent = "—";
+    el("[data-lab-last]").textContent = "";
     el("[data-lab-snapshot-note]").textContent = "";
-    outcome.textContent = "";
+    clearOutcomes();
     benchStateNow = undefined; viewState = "idle"; revision = undefined; satelliteFrom = undefined;
     connection = "idle"; viewReason = undefined; lastValue = undefined; browserSteps.length = 0; announced = null; incident.clear();
     // An intent belongs to the lease it was sent under: stop following it, and drop any review with it.
     intentRun?.abort(); intentRun = undefined; setIntentBusy(false); incident.operation(""); approval.close();
-    model.clear(); renderFeed();
+    model.clear(); renderFeed(); renderBench();
   }
   async function disconnect(): Promise<void> {
     sequence++; const old = client; client = undefined; leaseId = undefined; connectingLeaseId = undefined; cursor = "";
@@ -121,7 +133,7 @@ async function mount(root: HTMLElement): Promise<void> {
   }
   function benchState(state: LabBenchState): void {
     benchStateNow = state;
-    el("[data-lab-state]").textContent = `Gateway ${state.gateway} · source ${state.source.status}${state.source.reason ? ` (${state.source.reason})` : ""} · relay ${state.relay} · calibration ${state.calibration} · satellite ${state.satellite} · receipt timeout ${state.receiptTimeoutMs / 1000}s`;
+    renderBench();
     // The bench's own predicates (field-station lab/runtime.ts), so a button is never offered for a 409 `not-applicable`.
     // Every action needs a running gateway; Resume also waits for the calibration, or the record would only fail again.
     const running = state.gateway === "running";
@@ -149,14 +161,14 @@ async function mount(root: HTMLElement): Promise<void> {
       retry.attach(next);
       client = next; signIn = retry; leaseId = current.leaseId;
       scenarios?.showBench({ leased: leased(), busy: intentBusy });
-      next.on("state", ({ state }) => { if (activeSequence !== sequence) return; connection = state; observe(`Connection ${state}`); applicationView(); });
+      next.on("state", ({ state }) => { if (activeSequence !== sequence) return; connection = state; observe(`Connection ${state}`); });
       const view = client.subscribe("station", { channelVersion: channelVersions.station, params: { stationId: "LC-03" } });
-      view.on("state", ({ state, reason }) => { if (activeSequence !== sequence) return; viewState = state; viewReason = reason; el("[data-lab-view-state]").textContent = `${state}${reason ? ` · ${reason}` : ""}`; observe(`LC-03 subscription ${state}${reason ? ` (${reason})` : ""}`); applicationView(); });
+      view.on("state", ({ state, reason }) => { if (activeSequence !== sequence) return; viewState = state; viewReason = reason; observe(`LC-03 subscription ${state}${reason ? ` (${reason})` : ""}`); renderBench(); });
       let previous: string | undefined;
       view.on("data", event => {
         if (activeSequence !== sequence) return;
-        el("[data-lab-stage]").textContent = `${event.data.stageFt} ft`; el("[data-lab-flow]").textContent = `${event.data.flowCfs} cfs`;
-        el("[data-lab-revision]").textContent = event.revision; revision = event.revision; lastValue = `${event.data.stageFt} ft, ${event.data.flowCfs} cfs`; applicationView();
+        revision = event.revision; lastValue = `${event.data.stageFt} ft, ${event.data.flowCfs} cfs`;
+        el("[data-lab-last]").textContent = `${lastValue} · rev ${event.revision}`; renderBench();
         if (event.kind === "snapshot" && previous) el("[data-lab-snapshot-note]").textContent = `Fresh snapshot ${previous} → ${event.revision}; intermediate states were not replayed.`;
         previous = event.revision;
       });
@@ -169,6 +181,7 @@ async function mount(root: HTMLElement): Promise<void> {
     incident.explain(capabilities, next.status === "ready" || next.status === "active");
     scenarios?.showBench({ leased: leased(), busy: intentBusy });
     returns.disabled = next.status === "none" || next.status === "ended";
+    text(returns, next.status === "queued" ? "Leave queue" : "Return bench");
     joins.disabled = !returns.disabled;
     if (next.status === "queued") { text(message, `All benches are busy. Your place in line: ${next.position} of ${next.queueLength}.`); await disconnect(); resetPanel(); }
     else if (next.status === "ready" || next.status === "active") {
@@ -176,7 +189,7 @@ async function mount(root: HTMLElement): Promise<void> {
       if (leaseId !== next.leaseId && connectingLeaseId !== next.leaseId) await connect(next);
     } else {
       // A background tab's timers can be slowed past the 30 s idle limit; the visibility poll then shows why the lease ended.
-      text(message, next.status !== "ended" ? "Choose Borrow a bench to begin." : next.reason === "idle" ? "Your lease ended because this page stopped checking in, which can happen when a browser slows a tab left in the background. You can join again." : `Your lease ended: ${next.reason}. You can join again.`);
+      text(message, next.status !== "ended" ? "Choose Borrow a bench to begin." : next.reason === "returned" ? "You returned your bench. Borrow another any time." : next.reason === "idle" ? "Your lease ended because this page stopped checking in, which can happen when a browser slows a tab left in the background. You can join again." : `Your lease ended: ${next.reason}. You can join again.`);
       await disconnect(); resetPanel(); el("[data-lab-clock]").textContent = "";
     }
     // The pool changes whenever this visitor's place does: show it now, not at the next 10 s poll.
@@ -222,15 +235,15 @@ async function mount(root: HTMLElement): Promise<void> {
       return li;
     }));
   }
-  /** One line saying how the latest scenario turned out, from what the feed and the page's own view observed. */
+  /** One line saying how the latest scenario turned out, from what the feed and the page's own view observed, under the control that started it. */
   function renderOutcome(kind: "satellite" | "retried"): void {
     const satellite = model.satellite; const retried = model.retried;
     if (kind === "satellite" && satellite?.disconnected) {
       const timeout = benchStateNow ? `${benchStateNow.receiptTimeoutMs / 1000} s ` : "";
       const moved = satelliteFrom && revision && satelliteFrom !== revision ? ` and moved from revision ${satelliteFrom} to ${revision} since you started it` : "";
-      outcome.textContent = `${satellite.overloaded ? `The slow client missed its ${timeout}receipt deadline and the gateway disconnected it (OVERLOADED).` : "The slow client disconnected."} Your LC-03 view is ${viewState}${moved}.`;
+      say("satellite", `${satellite.overloaded ? `The slow client missed its ${timeout}receipt deadline and the gateway disconnected it (OVERLOADED).` : "The slow client disconnected."} Your LC-03 view is ${viewState}${moved}.`);
     } else if (kind === "retried" && retried) {
-      outcome.textContent = retriedOutcome(retried);
+      say(retriedSlot(retried.after), retriedOutcome(retried));
     }
   }
   async function feed(background = false): Promise<void> {
@@ -245,7 +258,7 @@ async function mount(root: HTMLElement): Promise<void> {
       const satellite = model.satellite; const overloaded = satellite?.overloaded; const retried = model.retried;
       model.add(page.items);
       const run = model.satellite; const changed = run !== satellite || run?.overloaded !== overloaded;
-      if (page.items.length || page.gap) renderFeed();
+      if (page.items.length || page.gap) { renderFeed(); renderBench(); }
       if (model.retried !== retried) renderOutcome("retried");
       if (run?.disconnected && changed) renderOutcome("satellite");
     } catch(error) { await failed(error); }
@@ -275,8 +288,8 @@ async function mount(root: HTMLElement): Promise<void> {
       incidentShown = asked;
       const state = incident.render(view, browserSteps);
       approval.update(incident.incident, Date.now() + offset);
-      if (state !== null) applicationView();
-      if (state !== null && state !== announced) outcome.textContent = state;
+      // The incident's one-sentence state lands under the control or story that opened it.
+      if (state !== null && state !== announced && view.status !== "none") say(scenarioSlot(view.incident.scenario), state);
       announced = state;
     } catch { /* The lease poll reports a lost lease; the panel keeps its last served state. */ }
   }
@@ -309,7 +322,7 @@ async function mount(root: HTMLElement): Promise<void> {
       }
     }).finally(() => { if (intentRun === run) { intentRun = undefined; if (intentBusy) setIntentBusy(false); } });
   }
-  scenarios?.onStart(scenario => { if (!intentBusy && leased()) sendIntent(startRequest(scenario, newRequestId())); });
+  scenarios?.onStart(scenario => { if (!intentBusy && leased()) { say(scenarioSlot(scenario), SCENARIO_SENT); sendIntent(startRequest(scenario, newRequestId())); } });
   incident.onAct((current, button) => {
     if (intentBusy || !leaseId) return;
     if (current.nextIntent !== "incident.approve-reprocess") { const body = nextRequest(current, newRequestId()); if (body) sendIntent(body); return; }
@@ -329,11 +342,13 @@ async function mount(root: HTMLElement): Promise<void> {
   root.querySelectorAll<HTMLButtonElement>("[data-lab-action]").forEach(button => button.addEventListener("click", () => {
     if (actionBusy) return; actionBusy = true; actions.disabled = true;
     const action = button.dataset["labAction"] as LabAction; const from = revision;
+    // A new action starts a new story: the last one's outcome and the last request's operation line no longer describe the bench.
+    clearOutcomes(); incident.operation("");
     void request<LabActionResult>("actions", { action }).then(result => {
       nextActionAt = Date.parse(result.nextActionAt); benchState(result.benchState);
-      // A new action starts a new story: the last one's outcome no longer describes the bench.
       if (action === "satellite.start") satelliteFrom = from;
-      outcome.textContent = "";
+      // Feedback where the visitor pressed: what to watch for, written the moment the bench accepts the action.
+      say(ACTION_SLOT[action], ACTION_SENT[action]);
     })
       .catch(failed).finally(() => { actionBusy = false; });
   }));

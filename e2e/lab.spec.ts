@@ -78,13 +78,13 @@ test("the pool refreshes when a lease is granted, and returning resets the bench
   await page.waitForTimeout(2_500); // past the first poll's status check: the next is ten seconds away
   await page.locator("[data-lab-join]").click();
   await expect(page.locator("[data-lab-pool]")).toHaveText("Bench 1: leased", { timeout:3_000 });
-  await expect(page.locator("[data-lab-state]")).toContainText("Gateway running");
+  await expect(page.locator('[data-lab-chip="gateway"]')).toHaveText("running");
   await page.locator("[data-lab-return]").click();
-  await expect(page.locator("[data-lab-message]")).toContainText("ended: returned");
+  await expect(page.locator("[data-lab-message]")).toContainText("You returned your bench");
   await expect(page.locator("[data-lab-pool]")).toHaveText("Bench 1: resetting", { timeout:3_000 });
-  await expect(page.locator("[data-lab-state]")).toHaveText("Not leased.");
-  await expect(page.locator("[data-lab-view-state]")).toHaveText("idle");
-  await expect(page.locator("[data-lab-revision]")).toHaveText("—");
+  await expect(page.locator('[data-lab-chip="gateway"]')).toHaveText("—");
+  await expect(page.locator('[data-lab-chip="view"]')).toHaveText("idle");
+  await expect(page.locator("[data-lab-last]")).toHaveText("");
 });
 
 test("one refused or lost pool check keeps the bench; the Lab is called unavailable only when checks keep failing", async ({ page }) => {
@@ -169,8 +169,8 @@ test("the feed opens on the scenario view, marks the retried record, and says ho
   await expect(feed).toContainText("Source field: paused (HANDLER_FAILED)");
   await expect(feed).not.toContainText("send ok");
   await expect(feed).not.toContainText("processed");
-  await expect(page.locator("[data-lab-outcome]")).toContainText("retried the same record, offset 246");
-  await expect(page.locator("[data-lab-outcome]")).toContainText("isn't proof the offset was committed");
+  await expect(page.locator('[data-lab-outcome="sensor"]')).toContainText("retried the same record, offset 246");
+  await expect(page.locator('[data-lab-outcome="sensor"]')).toContainText("isn't proof the offset was committed");
   await page.locator("[data-lab-feed-all]").check();
   await expect(feed).toContainText("send ok · station · your view");
 });
@@ -191,11 +191,13 @@ test("a new action clears the previous scenario's outcome", async ({ page }) => 
     return route.fulfill({ json:ready() });
   });
   await page.goto("/lab/"); await page.locator("[data-lab-join]").click();
-  const outcome = page.locator("[data-lab-outcome]");
+  const outcome = page.locator('[data-lab-outcome="sensor"]');
   await expect(outcome).toContainText("retried the same record, offset 246");
   await page.locator('[data-lab-action="gateway.restart"]').click();
   await expect.poll(() => restarted).toBe(true);
   await expect(outcome).toHaveText("");
+  // The new action's own line lands under its button.
+  await expect(page.locator('[data-lab-outcome="gateway"]')).toContainText("Gateway restarting");
 });
 
 test("the slow-client scenario ends with a visible outcome", async ({ page }) => {
@@ -210,8 +212,8 @@ test("the slow-client scenario ends with a visible outcome", async ({ page }) =>
     return route.fulfill({ json:ready() });
   });
   await page.goto("/lab/"); await page.locator("[data-lab-join]").click();
-  await expect(page.locator("[data-lab-outcome]")).toContainText("The slow client disconnected.");
-  await expect(page.locator("[data-lab-outcome]")).toContainText("missed its 5 s receipt deadline and the gateway disconnected it (OVERLOADED)");
+  await expect(page.locator('[data-lab-outcome="satellite"]')).toContainText("The slow client disconnected.");
+  await expect(page.locator('[data-lab-outcome="satellite"]')).toContainText("missed its 5 s receipt deadline and the gateway disconnected it (OVERLOADED)");
   await expect(page.locator("[data-lab-feed]")).toContainText("receipt failed OVERLOADED · station · slow client");
 });
 
@@ -274,13 +276,13 @@ test("a session that lapses mid-lease ends the lease view and offers Borrow agai
   });
   await page.goto("/lab/"); await page.locator("[data-lab-join]").click();
   await expect(page.locator("[data-lab-clock]")).toContainText("left on your lease");
-  await expect(page.locator("[data-lab-state]")).toContainText("Gateway running");
+  await expect(page.locator('[data-lab-chip="gateway"]')).toHaveText("running");
   session = false; // the lc_session cookie expired: every Lab request answers 401 no-session
   await expect(page.locator("[data-lab-join]")).toBeEnabled({ timeout:5_000 });
   await expect(page.locator("[data-lab-message]")).toHaveText("Your Lab session has ended. Borrow a bench to start again.");
   await expect(page.locator("[data-lab-return]")).toBeDisabled();
   await expect(page.locator("[data-lab-clock]")).toHaveText("");
-  await expect(page.locator("[data-lab-state]")).toHaveText("Not leased.");
+  await expect(page.locator('[data-lab-chip="gateway"]')).toHaveText("—");
   await expect(page.locator("[data-lab-action]").first()).toBeDisabled();
 });
 
@@ -349,7 +351,7 @@ test("coming back to a background tab polls the lease at once and says why an id
     return route.fulfill({ json:lease });
   });
   await page.goto("/lab/"); await page.locator("[data-lab-join]").click();
-  await expect(page.locator("[data-lab-state]")).toContainText("Gateway running");
+  await expect(page.locator('[data-lab-chip="gateway"]')).toHaveText("running");
   lease = { status:"ended", now:now(), reason:"idle", endedAt:now(), bench:1 };
   const before = polls;
   await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));

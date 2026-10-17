@@ -1,15 +1,15 @@
 /**
  * The `/lab/` source-failure cards and scenario deep links (Lab contract section 12).
  *
- * `?scenario=<id>` marks that scenario's card, or scrolls to its bench controls when it
- * runs with them. Pressing a card's title marks it by rewriting the URL in place, so a link
+ * `?scenario=<id>` marks that scenario's card (a source-failure row, or the lookup blip's
+ * block in Bench controls), or scrolls to its bench controls when it runs with them. Pressing a card's title marks it by rewriting the URL in place, so a link
  * can be shared. Selecting explains; it never borrows a bench, starts a scenario, or sends
  * any request. Focus stays where the visitor put it.
  *
  * A card's Start button sends `scenario.start` only when the backend reports the exercise
  * available and the visitor holds a bench with nothing else waiting. Otherwise it stays
  * focusable with `aria-disabled="true"`, its availability line says why, and a press
- * sends nothing. A story this deployment never runs has no Start button at all.
+ * sends nothing.
  */
 import type { LabScenarioId } from "../../../field-station/src/lab/contract.ts";
 import { SCENARIOS } from "../lab-catalog.ts";
@@ -72,8 +72,7 @@ export function mountScenarios(root: ParentNode): Scenarios | null {
       if (line) line.dataset["state"] = availability.state;
       const icon = card.querySelector("[data-lab-availability-icon]"); if (icon) icon.textContent = AVAILABILITY_ICONS[availability.state];
       const text = card.querySelector("[data-lab-availability-text]"); if (text) text.textContent = start.text;
-      const button = card.querySelector<HTMLElement>("[data-lab-start]");
-      if (button) { button.setAttribute("aria-disabled", String(!start.enabled)); button.hidden = availability.state === "restricted"; }
+      card.querySelector("[data-lab-start]")?.setAttribute("aria-disabled", String(!start.enabled));
     }
   }
   for (const button of root.querySelectorAll<HTMLButtonElement>("[data-lab-start]")) button.addEventListener("click", () => {

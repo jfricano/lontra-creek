@@ -79,6 +79,9 @@ test("the scenarios that run with the bench controls have no cards; the controls
   await page.goto("/lab/");
   for (const id of ["fouled-sensor", "relay-cut", "slow-client", "relay-restart"]) await expect(page.locator(`[data-lab-scenario="${id}"]`)).toHaveCount(0);
   await expect(page.locator("[data-lab-scenario]")).toHaveCount(NEW.length);
+  // The lookup blip is a bench control: its block sits with the Fouled sensor controls, not in the stories list.
+  await expect(page.locator('#connections [data-lab-scenario="calibration-blip"]')).toHaveCount(1);
+  await expect(page.locator("#source-failures [data-lab-scenario]")).toHaveCount(NEW.length - 1);
   const controls = page.locator("#connections");
   await expect(controls).toContainText("LC11-S01");
   await expect(controls).toContainText("It's an ordinary mapper exception, not quarantine.");
@@ -93,7 +96,7 @@ test("on 0.1.0-rc.3 every new exercise is unavailable with the capability it lac
     const card = page.locator(`[data-lab-scenario="${id}"]`);
     await expect(card.locator("[data-lab-availability]")).toHaveAttribute("data-state", "unavailable");
     await expect(card.locator("[data-lab-availability-text]")).toHaveText(`This backend's StreamOtter release (0.1.0-rc.3) doesn't provide ${NEEDS[id]}.`);
-    await expect(card.getByRole("button", { name: "Start this scenario" })).toHaveAttribute("aria-disabled", "true");
+    await expect(card.locator("[data-lab-start]")).toHaveAttribute("aria-disabled", "true");
   }
   await page.locator('[data-lab-start="garbled-reading"]').click({ force: true });
   await page.locator('[data-lab-start="garbled-reading"]').press("Enter");
@@ -143,12 +146,12 @@ for (const scheme of ["light", "dark"] as const) {
   });
 }
 
-test("on a narrow screen the page reads reading, then incident, then steps", async ({ page }) => {
+test("on a narrow screen the page reads bench, then incident, then steps", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await workingLab(page);
   await page.goto("/lab/");
   const top = async (selector: string) => (await page.locator(selector).boundingBox())!.y;
-  const reading = await top('[data-lab] .content-card:has([data-lab-view-state])');
+  const reading = await top('[data-lab-bench]');
   const incident = await top("[data-lab-incident]");
   const steps = await top('[data-lab] .content-card:has([data-lab-feed])');
   expect(reading).toBeLessThan(incident); expect(incident).toBeLessThan(steps);
@@ -160,7 +163,8 @@ test("without JavaScript, the bench controls and every story explain themselves"
   const page = await context.newPage();
   await page.goto("/lab/?scenario=bad-projection#source-failures");
   await expect(page.locator("#connections")).toBeVisible();
-  await expect(page.locator("#source-failures [data-lab-scenario]")).toHaveCount(8);
+  await expect(page.locator("#source-failures [data-lab-scenario]")).toHaveCount(7);
+  await expect(page.locator('#connections [data-lab-scenario="calibration-blip"]')).toHaveCount(1);
   await expect(page.locator('[data-lab-scenario="bad-projection"] [data-lab-availability-text]')).toHaveText("Unavailable until this backend reports support for it.");
   await expect(page.locator("noscript")).toHaveCount(1);
   await context.close();
@@ -194,7 +198,7 @@ test("a served incident projection renders with precise labels, hidden coordinat
   await expect(panel.locator("[data-lab-incident-steps]")).toContainText("Some earlier steps are missing here");
   await expect(panel.locator("[data-lab-incident-detail]")).not.toHaveAttribute("open", "");
   await expect(panel.getByText("lab-1.field.gauges · partition 0 · offset 246")).toBeHidden();
-  await expect(page.locator("[data-lab-outcome]")).toHaveText("Incident 1: Evidence saved; Source held at this record; Saved, but not safe to continue: snapshot coverage not ready.");
+  await expect(page.locator('[data-lab-outcome="scenario:bad-projection"]')).toHaveText("Incident 1: Evidence saved; Source held at this record; Saved, but not safe to continue: snapshot coverage not ready.");
   const summary = panel.locator("[data-lab-incident-detail] summary");
   await summary.focus(); await page.keyboard.press("Enter");
   await expect(panel.getByText("lab-1.field.gauges · partition 0 · offset 246")).toBeVisible();
@@ -327,8 +331,8 @@ test("an offered exercise starts only from its Start button, on a borrowed bench
   const card = page.locator('[data-lab-scenario="bad-projection"]');
   await expect(page.locator("[data-lab-capability]")).toContainText("8 of 8 new exercises can run here.");
   await expect(card.locator("[data-lab-availability]")).toHaveAttribute("data-state", "available");
-  await expect(card.locator("[data-lab-availability-text]")).toHaveText("Available on a leased bench. Borrow a bench below, then start it here.");
-  const start = card.getByRole("button", { name: "Start this scenario" });
+  await expect(card.locator("[data-lab-availability-text]")).toHaveText("Available on a leased bench. Borrow a bench above, then start it here.");
+  const start = card.locator("[data-lab-start]");
   await expect(start).toHaveAttribute("aria-disabled", "true");
   await start.click({ force: true }); await page.waitForTimeout(300);
   expect(lab.intents).toEqual([]);
@@ -382,7 +386,7 @@ test("LC11-S03: hold, make coverage ready, reassess, each bound to the revision 
     { intent: "incident.reassess", requestId: expect.stringMatching(UUID), expectedRevision: 2 }
   ]);
   expect(new Set(lab.intents.map(intent => intent.requestId)).size).toBe(3);
-  await expect(page.locator("[data-lab-outcome]")).toHaveText("Incident 1: Evidence saved; Source advanced past quarantined record; View resynchronized.");
+  await expect(page.locator('[data-lab-outcome="scenario:bad-projection"]')).toHaveText("Incident 1: Evidence saved; Source advanced past quarantined record; View resynchronized.");
 });
 
 test("when the incident goes (status none) while its next step has focus, focus moves to the panel's heading, not the page (fixture)", async ({ page }) => {
@@ -648,20 +652,21 @@ test("refusals are shown, not retried: the action budget, a stale revision, and 
   expect(new Set(lab.intents.map(intent => intent.requestId)).size).toBe(4);
 });
 
-test("a deployment-restricted exercise gets a short label and no Start button, and sends nothing even on a borrowed bench (fixture)", async ({ page }) => {
+test("a deployment-restricted exercise shows the backend's own reason under a disabled Start, and sends nothing even on a borrowed bench (fixture)", async ({ page }) => {
   const restricted = "This deployment's failure handling (retry) doesn't provide what this exercise needs, so it doesn't run it.";
-  const lab = await exercise(page, [], { capabilities: rc1({ "garbled-reading": restricted, "too-many-bad-readings": "This exercise runs only on a local or CI stack." }) });
+  const local = "This exercise runs only on a local or CI stack.";
+  const lab = await exercise(page, [], { capabilities: rc1({ "garbled-reading": restricted, "too-many-bad-readings": local }) });
   await borrow(page);
   const card = page.locator('[data-lab-scenario="garbled-reading"]');
-  await expect(card.locator("[data-lab-availability]")).toHaveAttribute("data-state", "restricted");
-  await expect(card.locator("[data-lab-availability-text]")).toHaveText("Not on this Lab yet: it needs failure handling this Lab doesn't turn on.");
-  await expect(page.locator('[data-lab-scenario="too-many-bad-readings"] [data-lab-availability-text]')).toHaveText("Runs only on a local Lab and in CI.");
+  await expect(card.locator("[data-lab-availability]")).toHaveAttribute("data-state", "unavailable");
+  await expect(card.locator("[data-lab-availability-text]")).toHaveText(restricted);
+  await expect(page.locator('[data-lab-scenario="too-many-bad-readings"] [data-lab-availability-text]')).toHaveText(local);
   await expect(page.locator("[data-lab-capability]")).toContainText("6 of 8 new exercises can run here.");
   const start = card.locator("[data-lab-start]");
-  await expect(start).toBeHidden();
-  await expect(page.locator('[data-lab-scenario="bad-projection"] [data-lab-start]')).toBeVisible();
-  // Hidden, and still checked at the press.
-  await start.evaluate((button: HTMLButtonElement) => button.click()); await page.waitForTimeout(300);
+  await expect(start).toHaveAttribute("aria-disabled", "true");
+  await expect(page.locator('[data-lab-scenario="bad-projection"] [data-lab-start]')).toHaveAttribute("aria-disabled", "false");
+  // Focusable, and still checked at the press.
+  await start.click({ force: true }); await start.press("Enter"); await page.waitForTimeout(300);
   expect(lab.intents).toEqual([]);
 });
 
@@ -676,7 +681,7 @@ test("returning the bench stops following its operation and clears the operation
   const looked = lab.lookups.length;
   await page.waitForTimeout(2_000);
   expect(lab.lookups.length).toBe(looked);
-  await expect(page.locator('[data-lab-scenario="bad-projection"] [data-lab-availability-text]')).toHaveText("Available on a leased bench. Borrow a bench below, then start it here.");
+  await expect(page.locator('[data-lab-scenario="bad-projection"] [data-lab-availability-text]')).toHaveText("Available on a leased bench. Borrow a bench above, then start it here.");
 });
 
 for (const scheme of ["light", "dark"] as const) {

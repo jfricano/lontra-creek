@@ -93,3 +93,19 @@ test("the retried record's outcome names the action that preceded it, and none w
   assert.match(story(null), /^The gateway retried the same record, offset 246/);
   for (const action of ["source.resume", "gateway.restart", null]) assert.match(story(action), /That isn't proof the offset was committed/);
 });
+
+test("the Kafka position follows the feed: held at the failed record until it is retried, else the last mapped one", () => {
+  const model = new LabFeedModel();
+  const at = (offset: string) => ({ topic: "lab-1.field.gauges", partition: 0, offset });
+  const position = (): { held: unknown; last: unknown } => ({ ...model.position });
+  assert.deepEqual(position(), { held: null, last: null });
+  model.add([record(1, "processed", "245")]);
+  assert.deepEqual(position(), { held: null, last: at("245") });
+  model.add([record(2, "failed")]);
+  // Last mapped stays at 245: the failed record never reached the mapper.
+  assert.deepEqual(position(), { held: at("246"), last: at("245") });
+  model.add([item(3, { kind: "action", action: "source.resume" }), record(4, "processed")]);
+  assert.deepEqual(position(), { held: null, last: at("246") });
+  model.clear();
+  assert.deepEqual(position(), { held: null, last: null });
+});

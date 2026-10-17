@@ -2,68 +2,121 @@
 import ContentPage from "../components/ContentPage.astro";
 import { DELIVERY_LABELS, NEW_SOURCE_EXERCISES, SCENARIOS } from "../lab-catalog.ts";
 import { AVAILABILITY_ICONS, scenarioAvailability } from "../scripts/lab-catalog-model.ts";
+import { CHIP_LABELS } from "../scripts/lab-bench.ts";
 
 // Before the backend answers, and without JavaScript: unavailable, with a reason that holds either way.
 const pending = { kind: "pending" } as const;
+const blip = SCENARIOS["calibration-blip"];
+const blipAvailability = scenarioAvailability("calibration-blip", pending);
+/** The source-failure rows: every new story except the lookup blip, which is a bench control. */
+const rows = NEW_SOURCE_EXERCISES.filter(id => id !== "calibration-blip");
 ---
-<ContentPage title="What happens when it breaks?" eyebrow="Failure Lab" description="Borrow an isolated bench for five minutes. Break its sensor or connection, then watch the real gateway report what happened.">
+<ContentPage title="Break it yourself" eyebrow="Failure Lab" description="Borrow an isolated bench for five minutes. Break its sensor or connection, or send it a bad record, then watch the real gateway report what happened.">
   <p class="status-note">Lontra Creek is fictional. A working Lab uses real Kafka, a real gateway, and your browser SDK. Failure actions affect only your leased bench.</p>
   <noscript><p class="status-note">Without JavaScript this page explains every scenario, but it can't check the backend, borrow a bench, or start anything.</p></noscript>
   <section data-lab>
+    <ol class="lab-steps" aria-label="How the Lab works"><li>Borrow a bench (five minutes).</li><li>Press a control or start a story.</li><li>Watch Your bench, Current incident and the feed change.</li></ol>
     <p role="status" data-lab-message>Checking the Lab…</p>
     <p data-lab-pool></p>
-    <div class="lab-controls"><button class="button button-primary" data-lab-join disabled>Borrow a bench</button><button class="button button-quiet" data-lab-return disabled>Leave queue / return bench</button><button class="button button-quiet" data-lab-retry>Check again</button></div>
+    <div class="lab-controls"><button class="button button-primary" data-lab-join disabled>Borrow a bench</button><button class="button button-quiet" data-lab-return disabled>Return bench</button><button class="button button-quiet" data-lab-retry>Check again</button></div>
     <p data-lab-clock></p>
     <aside data-lab-unavailable hidden class="status-note"><h2>The Lab is unavailable</h2><p>The static site still works. No scenario shown here is simulated as a substitute for a live bench.</p><p>To run the field station's fixture demo locally:</p><pre tabindex="0"><code>git clone https://github.com/jfricano/lontra-creek.git
 cd lontra-creek
 npm ci
 npm run dev</code></pre><p>The fixture demo does not include failure benches. The repository's <a href="https://github.com/jfricano/lontra-creek/blob/main/docs/LOCAL_LAB.md">local Lab instructions</a> show how to build and run the Kafka stack with three isolated benches.</p></aside>
-    <div class="panel-grid">
-      <section class="content-card"><h2>Your bench</h2><p data-lab-state>Not leased.</p><p>LC-03 subscription: <strong data-lab-view-state>idle</strong></p><dl><dt>Stage</dt><dd data-lab-stage>—</dd><dt>Flow</dt><dd data-lab-flow>—</dd><dt>Revision</dt><dd data-lab-revision>—</dd></dl><p data-lab-snapshot-note></p><p aria-live="polite" data-lab-outcome></p></section>
-      <section class="content-card lab-bench-controls" id="connections"><h2>Bench controls</h2><p>Break your bench's sensor or its connections between Kafka, the gateway, and browsers.</p><fieldset data-lab-actions disabled><legend>Actions on your leased bench</legend>
-        <h3 id="control-fouled-sensor">Fouled sensor</h3><p class="lab-meta"><span class="mono">LC11-S01</span> · first of the source failures below</p><p>Remove LC-03's calibration. The map handler fails and pauses at the record; restoring the table and resuming retries that same record, then a fresh synchronization follows. It's an ordinary mapper exception, not quarantine.</p><p class="why"><strong>Why it matters:</strong> the source pauses at the bad record instead of skipping it, so nothing is silently lost. Views show stale, not wrong, until it's fixed.</p><button class="button button-quiet" data-lab-action="sensor.foul">Foul sensor</button> <button class="button button-quiet" data-lab-action="sensor.restore">Restore calibration</button> <button class="button button-quiet" data-lab-action="source.resume">Resume source</button>
-        <h3 id="control-relay-cut">Flash flood takes the relay</h3><p>Cut only this bench's Kafka path. Views become stale, then recover after restoration. Watch the feed for this run's actual timing.</p><p class="why"><strong>Why it matters:</strong> your page's connection to the gateway stays up, yet views still go stale, because StreamOtter reports whether a view is still in sync with its source, not just whether the socket is open.</p><button class="button button-quiet" data-lab-action="relay.cut">Cut relay</button> <button class="button button-quiet" data-lab-action="relay.restore">Restore relay</button>
-        <h3 id="control-slow-client">Laptop on a satellite link</h3><p>A separate client stops acknowledging frames. Its receipt timeout disconnects it; your own view keeps flowing.</p><p class="why"><strong>Why it matters:</strong> what the gateway holds for a slow client is capped, so one bad connection can't slow other visitors or grow the gateway's memory without limit.</p><button class="button button-quiet" data-lab-action="satellite.start">Start slow client</button>
-        <h3 id="control-relay-restart">Gateway restart</h3><p>Restart your gateway. The SDK reconnects and takes a fresh snapshot; intermediate states aren't replayed.</p><p class="why"><strong>Why it matters:</strong> when the gateway restarts, for example during a deploy, open pages show stale and then recover on their own, with no reload.</p><button class="button button-quiet" data-lab-action="gateway.restart">Restart gateway</button>
-      </fieldset></section>
-    </div>
-    <section class="lab-section" id="source-failures" aria-labelledby="source-failures-title">
-      <h2 id="source-failures-title">Source failures</h2>
-      <p>What happens when a record itself is bad: quarantine, guarded continuation, evaluation and reprocessing, and cases where the safe answer is to hold. Fouled sensor, the first of these, runs with the bench controls above.</p>
-      <p class="lab-capability" data-lab-capability>Every new exercise stays unavailable until this backend reports that it can run it.</p>
-      <ol class="lab-catalog">
-        {NEW_SOURCE_EXERCISES.map(id => {
-          const entry = SCENARIOS[id]; const availability = scenarioAvailability(id, pending);
-          return (
-            <li class="lab-scenario" id={`scenario-${id}`} data-lab-scenario={id}>
-              <p class="lab-selected" data-lab-selected-mark hidden><span aria-hidden="true">◆</span> Linked scenario</p>
-              <h3><a href={`?scenario=${id}`} data-lab-scenario-link>{entry.title}</a></h3>
-              {entry.delivery && <p class="lab-meta"><span class="mono">{entry.story}</span> · <span class="lab-delivery" data-delivery={entry.delivery}>{DELIVERY_LABELS[entry.delivery]}</span>{entry.note && <> · {entry.note}</>}</p>}
-              <p>{entry.establishes}</p>
-              {entry.onPage && <p class="lab-onpage" data-lab-onpage><strong>On this page:</strong> {entry.onPage}</p>}
-              <p class="lab-availability" id={`scenario-${id}-availability`} data-lab-availability data-state={availability.state}><span aria-hidden="true" data-lab-availability-icon>{AVAILABILITY_ICONS[availability.state]}</span> <span data-lab-availability-text>{availability.text}</span></p>
-              <button type="button" class="button button-quiet" aria-disabled="true" aria-describedby={`scenario-${id}-availability`} data-lab-start={id}>Start this scenario</button>
-            </li>
-          );
-        })}
-      </ol>
+    <section class="content-card lab-bench" aria-labelledby="bench-title" data-lab-bench>
+      <div class="lab-bench-head"><h2 id="bench-title">Your bench</h2><p class="lab-position mono" data-lab-position></p></div>
+      <div class="lab-chips-row">
+        <dl class="lab-chips">
+          {(Object.keys(CHIP_LABELS) as (keyof typeof CHIP_LABELS)[]).map(key => <div><dt>{CHIP_LABELS[key]}</dt><dd><span class="chip" data-lab-chip={key} data-state="idle">{key === "view" ? "idle" : "—"}</span>{key === "view" && <> <span class="mono lab-last" data-lab-last></span></>}</dd></div>)}
+        </dl>
+        <p class="lab-legend"><strong>healthy</strong> consuming · <strong>degraded</strong> Kafka connection lost · <strong>paused</strong> held at a record</p>
+      </div>
+      <p class="lab-bench-note" data-lab-stale-note></p>
+      <p class="lab-bench-note" data-lab-snapshot-note></p>
     </section>
+    <div class="panel-grid lab-actions">
+      <section class="content-card lab-bench-controls" id="connections" aria-labelledby="controls-title"><h2 id="controls-title">Bench controls</h2><p>Break your bench's sensor, or its connections between Kafka, the gateway and browsers. Each button says what to watch for right under it.</p><fieldset data-lab-actions disabled><legend>Actions on your leased bench</legend>
+        <div class="lab-control">
+          <h3 id="control-fouled-sensor">Fouled sensor</h3><p class="lab-meta"><span class="mono">LC11-S01</span> · first of the source failures</p>
+          <p class="lab-mech">Remove LC-03's calibration. The map handler throws on the next record and the source pauses at it, never skips it; restoring the table and retrying runs that same record, then a fresh synchronization follows. It's an ordinary mapper exception, not quarantine.</p>
+          <p class="why"><strong>Why it matters:</strong> the source pauses at the bad record instead of skipping it, so nothing is silently lost. Views show stale, not wrong, until it's fixed.</p>
+          <button class="button button-quiet" data-lab-action="sensor.foul">Foul sensor</button> <button class="button button-quiet" data-lab-action="sensor.restore">Restore calibration</button> <button class="button button-quiet" data-lab-action="source.resume">Resume source</button>
+          <p class="lab-mech">Resume is <code>resumeSource()</code>: the held record is retried, never skipped.</p>
+          <p class="lab-outcome" aria-live="polite" data-lab-outcome="sensor"></p>
+        </div>
+        <div class="lab-control" data-lab-scenario="calibration-blip">
+          <p class="lab-selected" data-lab-selected-mark hidden><span aria-hidden="true">◆</span> Linked scenario</p>
+          <h3 id="control-calibration-blip"><a href="?scenario=calibration-blip" data-lab-scenario-link>{blip.title}</a></h3><p class="lab-meta"><span class="mono">{blip.story}</span> · {DELIVERY_LABELS[blip.delivery!]}</p>
+          <p class="lab-mech">One calibration lookup times out; the gateway's bounded retry for transient mapper errors absorbs it, and nothing is held. Start it again in the same lease and the lookups keep timing out past the retries, so the record is held: Restore calibration ends the timeouts, and a retry then processes it.</p>
+          <p class="why"><strong>Why it matters:</strong> only an error marked transient gets retried, and only a bounded number of times. A blip recovers on its own; a real outage holds the record instead of looping.</p>
+          <p class="lab-availability" id="scenario-calibration-blip-availability" data-lab-availability data-state={blipAvailability.state}><span aria-hidden="true" data-lab-availability-icon>{AVAILABILITY_ICONS[blipAvailability.state]}</span> <span data-lab-availability-text>{blipAvailability.text}</span></p>
+          <button type="button" class="button button-quiet" aria-disabled="true" aria-describedby="scenario-calibration-blip-availability" data-lab-start="calibration-blip">Start a lookup blip</button>
+          <p class="lab-outcome" aria-live="polite" data-lab-outcome="blip"></p>
+        </div>
+        <div class="lab-control">
+          <h3 id="control-relay-cut">Flash flood takes the relay</h3>
+          <p class="lab-mech">Cut only this bench's Kafka path. The consumer reports degraded, open views go stale with SOURCE_UNAVAILABLE, and after restoration they resync on their own. Watch the feed for this run's actual timing.</p>
+          <p class="why"><strong>Why it matters:</strong> your page's connection to the gateway stays up, yet views still go stale, because StreamOtter reports whether a view is still in sync with its source, not just whether the socket is open.</p>
+          <button class="button button-quiet" data-lab-action="relay.cut">Cut relay</button> <button class="button button-quiet" data-lab-action="relay.restore">Restore relay</button>
+          <p class="lab-outcome" aria-live="polite" data-lab-outcome="relay"></p>
+        </div>
+        <div class="lab-control">
+          <h3 id="control-slow-client">Laptop on a satellite link</h3>
+          <p class="lab-mech">A separate client stops acknowledging frames. After the bench's receipt timeout the gateway disconnects it with OVERLOADED; your own view keeps flowing.</p>
+          <p class="why"><strong>Why it matters:</strong> what the gateway holds for a slow client is capped, so one bad connection can't slow other visitors or grow the gateway's memory without limit.</p>
+          <button class="button button-quiet" data-lab-action="satellite.start">Start slow client</button>
+          <p class="lab-outcome" aria-live="polite" data-lab-outcome="satellite"></p>
+        </div>
+        <div class="lab-control">
+          <h3 id="control-relay-restart">Gateway restart</h3>
+          <p class="lab-mech">Restart your gateway. The consumer continues from its committed position; the SDK reconnects and takes a fresh snapshot, and intermediate states aren't replayed.</p>
+          <p class="why"><strong>Why it matters:</strong> when the gateway restarts, for example during a deploy, open pages show stale and then recover on their own, with no reload.</p>
+          <button class="button button-quiet" data-lab-action="gateway.restart">Restart gateway</button>
+          <p class="lab-outcome" aria-live="polite" data-lab-outcome="gateway"></p>
+        </div>
+      </fieldset></section>
+      <section class="content-card" id="source-failures" aria-labelledby="source-failures-title">
+        <h2 id="source-failures-title">Source failures</h2>
+        <p>Send your bench one bad LC-03 record and work the incident through in Current incident below: the record is held, the evidence is kept, and the source continues only under control. Fouled sensor and the lookup blip, in Bench controls, are the first two of these nine stories.</p>
+        <ol class="lab-stories">
+          {rows.map(id => {
+            const entry = SCENARIOS[id]; const availability = scenarioAvailability(id, pending);
+            return (
+              <li class="lab-story" id={`scenario-${id}`} data-lab-scenario={id}>
+                <p class="lab-selected" data-lab-selected-mark hidden><span aria-hidden="true">◆</span> Linked scenario</p>
+                <div class="lab-story-row">
+                  <div class="lab-story-text">
+                    <h3><a href={`?scenario=${id}`} data-lab-scenario-link>{entry.title}</a></h3>
+                    {entry.delivery && <p class="lab-meta"><span class="mono">{entry.story}</span> · <span class="lab-delivery" data-delivery={entry.delivery}>{DELIVERY_LABELS[entry.delivery]}</span>{entry.note && <> · {entry.note}</>}</p>}
+                    <p class="lab-mech">{entry.establishes}</p>
+                    {entry.onPage && <p class="lab-onpage" data-lab-onpage><strong>On this page:</strong> {entry.onPage}</p>}
+                  </div>
+                  <button type="button" class="button button-quiet" aria-disabled="true" aria-label={`Start ${entry.title}`} aria-describedby={`scenario-${id}-availability`} data-lab-start={id}>Start</button>
+                </div>
+                <p class="lab-availability" id={`scenario-${id}-availability`} data-lab-availability data-state={availability.state}><span aria-hidden="true" data-lab-availability-icon>{AVAILABILITY_ICONS[availability.state]}</span> <span data-lab-availability-text>{availability.text}</span></p>
+                <p class="lab-outcome" aria-live="polite" data-lab-outcome={`scenario:${id}`}></p>
+              </li>
+            );
+          })}
+        </ol>
+        <p class="lab-capability" data-lab-capability>Every new exercise stays unavailable until this backend reports that it can run it.</p>
+      </section>
+    </div>
     <section class="content-card lab-incident" data-lab-incident aria-labelledby="incident-title">
       <h2 id="incident-title" tabindex="-1" data-lab-incident-title>Current incident</h2>
       <p class="lab-operation" id="incident-operation" aria-live="polite" data-lab-operation></p>
       <div data-lab-incident-empty>
-        <p><strong>No incident to show.</strong> This panel shows a quarantine incident only when the backend reports one for your leased bench. It never shows sample data.</p>
+        <p><strong>No incident to show.</strong> This panel shows a held or quarantined record only when the backend reports one for your leased bench. It never shows sample data.</p>
         <p data-lab-incident-reason>Until this backend reports that it supports incidents, this panel stays empty.</p>
         <p class="muted">Fouled sensor pauses the source at the record without saving it to quarantine. A backend that reports incidents shows that pause here too, with no evidence kept; Your bench and the gateway feed follow it as well.</p>
       </div>
       <div data-lab-incident-body hidden>
         <p class="lab-incident-head"><strong data-lab-incident-label></strong>: <span data-lab-incident-summary></span></p>
         <div class="lab-incident-areas">
-          <section aria-labelledby="incident-view-title"><h3 id="incident-view-title">Application view</h3><p class="muted">What your page's SDK reports.</p>
-            <dl><dt>Connection</dt><dd data-lab-incident-connection>—</dd><dt>LC-03 subscription</dt><dd data-lab-incident-subscription>—</dd><dt>Last observed</dt><dd data-lab-incident-last>—</dd></dl><p data-lab-incident-stale></p></section>
-          <section aria-labelledby="incident-disposition-title"><h3 id="incident-disposition-title">Record disposition</h3><p class="muted">What the backend observed.</p>
+          <section aria-labelledby="incident-disposition-title"><h3 id="incident-disposition-title">Record disposition</h3><p class="muted">What the backend observed. Your own view is in Your bench above.</p>
             <dl><dt>Failure</dt><dd data-lab-incident-failure></dd><dt>Policy</dt><dd data-lab-incident-policy></dd><dt>Evidence</dt><dd data-lab-incident-evidence></dd><dt>Source</dt><dd data-lab-incident-source></dd><dt>Recovery</dt><dd data-lab-incident-recovery></dd><dt data-lab-incident-evaluation-term>Evaluation</dt><dd data-lab-incident-evaluation></dd><dt data-lab-incident-reprocess-term>Reprocessing</dt><dd data-lab-incident-reprocess></dd><dt>Next supported action</dt><dd><button type="button" class="button button-quiet" aria-describedby="incident-next" data-lab-incident-act hidden></button><span id="incident-next" tabindex="-1" data-lab-incident-next></span></dd></dl>
-            <details data-lab-incident-detail><summary>Source coordinates and fingerprints</summary><dl data-lab-incident-detail-list></dl></details></section>
+            <details data-lab-incident-detail><summary>Kafka position and fingerprints</summary><dl data-lab-incident-detail-list></dl></details></section>
           <section aria-labelledby="incident-steps-title"><h3 id="incident-steps-title">Observed steps</h3><p class="muted">Oldest first. Missing steps stay missing.</p>
             <ol tabindex="0" aria-labelledby="incident-steps-title" data-lab-incident-steps></ol></section>
         </div>
@@ -79,30 +132,56 @@ npm run dev</code></pre><p>The fixture demo does not include failure benches. Th
         <div class="lab-controls"><button type="button" class="button button-primary" data-lab-approval-approve>Approve reprocessing</button><button type="button" class="button button-quiet" data-lab-approval-cancel>Cancel</button></div>
       </dialog>
     </section>
-    <section class="content-card"><h2>Redacted gateway feed</h2><p>Actual actions, source states, and traces from your current lease. No payloads, credentials, or other visitors' data.</p>
-      <p>The scenario view shows what each scenario turns on: your actions, failed or rejected traces, source state changes, the LC-03 record a fouled sensor stopped on (topic, partition, and offset), and trace gaps. A record retried after Resume is marked <strong>Retried</strong>. “Mapper returned” means the bench's map handler finished for that record; it isn't proof that the gateway delivered it or committed its offset.</p>
+    <section class="content-card"><h2>Redacted gateway feed</h2><p>Actions, source states and traces from this lease. No payloads, no other visitors.</p>
+      <p class="muted">The scenario view shows what each scenario turns on: your actions, failed or rejected traces, source state changes, the record a fouled sensor stopped on (topic, partition, offset), and trace gaps. A record retried after a retry or restart is marked <strong>Retried</strong>. “Mapper returned” means the bench's map handler finished for that record; it isn't proof that the gateway delivered it or committed its offset.</p>
       <label class="feed-toggle"><input type="checkbox" data-lab-feed-all> Show the full feed, including every <code>ok</code> trace</label>
       <ol tabindex="0" data-lab-feed aria-label="Gateway trace feed"></ol></section>
   </section>
 </ContentPage>
 <script>import "../scripts/lab.ts";</script>
 <style>.why { padding-left:12px; border-left:3px solid var(--accent); } .lab-controls { display:flex; gap:12px; flex-wrap:wrap; margin-block:20px; } fieldset { border:0; padding:0; min-width:0; } fieldset button { margin-block:4px; } [data-lab-feed] { max-height:420px; overflow:auto; font: .8rem/1.6 var(--mono); } dd { margin:4px 0 16px; overflow-wrap:anywhere; } .feed-toggle { display:flex; gap:8px; align-items:center; margin-block:12px; }
-.lab-section { margin-block:32px; scroll-margin-top:96px; } .lab-bench-controls { scroll-margin-top:96px; }
-.lab-catalog { list-style:none; padding:0; margin:16px 0 0; display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr)); gap:16px; }
-.lab-scenario { padding:18px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); min-width:0; scroll-margin-top:96px; }
-.lab-scenario[aria-current="true"] { border:2px solid var(--accent); padding:17px; }
-.lab-scenario h3 { margin-block:4px 6px; } .lab-bench-controls h3 { scroll-margin-top:96px; } .lab-scenario h3 a { color:inherit; }
+.lab-steps { display:flex; flex-wrap:wrap; gap:8px 28px; padding:0; margin-block:24px 8px; list-style:none; counter-reset:step; font-weight:600; }
+.lab-steps li { display:flex; align-items:center; gap:10px; }
+.lab-steps li::before { counter-increment:step; content:counter(step); display:inline-grid; place-items:center; width:26px; height:26px; border-radius:50%; background:var(--button-bg); color:var(--button-ink); font-size:.85rem; }
+.lab-bench { position:sticky; top:64px; z-index:5; padding:14px 20px; margin-block:8px 24px; }
+.lab-bench-head { display:flex; gap:16px; align-items:baseline; flex-wrap:wrap; }
+.lab-bench-head h2 { margin:0; font-size:1.15rem; }
+.lab-position { margin:0; font-size:.82rem; color:var(--ink-2); }
+.lab-position:empty { display:none; }
+.lab-chips-row { display:flex; flex-wrap:wrap; gap:8px 22px; margin:10px 0 0; align-items:center; }
+.lab-chips { display:flex; flex-wrap:wrap; gap:8px 22px; margin:0; align-items:center; }
+.lab-chips > div { display:flex; gap:8px; align-items:center; min-width:0; }
+.lab-chips dt { color:var(--ink-2); font-size:.85rem; }
+.lab-chips dd { margin:0; }
+.lab-last { font-size:.82rem; color:var(--ink-2); }
+.lab-legend { margin:0 0 0 auto; font-size:.78rem; color:var(--ink-2); }
+.lab-bench-note { margin:8px 0 0; font-size:.88rem; color:var(--ink-2); }
+.lab-bench-note:empty { display:none; }
+.lab-actions { align-items:start; }
+.lab-control { border-top:1px solid var(--line); padding-top:8px; margin-top:18px; scroll-margin-top:200px; }
+.lab-control:first-of-type { border-top:0; margin-top:0; }
+.lab-control h3 { margin-bottom:2px; } .lab-control h3 a { color:inherit; }
+.lab-mech { font-size:.9rem; color:var(--ink-2); margin-top:2px; }
+.lab-outcome { padding:10px 14px; border-radius:10px; background:var(--surface-2); border-inline-start:3px solid var(--stale); font-size:.95rem; }
+.lab-outcome:empty { display:none; }
+.lab-stories { list-style:none; padding:0; margin:12px 0 0; }
+.lab-story { padding:12px 0; border-top:1px solid var(--line); scroll-margin-top:200px; }
+.lab-story[aria-current="true"], .lab-control[aria-current="true"] { box-shadow:inset 3px 0 0 var(--accent); padding-inline-start:12px; }
+.lab-story-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px 16px; align-items:center; }
+.lab-story-text { min-width:0; }
+.lab-story h3 { margin:0 0 2px; font-size:1rem; } .lab-story h3 a { color:inherit; }
+.lab-story .lab-mech, .lab-story .lab-meta { margin:2px 0; }
 .lab-meta, .lab-selected { font:600 .78rem/1.4 var(--mono); color:var(--ink-2); }
 .lab-selected { color:var(--accent); }
 .lab-delivery { white-space:nowrap; }
 .lab-delivery[data-delivery="local-ci"] { border-bottom:1px dashed currentColor; }
-.lab-availability { font-size:.92rem; color:var(--ink-2); }
-.lab-onpage { font-size:.92rem; }
-.lab-availability[data-state="unavailable"], .lab-availability[data-state="pending"], .lab-availability[data-state="restricted"] { padding-inline-start:10px; border-inline-start:3px solid var(--line-strong); }
-.lab-scenario button[aria-disabled="true"] { opacity:.6; cursor:not-allowed; }
-.lab-capability { padding:12px 14px; background:var(--surface-2); border-radius:10px; }
+.lab-availability { font-size:.88rem; color:var(--ink-2); margin:6px 0 0; }
+.lab-onpage { font-size:.88rem; }
+.lab-availability[data-state="unavailable"], .lab-availability[data-state="pending"] { padding-inline-start:10px; border-inline-start:3px solid var(--line-strong); }
+[data-lab-start][aria-disabled="true"] { opacity:.6; cursor:not-allowed; }
+.lab-capability { margin-top:16px; padding:12px 14px; background:var(--surface-2); border-radius:10px; font-size:.88rem; color:var(--ink-2); }
 .lab-incident { margin-block:24px; }
-.lab-incident-areas { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:24px; }
+.lab-incident-areas { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; }
 .lab-incident-areas > section { min-width:0; }
 [data-lab-incident-steps] { max-height:320px; overflow:auto; font:.8rem/1.6 var(--mono); padding-inline-start:20px; }
 details summary { cursor:pointer; font-weight:650; }
@@ -117,6 +196,7 @@ details summary { cursor:pointer; font-weight:650; }
 .lab-approval [aria-disabled="true"] { opacity:.6; cursor:not-allowed; }
 .lab-approval-problem { font-weight:650; color:var(--failed); }
 @media (max-width:1000px) { .lab-incident-areas { grid-template-columns:1fr; } }
+@media (max-width:760px) { .lab-bench { padding:10px 14px; } .lab-chips, .lab-chips-row { gap:6px 12px; } .lab-legend, .lab-position, .lab-last { display:none; } .lab-story-row { grid-template-columns:1fr; } }
 </style>
 <style is:global>
 /* Elements the scripts create carry no scoping attribute, so their rules are global (this page only). */

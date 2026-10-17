@@ -20,7 +20,7 @@ The interfaces are fixed elsewhere and not repeated here: the [Lab contract §12
 | LC11-S08 Recovery across restart and a new subscription | `restart-recovery` | The durable failure journal keeps a cumulative recovery barrier across a gateway restart | Local and CI only |
 | LC11-S09 Unavailable evidence | `unavailable-evidence` | A deleted quarantine copy refuses stored reprocessing | Local and CI only |
 
-A visitor borrows a bench, scrolls to Source failures, and presses **Start this scenario**. The field station publishes the scenario's synthetic LC-03 (and, for S08, LC-01) records to that bench's own topics, recording each in the coverage ledger first. The incident panel then shows the application's view, the record's disposition, and the observed steps, and offers one **Next supported action** at a time (retry, reassess, prepare coverage, evaluate, or a reviewed approval to reprocess). Every incident fact comes from the installed library's published operator API (`streamotter/gateway/operator`); nothing is simulated. Returning the bench discards its study; it never fixes a held incident.
+A visitor borrows a bench, finds the story under Source failures (the lookup blip sits with the Bench controls), and presses **Start**. The field station publishes the scenario's synthetic LC-03 (and, for S08, LC-01) records to that bench's own topics, recording each in the coverage ledger first. The incident panel then shows the record's disposition and the observed steps (the visitor's own SDK view is in the **Your bench** strip), and offers one **Next supported action** at a time (retry, reassess, prepare coverage, evaluate, or a reviewed approval to reprocess). Every incident fact comes from the installed library's published operator API (`streamotter/gateway/operator`); nothing is simulated. Returning the bench discards its study; it never fixes a held incident.
 
 A scenario is offered only when the capability summary (`GET /api/lab/capabilities`, contract §12.3) lists it as available. That needs all of:
 
@@ -44,7 +44,7 @@ npm run dev:lab
 Then, in a test browser profile (see LOCAL_LAB.md for the throwaway certificate):
 
 1. Open `https://localhost:8443/lab/#source-failures` and choose **Borrow a bench**.
-2. Pick a scenario that the page lists as available and choose **Start this scenario**.
+2. Pick a scenario that the page lists as available and choose **Start**.
 3. Follow the incident panel's **Next supported action**. For reprocessing, the review dialog shows exactly what you approve.
 
 To see what this backend offers, without a browser:

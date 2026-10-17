@@ -287,11 +287,12 @@ a minute without a check-in from the page.
 
 ## Source-failure exercises
 
-The Lab page's **Source failures** section has nine stories. The first, Fouled
-sensor, is the existing bench control; the other eight are new exercises you
-start on a borrowed bench. Open `https://localhost:8443/lab/#source-failures`,
-choose **Borrow a bench**, then **Start this scenario** on a story the page
-lists as available, and follow the incident panel's **Next supported action**.
+The Lab page has nine source-failure stories. Fouled sensor and the lookup
+blip sit in **Bench controls**; the other seven are rows under **Source
+failures**, started on a borrowed bench. Open
+`https://localhost:8443/lab/#source-failures`, choose **Borrow a bench**, then
+**Start** on a story the page lists as available, and follow the incident
+panel's **Next supported action**.
 
 Each story has an ID (used in these docs and on its card), a slug (in
 `/lab/?scenario=<slug>` links and in the API), and a title on the page:

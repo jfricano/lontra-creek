@@ -40,8 +40,11 @@ export interface FeedLine {
 /** The action that let a held record be read again, if the feed shows one before it. */
 export type Recovery = Extract<LabAction, "source.resume" | "gateway.restart">;
 
+/** A record's place on its bench topic. */
+export interface Coordinates { topic: string; partition: number; offset: string }
+
 /** A retried record, by its Kafka coordinates, and the latest recovery action before it. */
-export interface RetriedRecord { topic: string; partition: number; offset: string; after: Recovery | null }
+export interface RetriedRecord extends Coordinates { after: Recovery | null }
 
 /** The outcome line for a retried record. It names only an action the feed shows, and never claims a commit. */
 export function retriedOutcome(retried: RetriedRecord): string {
@@ -68,6 +71,9 @@ export class LabFeedModel {
   /** Records whose map failed in this lease and haven't been retried successfully yet. */
   readonly #failed = new Set<string>();
   #retried: RetriedRecord | null = null;
+  /** The record the latest failed map stopped on, until it is retried; and the last record the mapper returned for. */
+  #held: Coordinates | null = null;
+  #last: Coordinates | null = null;
   #recovery: Recovery | null = null;
   #satellite: SatelliteRun | null = null;
   #gapCount = 0;
@@ -81,10 +87,16 @@ export class LabFeedModel {
     return this.#satellite;
   }
 
+  /** The bench's Kafka position as the feed shows it: held at a record, and the last record mapped. */
+  get position(): { held: Coordinates | null; last: Coordinates | null } {
+    return { held: this.#held, last: this.#last };
+  }
+
   clear(): void {
     this.#lines = [];
     this.#failed.clear();
     this.#retried = null;
+    this.#held = null; this.#last = null;
     this.#recovery = null;
     this.#satellite = null;
   }
@@ -128,8 +140,11 @@ export class LabFeedModel {
         if (item.outcome === "failed") {
           const again = this.#failed.has(key);
           this.#failed.add(key);
+          this.#held = { topic: item.topic, partition: item.partition, offset: item.offset };
           return { ...line, text: `${item.stationId} record ${place(item)}: map failed${again ? " again (the same record, retried)" : ""}` };
         }
+        this.#last = { topic: item.topic, partition: item.partition, offset: item.offset };
+        if (this.#held && coordinates(this.#held) === key) this.#held = null;
         if (this.#failed.delete(key)) {
           this.#retried = { topic: item.topic, partition: item.partition, offset: item.offset, after: this.#recovery };
           return { ...line, retried: true, text: `Retried ${item.stationId} record ${place(item)}: mapper returned` };

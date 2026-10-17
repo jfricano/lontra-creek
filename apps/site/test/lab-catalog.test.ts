@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { LabCapabilities, LabScenarioId } from "../../field-station/src/lab/contract.ts";
 import { labCapabilities } from "../../field-station/src/lab/capabilities.ts";
 import { NEW_SOURCE_EXERCISES, SCENARIOS, SOURCE_FAILURES } from "../src/lab-catalog.ts";
-import { LOCAL_ONLY, NOT_HERE, PAGE_RUNS, UNSUPPORTED, capabilityAnswer, capabilityNote, scenarioAvailability, scenarioFromUrl, startState, urlFor, type CapabilityAnswer } from "../src/scripts/lab-catalog-model.ts";
+import { PAGE_RUNS, UNSUPPORTED, capabilityAnswer, capabilityNote, scenarioAvailability, scenarioFromUrl, startState, urlFor, type CapabilityAnswer } from "../src/scripts/lab-catalog-model.ts";
 
 const NEW = SOURCE_FAILURES.filter(id => id !== "fouled-sensor");
 const rc3: CapabilityAnswer = { kind: "summary", summary: labCapabilities({ labEnabled: true, now: 0, version: "0.1.0-rc.3" }) };
@@ -80,8 +80,7 @@ test("this page runs every new exercise, each only where the backend reports it,
   const restricted = { code: "deployment-restricted" as const, text: "This deployment's failure handling (retry) doesn't provide what this exercise needs, so it doesn't run it." };
   const answer = offered({ "calibration-blip": null, "garbled-reading": restricted });
   assert.deepEqual(scenarioAvailability("calibration-blip", answer), { state: "available", text: "Available on a leased bench." });
-  // This deployment never runs it: a short label in place of the backend's sentence, and no Start button (lab-scenarios.ts).
-  assert.deepEqual(scenarioAvailability("garbled-reading", answer), { state: "restricted", text: NOT_HERE });
+  assert.deepEqual(scenarioAvailability("garbled-reading", answer), { state: "unavailable", text: restricted.text });
   assert.deepEqual(scenarioAvailability("bad-projection", answer), { state: "unavailable", text: "Not verified." });
   assert.match(capabilityNote(answer, "0.2.0-rc.1"), /1 of 8 new exercises can run here\.$/);
   // Listed as available, but without intents or the projection the page can't start or follow it.
@@ -94,24 +93,12 @@ test("this page runs every new exercise, each only where the backend reports it,
   assert.equal(capabilityAnswer({ ...(answer as { summary: LabCapabilities }).summary, features: partial }).kind, "unreachable");
 });
 
-test("a story this deployment never runs says whether it is coming to a public Lab or is local and CI only", () => {
-  const restricted = { code: "deployment-restricted" as const, text: "This deployment's failure handling (retry) doesn't provide what this exercise needs, so it doesn't run it." };
-  const answer = offered(Object.fromEntries(NEW.map(id => [id, id === "calibration-blip" ? null : restricted])));
-  for (const id of NEW.filter(id => id !== "calibration-blip")) {
-    assert.deepEqual(scenarioAvailability(id, answer), { state: "restricted", text: SCENARIOS[id].delivery === "local-ci" ? LOCAL_ONLY : NOT_HERE }, id);
-  }
-  assert.equal(scenarioAvailability("too-many-bad-readings", answer).text, "Runs only on a local Lab and in CI.");
-  assert.equal(scenarioAvailability("conflicting-readings", answer).text, "Not on this Lab yet: it needs failure handling this Lab doesn't turn on.");
-  // Any other reason is still the backend's own words.
-  assert.deepEqual(scenarioAvailability("garbled-reading", offered({ "garbled-reading": { code: "not-integrated", text: "Not verified." } })), { state: "unavailable", text: "Not verified." });
-});
-
 test("Start sends only on a borrowed bench with nothing waiting, and its line says why otherwise", () => {
   const available = { state: "available" as const, text: "Available on a leased bench." };
-  assert.deepEqual(startState(available, { leased: false, busy: false }), { enabled: false, text: "Available on a leased bench. Borrow a bench below, then start it here." });
+  assert.deepEqual(startState(available, { leased: false, busy: false }), { enabled: false, text: "Available on a leased bench. Borrow a bench above, then start it here." });
   assert.deepEqual(startState(available, { leased: true, busy: false }), { enabled: true, text: "Available on your bench." });
   assert.deepEqual(startState(available, { leased: true, busy: true }), { enabled: false, text: "Available on your bench once its current request finishes; follow it in Current incident below." });
-  for (const state of ["existing", "pending", "unavailable", "restricted"] as const) assert.deepEqual(startState({ state, text: "Why." }, { leased: true, busy: false }), { enabled: false, text: "Why." }, state);
+  for (const state of ["existing", "pending", "unavailable"] as const) assert.deepEqual(startState({ state, text: "Why." }, { leased: true, busy: false }), { enabled: false, text: "Why." }, state);
 });
 
 test("the backend note names the backend's version and any skew with the page's build", () => {

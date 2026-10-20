@@ -13,9 +13,11 @@ dist/
 /playwright-report/
 /test-results/
 /blob-report/
-# Local instructions for Claude Code; not part of the published repository.
-CLAUDE.md
+# Private companion guides and local agent state remain excluded where listed.
 # Local Claude Code state. settings.json stays tracked: it holds the shared permission rules.
 /.claude/*
 !/.claude/settings.json
 deploy/secrets/
+
+# Personal agent overrides stay local.
+CLAUDE.local.md

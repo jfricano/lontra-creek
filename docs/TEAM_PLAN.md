@@ -48,7 +48,7 @@ Authors write their own unit tests; `qa` owns cross-lane end-to-end, accessibili
 
 ## 5. Working environment
 
-- **Brief:** every agent reads the owner's working notes in `~/coding/lontra-creek/CLAUDE.md` (git-ignored, so absent from worktrees), then PLAN.md, DEPLOYMENT_PLAN.md (especially "Pitfalls already met"), and this plan.
+- **Brief:** every agent reads the shared, tracked `AGENTS.md` or `CLAUDE.md` in its checkout (both are available in fresh clones and worktrees), then PLAN.md, DEPLOYMENT_PLAN.md (especially "Pitfalls already met"), and this plan.
 - **Worktrees:** one per branch under `~/coding/lontra-creek-worktrees/<branch-with-dashes>`, with `npm ci`. Nobody edits the owner's checkout at `~/coding/lontra-creek`.
 - **Ports** are shared machine resources; stop what you start.
 

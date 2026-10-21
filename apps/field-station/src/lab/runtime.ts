@@ -10,6 +10,7 @@ import type { HandlerRegistry } from 'streamotter/gateway';
 import { io, type Socket } from 'socket.io-client';
 import { Kafka, type Admin } from 'kafkajs';
 import { readFileSync } from 'node:fs';
+import { hostname } from 'node:os';
 import { benchConfig, benchHandlers, benchEnvironment, handlerBuildId, quarantineReadGroupPrefix, runsUnder, type LabChannels } from './bench.ts';
 import { INTENTS, SOURCE_SCENARIOS } from './capabilities.ts';
 import type { BenchIncidentFacts, BenchIntent, BenchIntentRequest, BenchOperation, BenchStatus, LabAction, LabBenchState, LabScenarioId, StudySummary } from './contract.ts';
@@ -77,6 +78,17 @@ async function gatewayServices(config: ProjectConfig<LabChannels>, handlers: Han
   const gateway = createGateway({ config, handlers, mode: 'development', ...options });
   try { await gateway.start(); return { gateway, operator: journal ? getGatewayOperator(gateway) : null, management: await startManagementServer({ gateway, host: '127.0.0.1', port, token, workbenchDir: null }) }; }
   catch (error) { await gateway.stop().catch(() => undefined); throw error; }
+}
+/**
+ * Whether a gateway start was refused for a journal lock that names another host. Compose
+ * gives each bench container its own hostname, so this is the lock a replaced container
+ * left when it was stopped before its journal closed (gateway.stop's deadline expired).
+ * The library refuses it by design (it can't check a pid on another host); a lock naming
+ * this host, or a journal SQLite reports in use, is a possibly live owner and is not this.
+ */
+export function foreignJournalLock(error: unknown): boolean {
+  const { code, details } = error as { code?: unknown; details?: { reason?: unknown; hostname?: unknown } };
+  return code === 'SOURCE_UNAVAILABLE' && details?.reason === 'journal-locked' && typeof details.hostname === 'string' && details.hostname !== hostname();
 }
 const OPERATION_ID = /^lop_[A-Za-z0-9_-]{22}$/;
 const FAILURE_ID = /^[\x21-\x7e]{1,200}$/;
@@ -238,7 +250,8 @@ export class BenchRuntime {
    * running, is resumed: same group, generation, and journal directory, counted as a
    * process restart. Anything else (no study, one mid-provisioning, an open study
    * whose lease has ended, an unreadable descriptor) is discarded and a new study
-   * provisioned. A failure leaves the bench `failed` for the field station to reset;
+   * provisioned, as is a clean study whose journal a replaced container left locked.
+   * A failure leaves the bench `failed` for the field station to reset;
    * it never exits, so a held source can't cause a restart loop (LC11-A33).
    */
   async start(): Promise<void> {
@@ -259,9 +272,18 @@ export class BenchRuntime {
       // The feed starts a new epoch: the page's cursor from the old process is answered from here, with `gap`.
       if (study.phase === 'open') { this.#lease = study.lease; this.#feed.reset(study.lease!.leaseId, study.restarts.process); this.#feed.add({ kind: 'bench', event: 'gap' }); this.#state = 'leased'; }
       await this.#relay(false);
-      await this.#startGateway();
-      if (study.phase === 'clean') { this.#cleanupOk = true; this.#state = 'ready'; }
-      return;
+      try {
+        await this.#startGateway();
+        if (study.phase === 'clean') { this.#cleanupOk = true; this.#state = 'ready'; }
+        return;
+      } catch (error) {
+        // A clean study whose journal a replaced container left locked is discarded now, with the reset's
+        // own steps, instead of failing the bench and waiting out the field station's 30-second retry: a
+        // reset would discard it all the same. An open study keeps the usual path, so its lease is ended
+        // by the field station, never here.
+        if (study.phase !== 'clean' || !foreignJournalLock(error)) throw error;
+        console.error(`Bench resume refused: ${(error as Error).message} Discarding the clean study and provisioning a new one.`);
+      }
     }
     await this.#relay(false);
     this.#study = study; this.#scope = scopeFor(study?.studyId ?? ''); this.#scope.closed = true;

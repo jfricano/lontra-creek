@@ -282,6 +282,7 @@ export class BenchRuntime {
         // reset would discard it all the same. An open study keeps the usual path, so its lease is ended
         // by the field station, never here.
         if (study.phase !== 'clean' || !foreignJournalLock(error)) throw error;
+        this.#failures?.close();
         console.error(`Bench resume refused: ${(error as Error).message} Discarding the clean study and provisioning a new one.`);
       }
     }

@@ -15,11 +15,13 @@ export const CREEK_SEGMENTS: readonly Segment[] = [
   [[300, 140], [560, 165], [80, 240], [410, 280]]
 ];
 
+/** CREEK_SEGMENTS as an SVG path `d` attribute, for the schematic's river line. */
 export const CREEK_PATH = `M${CREEK_SEGMENTS[0]![0].join(" ")} ${CREEK_SEGMENTS.map(([, a, b, c]) => `C${a.join(" ")} ${b.join(" ")} ${c.join(" ")}`).join(" ")}`;
 
 const CREEK_KM = REACHES.at(-1)!.toKm;
 const STEPS = 400;
 
+/** The point at parameter `t` (0 to 1) on a cubic Bézier segment; `t` isn't proportional to distance along it, hence the arc-length samples below. */
 function at([p0, p1, p2, p3]: Segment, t: number): Point {
   const u = 1 - t;
   const w = [u * u * u, 3 * u * u * t, 3 * u * t * t, t * t * t] as const;
@@ -56,6 +58,7 @@ function along(fraction: number): { point: Point; normal: Point } {
 }
 
 const LABEL_GAP = 12;
+/** Rounds to one decimal place, which keeps the SVG coordinates short. */
 const round = (value: number): number => Math.round(value * 10) / 10;
 
 /** One dot per reach on the river, with its label offset across the bank and anchored away from the water. */

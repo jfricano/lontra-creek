@@ -4,7 +4,9 @@ import { createClient } from "streamotter/client";
 import type { AppChannels } from "../generated/streamotter.generated.ts";
 
 declare const session: { token(signal: AbortSignal): Promise<string> };
+/** Stand-in for the page's rendering; declared so the snippet type-checks. */
 declare function render(reading: AppChannels["station"]["data"]): void;
+/** Stand-in for showing the subscription's state. */
 declare function showState(state: string): void;
 
 // snippet:start

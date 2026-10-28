@@ -20,9 +20,13 @@ import { NOTEBOOK_TOPIC } from "./records.ts";
  */
 export type Environment = "fixture" | "local-kafka" | "production";
 
+/** The StreamOtter project ID in every environment's configuration. */
 export const PROJECT_ID = "lontra-creek";
+/** The version every channel in the project declares. */
 export const CHANNEL_VERSION = 1 as const;
+/** The public site's origin, the only browser origin the production gateway accepts. */
 export const SITE_ORIGIN = "https://streamotter.dev";
+/** The Socket.IO path the gateway serves, the same in every environment. */
 export const GATEWAY_PATH = "/streamotter/socket.io";
 const SITE_DEV_ORIGINS = ["http://localhost:4321", "http://127.0.0.1:4321"];
 
@@ -38,14 +42,22 @@ const OTTER_NAMES = OTTERS.map(otter => otter.name);
  * these lists, never typed, and dens stay off them.
  */
 export const NOTEBOOK_MAX_ENTRIES = 20;
+/** Otters a sighting may name: a tagged otter's ID, or "untagged". */
 export const SIGHTING_OTTERS: readonly string[] = [...OTTERS.map(otter => otter.id), "untagged"];
+/** Reaches a sighting may name: any reach. */
 export const SIGHTING_REACHES: readonly string[] = REACHES.map(reach => reach.id);
+/** Activities a sighting may name: any except denning, so a sighting can't mark a den. */
 export const SIGHTING_ACTIVITIES: readonly string[] = ["resting", "foraging", "traveling", "grooming", "playing"];
 
+/** Schema for a string of at most maxLength characters. */
 const text = (maxLength: number): Schema => ({ type: "string", maxLength });
+/** Schema for a string from a fixed list. */
 const oneOf = (values: readonly string[]): Schema => ({ type: "string", enum: values });
+/** Schema for an integer from minimum to maximum, inclusive. */
 const integer = (minimum: number, maximum: number): Schema => ({ type: "integer", minimum, maximum });
+/** Schema for a number from minimum to maximum, inclusive. */
 const number = (minimum: number, maximum: number): Schema => ({ type: "number", minimum, maximum });
+/** Schema for an object with exactly these properties, all required. */
 function object(properties: Record<string, Schema>): Schema {
   return { type: "object", properties, required: Object.keys(properties), additionalProperties: false };
 }
@@ -165,6 +177,7 @@ const PRODUCTION_KAFKA: KafkaConnection = {
  */
 const HOSTED_LIMITS: Partial<Limits> = { maxConnections: 300, maxSubscriptionsPerConnection: 12 };
 
+/** The creek's source: the recorded fixture, or every simulation topic on Kafka from the latest offset. */
 function fieldSource(environment: Environment): Source {
   if (environment === "fixture") return { kind: "fixture", generation: "field-fixture-1", fixtureRef: "field" };
   return {
@@ -193,6 +206,7 @@ function notebooksSource(environment: Environment): Source {
   };
 }
 
+/** Where the gateway listens and which browser origins it accepts. */
 function gateway(environment: Environment): ProjectConfig["gateway"] {
   const path = GATEWAY_PATH;
   // In production the gateway listens on the compose network; only Caddy publishes a port.
@@ -200,6 +214,7 @@ function gateway(environment: Environment): ProjectConfig["gateway"] {
   return { host: "127.0.0.1", port: 7400, path, allowedOrigins: SITE_DEV_ORIGINS };
 }
 
+/** The Kafka connections an environment uses; the fixture uses none. */
 function connections(environment: Environment): Record<string, KafkaConnection> {
   switch (environment) {
     case "fixture":
@@ -211,6 +226,7 @@ function connections(environment: Environment): Record<string, KafkaConnection> 
   }
 }
 
+/** A simulation channel's definition: full-state delivery from the field source, resyncing on overflow. */
 function channel<K extends ChannelName>(name: K) {
   return {
     version: CHANNEL_VERSION,
@@ -221,6 +237,7 @@ function channel<K extends ChannelName>(name: K) {
   } as const;
 }
 
+/** The whole StreamOtter project for one environment; the hosted limits apply to the Kafka environments only. */
 export function projectConfig(environment: Environment): ProjectConfig<AppChannels> {
   return {
     configVersion: 1,
@@ -255,10 +272,12 @@ export const CONFIG_FILES: Readonly<Record<Environment, string>> = {
   production: "streamotter.production.json"
 };
 
+/** A simulation channel's payload schema. */
 export function payloadSchema(channel: ChannelName): Schema {
   return SCHEMAS[CHANNELS[channel].payloadSchema]!;
 }
 
+/** A simulation channel's params schema. */
 export function paramsSchema(channel: ChannelName): Schema {
   return SCHEMAS[CHANNELS[channel].paramsSchema]!;
 }

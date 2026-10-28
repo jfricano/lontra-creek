@@ -18,11 +18,13 @@ import { timingSafeEqual } from "node:crypto";
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse, type Server as HttpServer } from "node:http";
 import { connect, createServer, type AddressInfo, type Server, type Socket } from "node:net";
 
+/** A host and port to listen on or connect to. */
 export interface Endpoint {
   host: string;
   port: number;
 }
 
+/** Where startProxy listens and what it forwards to. */
 export interface ProxyOptions {
   /** Where the bench connects. */
   listen: Endpoint;
@@ -31,8 +33,10 @@ export interface ProxyOptions {
   log?: (message: string) => void;
 }
 
+/** `open` forwards connections; `cut` refuses new ones and has reset the rest. */
 export type ProxyState = "open" | "cut";
 
+/** A running bench proxy. Cut, restore, and close may each be called again: a repeat does nothing more. */
 export interface Proxy {
   readonly state: ProxyState;
   /** Connections carried now. */
@@ -44,6 +48,7 @@ export interface Proxy {
   close(): Promise<void>;
 }
 
+/** Starts the proxy open; resolves once it listens. */
 export async function startProxy(options: ProxyOptions): Promise<Proxy> {
   const log = options.log ?? (() => undefined);
   const pairs = new Set<{ client: Socket; upstream: Socket }>();
@@ -131,6 +136,7 @@ export async function startProxy(options: ProxyOptions): Promise<Proxy> {
   };
 }
 
+/** A constant-time comparison of two tokens; tokens of different lengths are never equal. */
 function tokensEqual(expected: string, provided: string): boolean {
   const a = Buffer.from(expected);
   const b = Buffer.from(provided);

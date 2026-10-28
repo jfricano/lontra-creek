@@ -7,11 +7,15 @@ import { projectConfig } from '../project.ts';
 import { bench } from './benches.ts';
 import type { FeedEvent } from './feed.ts';
 import type { BenchFailureProfile, BenchSnapshot, LabScenarioId, RecoveryAssessment } from './contract.ts';
+/** The channels a bench serves: every app channel but `notebook` and `holt`. */
 export type LabChannels = Omit<AppChannels, 'notebook' | 'holt'>;
+/** The bench gateway's channels; another name for LabChannels. */
 export type BenchChannels = LabChannels;
+/** Overrides for benchConfig; anything omitted takes bench N's production default. */
 export interface BenchOptions { host?: string; port?: number; brokers?: readonly string[]; caFile?: string; consumerGroup?: string; allowedOrigins?: readonly string[]; /** The study's source generation, `lab-N-<studyId>` (study.ts). */ generation?: string; /** LAB_FAILURE_HANDLING; `off` when omitted. */ profile?: BenchFailureProfile; }
 /** The quarantine writer copies a whole source record plus its envelope, so the quarantine topic must accept this plus about 80 KiB; the broker default does. */
 const BENCH_LIMITS: Partial<Limits> = { maxConnections: 8, maxSubscriptionsPerConnection: 12, maxSourceRecordBytes: 262_144 };
+/** Every LAB_FAILURE_HANDLING value. */
 export const FAILURE_PROFILES: readonly BenchFailureProfile[] = ['off', 'retry', 'quarantine'];
 /**
  * The profiles a source-failures scenario runs under (section 12.3). A fouled sensor
@@ -46,6 +50,7 @@ export function failureHandlingFor(number: number, profile: BenchFailureProfile)
  * Kafka user may read and delete exactly these (deploy/kafka/start.sh, lab-api.md 10.9).
  */
 export const quarantineReadGroupPrefix = (number: number): string => `streamotter-${bench(number).projectId}-quarantine-read-`;
+/** Bench N's gateway project: the production channels but notebooks and holts, on the bench's own topics through its proxy (TLS and SCRAM) from the latest offset, with its profile's failure handling. Throws unless production uses Kafka over TLS. */
 export function benchConfig(number: number, options: BenchOptions = {}): ProjectConfig<LabChannels> {
   const b = bench(number); const production = projectConfig('production'); const field = production.connections['field']; const source = production.sources['field'];
   if (!field || field.tls === false || source?.kind !== 'kafka') throw new Error('Production Kafka over TLS is required.');
@@ -65,7 +70,9 @@ export function benchConfig(number: number, options: BenchOptions = {}): Project
  *                       the record's one revision, so the outputs conflict (LC11-S05).
  */
 export const PROJECTION_V2 = 'lab-projection-v2';
+/** The `mapping` marker of a record that holds two conflicting readings (LC11-S05). */
 export const READING_BATCH = 'lab-reading-batch';
+/** What a bench's handlers need from the bench runtime: authentication, the snapshot origin and token, the feed, and the study's scenario state. */
 export interface BenchHandlerOptions {
   authenticate: (token: string) => Principal | null;
   serviceToken: string;
@@ -121,6 +128,7 @@ export function recoveryGuard(number: number, options: { serviceToken: string; s
     }
   };
 }
+/** Bench N's handlers: only its own volunteers subscribe, records must come from its own topics, scenario markers map as described above, live LC-03 readings need calibration, and snapshots come from the field station's lab-internal views. */
 export function benchHandlers(number: number, options: BenchHandlerOptions): HandlerRegistry<LabChannels> {
   const b = bench(number); const request = options.fetch ?? fetch; const mapping = options.mapping ?? (() => 'broken');
   function channel<K extends keyof LabChannels>(name: K): ChannelHandlers<LabChannels[K]> {

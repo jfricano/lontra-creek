@@ -25,6 +25,7 @@ export const LAB_CONTRACT = '2026-10-04 (V1.1 W9b)';
 export const INSTALLED_STREAMOTTER: string = (createRequire(import.meta.url)('streamotter/package.json') as { version: string }).version;
 /** The StreamOtter packages a lockfile installs, each lockfile path (`node_modules/streamotter`, `node_modules/@streamotter/cli`, …) to its `integrity`. */
 export type StreamOtterIntegrity = Readonly<Record<string, string>>;
+/** Whether a package is StreamOtter's: `streamotter` or any `@streamotter/` package. */
 const isStreamOtter = (name: string): boolean => name === 'streamotter' || name.startsWith('@streamotter/');
 /** Every StreamOtter package in a parsed package-lock.json, with its integrity (null for one without). */
 export function streamOtterIntegrity(lock: { packages?: Record<string, { name?: string; integrity?: string }> }): Record<string, string | null> {
@@ -47,6 +48,7 @@ function installedIntegrity(): StreamOtterIntegrity | null {
     return Object.values(found).every(value => value !== null) && Object.keys(found).length > 0 ? found as StreamOtterIntegrity : null;
   } catch { return null; }
 }
+/** The installed StreamOtter packages' integrity, read once at startup; null when it can't be read in full, and then no new scenario counts as verified. */
 export const INSTALLED_INTEGRITY: StreamOtterIntegrity | null = installedIntegrity();
 /** Releases whose published source was checked and found to provide none of NATIVE (BASELINE.md section 3). */
 export const VERIFIED_WITHOUT_FAILURE_HANDLING: ReadonlySet<string> = new Set(['0.1.0-rc.3']);
@@ -55,6 +57,7 @@ export const VERIFIED_WITHOUT_FAILURE_HANDLING: ReadonlySet<string> = new Set(['
 type Native = 'quarantine' | 'a recovery guard' | 'incident evaluation' | 'controlled reprocessing' | 'bounded retry for transient mapper errors' | 'an automatic-continuation limit' | 'a durable failure journal';
 /** Scenarios the current bench already runs with its LabActions. */
 export const EXISTING_SCENARIOS = ['fouled-sensor', 'relay-cut', 'slow-client', 'relay-restart'] as const satisfies readonly LabScenarioId[];
+/** A source-failures scenario that needs the library's failure handling, unlike the existing ones. */
 export type NewScenario = Exclude<LabScenarioId, (typeof EXISTING_SCENARIOS)[number]>;
 /** Companion plan section 4: what each new story depends on in the native library. */
 const NEEDS: Record<NewScenario, Native[]> = {
@@ -67,7 +70,9 @@ const NEEDS: Record<NewScenario, Native[]> = {
   'restart-recovery': ['a durable failure journal', 'a recovery guard'],
   'unavailable-evidence': ['quarantine', 'a durable failure journal']
 };
+/** The new scenarios, LC11-S02 to S09. */
 export const NEW_SCENARIOS = Object.keys(NEEDS) as NewScenario[];
+/** Every scenario the capability summary reports, the existing ones first. */
 export const SCENARIOS = [...EXISTING_SCENARIOS, ...NEW_SCENARIOS] as readonly LabScenarioId[];
 /** The source-failures track, LC11-S01 to S09: the scenarios `scenario.start` may name. */
 export const SOURCE_SCENARIOS: readonly LabScenarioId[] = ['fouled-sensor', ...NEW_SCENARIOS];
@@ -108,6 +113,7 @@ export const VERIFIED_WITH: ReadonlyMap<string, Verification> = new Map([['0.2.0
   },
   evidence: 'deploy/test/lab-source-failures.test.ts on npm run dev:lab built from the registry lockfile, October 5, 2026: all eight under quarantine with KAFKA_AUTHORIZATION=acl (11/11); calibration-blip also under retry with KAFKA_AUTHORIZATION=none (S01, S06 and A32 passed); deploy/test/sandbox.test.ts 7/7 on the same stack'
 }]]);
+/** Every intent parseIntent accepts. */
 export const INTENTS = ['scenario.start', 'scenario.restore-calibration', 'scenario.prepare-coverage', 'incident.retry-current', 'incident.reassess', 'incident.evaluate', 'incident.approve-reprocess'] as const satisfies readonly LabIntent[];
 
 /** The deployment facts the summary depends on, besides the library: read once at startup (leases.ts). */
@@ -122,7 +128,9 @@ export interface CapabilityOptions {
   integrity?: StreamOtterIntegrity | null;
 }
 
+/** Joins names as English: `a`, `a or b`, `a, b, or c`. */
 const list = (items: readonly string[]): string => items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')}${items.length > 2 ? ',' : ''} or ${items.at(-1)}`;
+/** An unavailable answer with its code and its one sentence for visitors. */
 const unavailable = (code: NonNullable<LabAvailability['reason']>['code'], text: string): LabAvailability => ({ available: false, reason: { code, text } });
 const AVAILABLE: LabAvailability = { available: true, reason: null };
 /** Unavailable because the library lacks something (a release checked and found lacking), or because this Lab wasn't verified against it. */
@@ -152,6 +160,7 @@ function newScenario(id: NewScenario, options: { labEnabled: boolean; version: s
   return AVAILABLE;
 }
 
+/** The GET /api/lab/capabilities summary. Unless given, the release and integrity are the installed ones, the profile `off`, and local exercises not offered. */
 export function labCapabilities(options: { labEnabled: boolean; now: number; version?: string } & Partial<CapabilityOptions>): LabCapabilities {
   const version = options.version ?? INSTALLED_STREAMOTTER;
   const settings = { labEnabled: options.labEnabled, version, profile: options.profile ?? 'off', localExercises: options.localExercises ?? false, integrity: options.integrity === undefined ? INSTALLED_INTEGRITY : options.integrity, ...(options.verified ? { verified: options.verified } : {}) };

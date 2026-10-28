@@ -20,6 +20,7 @@ import type { AppChannels } from "./generated/streamotter.generated.ts";
 import { fieldStationSecret, serviceToken, verifyToken } from "./identity.ts";
 import { fromRecord, topicFor, viewPath } from "./records.ts";
 
+/** What the Kafka handlers need; kafkaHandlerOptions reads it from the environment. */
 export interface KafkaHandlerOptions {
   /** Verifies visitors' badges. */
   secret: string;
@@ -29,9 +30,11 @@ export interface KafkaHandlerOptions {
   internalOrigin: string;
   /** Prepended to each channel's topic: a Failure Lab bench's copy of the creek (lab/benches.ts). */
   topicPrefix?: string;
+  /** Used for snapshot requests; defaults to the global fetch. */
   fetch?: typeof fetch;
 }
 
+/** Options from the environment. Throws in production when either secret is missing or too short. */
 export function kafkaHandlerOptions(env: NodeJS.ProcessEnv = process.env): KafkaHandlerOptions {
   return {
     secret: fieldStationSecret(env),
@@ -46,6 +49,11 @@ export function kafkaHandlerOptions(env: NodeJS.ProcessEnv = process.env): Kafka
  */
 export const HANDSHAKES_PER_BADGE = 2;
 
+/**
+ * The gateway's handlers: badge authentication capped at HANDSHAKES_PER_BADGE,
+ * access by mayRead, a map that throws on any record it can't read or that came on
+ * the wrong topic, and snapshots fetched from the internal API.
+ */
 export function createKafkaHandlers(options: KafkaHandlerOptions): HandlerRegistry<AppChannels> {
   const request = options.fetch ?? fetch;
   const prefix = options.topicPrefix ?? "";
@@ -111,4 +119,5 @@ export function createKafkaHandlers(options: KafkaHandlerOptions): HandlerRegist
   };
 }
 
+/** The handlers `streamotter start` loads, configured from the environment. */
 export const handlers = createKafkaHandlers(kafkaHandlerOptions());

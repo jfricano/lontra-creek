@@ -18,6 +18,7 @@ import { RELEASE, SITE } from "./site.ts";
 /** The recorded workbench tour's own provenance, so a later version pin can't relabel it. */
 export const RECORDING = { version: capture.version, install: capture.install, capturedOn: capture.capturedAt.slice(0, 10) } as const;
 
+/** The site's own release facts for `/releases/`: its name, launch state, current milestone, and how its milestones relate to StreamOtter's versions. */
 export const SITE_RELEASE = {
   name: "streamotter.dev: StreamOtter's home site and the fictional Lontra Creek demo",
   launch: SITE.launched ? "Launched." : "Pre-launch. This build is a candidate; no public release of the site or its hosted demo has been accepted.",
@@ -25,8 +26,10 @@ export const SITE_RELEASE = {
   versioning: `The site's milestones are its own. Site ${SITE.milestone.name} is a different milestone from StreamOtter V1.1, and neither one is npm version 1.1.0. Each ships on its own schedule.`
 } as const;
 
+/** How much of a demo surface this build offers: it runs, runs only where the Lab is on, runs partly, is a recording, or isn't available yet. */
 export type SurfaceState = "runs" | "lab" | "partial" | "recorded" | "unavailable";
 
+/** The label `/releases/` shows in its "Today" column for each surface state. */
 export const SURFACE_LABELS: Record<SurfaceState, string> = {
   runs: "Runs",
   // The Lab is turned on per deployment; this build can't know whether its backend has benches.
@@ -36,6 +39,7 @@ export const SURFACE_LABELS: Record<SurfaceState, string> = {
   unavailable: "Not yet"
 };
 
+/** One row of the demo-availability table on `/releases/`. */
 export interface Surface {
   name: string;
   href: string;
@@ -46,6 +50,7 @@ export interface Surface {
   needs: string;
 }
 
+/** Every demo surface, in the order `/releases/` lists them, with what each runs and needs on this build. */
 export const SURFACES: readonly Surface[] = [
   {
     name: "Live creek and walkthrough", href: "/field-station/", state: "runs",

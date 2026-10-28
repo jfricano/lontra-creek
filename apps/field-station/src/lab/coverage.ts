@@ -27,9 +27,11 @@ import type { RecordCoordinates, RecoveryAssessment, RecoveryAssessRequest, Snap
 
 /** Ledger bounds per study: a study is one five-minute lease. */
 export const MAX_ENTRIES = 32;
+/** The most incidents one study's guard answers recoverable for; past it the guard holds with `obligation-limit`. */
 export const MAX_OBLIGATIONS = 64;
 const MAX_EVIDENCE_REF = 256;
 
+/** A ledger entry's coverage: withheld, then pending, then established. */
 export type CoverageStatus = 'withheld' | 'pending' | 'established';
 
 /** An instrument reading at a stated simulation tick: the predetermined mutation of the LC-03 scenarios. */
@@ -39,6 +41,7 @@ export interface StationReading {
   tick: number;
   reading: Partial<Record<'flowCfs' | 'stageFt' | 'waterTempC' | 'dissolvedOxygenMgL' | 'turbidityNtu', number>>;
 }
+/** Every kind of mutation a scenario run can record; so far only station readings. */
 export type DomainMutation = StationReading;
 
 /** What a mutation does to the views benches serve, by the simulation's own derivation. */
@@ -81,6 +84,7 @@ export function deriveMutation(world: WorldState, mutation: DomainMutation): Der
 /** Served state at a tick, per instance revision. */
 export interface Watermark { tick: number; revisions: Record<string, string> }
 
+/** One scenario run in a study's ledger. `watermark` and `establishedAt` are null until established, `publication` until the record is published. */
 export interface LedgerEntry {
   scenarioId: string;
   runId: string;
@@ -103,6 +107,7 @@ export interface Barrier { id: string; seq: number; tick: number; revisions: Rec
 /** What the snapshot service serves for one bench: its state's tick and each instance's revision. */
 export interface ServedState { tick(): number; revision(key: string): string | undefined }
 
+/** A study's coverage ledger: the scenario runs the field station publishes, and the obligations and barriers the guard has issued. */
 export interface CoverageLedger {
   readonly bench: number;
   readonly studyId: string;
@@ -116,16 +121,21 @@ export interface CoverageLedger {
   /** pending → established, only when the served state has reached the mutation for every affected instance. */
   establish(runId: string, served: ServedState): Promise<LedgerEntry>;
 }
+/** Answers the bench's recovery guard for a study. */
 export interface RecoveryAssessor { assess(request: RecoveryAssessRequest): Promise<RecoveryAssessment> }
+/** Decides whether a snapshot's served state acknowledges a barrier. */
 export interface SnapshotAcknowledger { acknowledge(input: { barrier: string; key: string; served: { tick: number; revision: string } }): SnapshotBoundary }
 
 interface LedgerFile { format: 1; bench: number; studyId: string; entries: LedgerEntry[]; obligations: Obligation[]; barriers: Barrier[] }
 
+/** Whether a served revision is at or past a required one, both decimal strings; a missing or malformed revision never is. */
 const atOrPast = (served: string | undefined, required: string): boolean => {
   if (served === undefined || !/^\d{1,30}$/.test(served) || !/^\d{1,30}$/.test(required)) return false;
   return BigInt(served) >= BigInt(required);
 };
+/** Whether two coordinates name the same record; null names none. */
 const sameRecord = (a: RecordCoordinates | null, b: RecordCoordinates): boolean => a !== null && a.topic === b.topic && a.partition === b.partition && a.offset === b.offset;
+/** A cumulative barrier's ID, `lcb1.<studyId>.<seq>`. */
 export const barrierId = (studyId: string, seq: number): string => `lcb1.${studyId}.${seq}`;
 const BARRIER = /^lcb1\.([A-Za-z0-9_-]{16})\.([1-9]\d{0,5})$/;
 
@@ -135,7 +145,9 @@ const BARRIER = /^lcb1\.([A-Za-z0-9_-]{16})\.([1-9]\d{0,5})$/;
  * recreate a removed study's ledger.
  */
 export class FileCoverageLedger implements CoverageLedger, RecoveryAssessor, SnapshotAcknowledger {
+  /** The bench whose study this is. */
   readonly bench: number;
+  /** The study this ledger belongs to. */
   readonly studyId: string;
   readonly #path: string;
   readonly #now: () => number;
@@ -153,9 +165,13 @@ export class FileCoverageLedger implements CoverageLedger, RecoveryAssessor, Sna
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     return new FileCoverageLedger(path, file, now);
   }
+  /** A copy of every recorded run, in the order recorded. */
   entries(): readonly LedgerEntry[] { return structuredClone(this.#file.entries); }
+  /** A copy of every obligation the guard has taken on. */
   obligations(): readonly Obligation[] { return structuredClone(this.#file.obligations); }
+  /** A copy of every barrier issued, oldest first. */
   barriers(): readonly Barrier[] { return structuredClone(this.#file.barriers); }
+  /** True once discard() has stopped all writes. */
   get discarded(): boolean { return this.#discarded; }
   /** Stops all further writes. The registry removes the file. */
   discard(): Promise<void> { this.#discarded = true; return this.#tail.then(() => undefined); }
@@ -174,6 +190,7 @@ export class FileCoverageLedger implements CoverageLedger, RecoveryAssessor, Sna
     await writeFile(`${this.#path}.tmp`, JSON.stringify(this.#file));
     await rename(`${this.#path}.tmp`, this.#path);
   }
+  /** Records a run before its record is published, as withheld or pending. Refuses a malformed or repeated run ID, and more than MAX_ENTRIES runs. */
   record(input: { scenarioId: string; runId: string; mutation: DomainMutation; derived: DerivedMutation; coverage: 'withheld' | 'pending' }): Promise<LedgerEntry> {
     return this.#change(() => {
       if (!/^[\w.-]{1,64}$/.test(input.scenarioId) || !/^[\w.-]{1,64}$/.test(input.runId)) throw new RangeError('Scenario and run IDs are short identifiers.');
@@ -183,12 +200,15 @@ export class FileCoverageLedger implements CoverageLedger, RecoveryAssessor, Sna
       this.#file.entries.push(entry); return structuredClone(entry);
     });
   }
+  /** Records where a run's record was published; refused if it was already published elsewhere. */
   published(runId: string, at: RecordCoordinates): Promise<void> {
     return this.#change(() => { const entry = this.#entry(runId); if (entry.publication && !sameRecord(entry.publication, at)) throw new RangeError('That run was already published elsewhere.'); entry.publication = { ...at }; });
   }
+  /** withheld → pending; any other status is returned unchanged. */
   release(runId: string): Promise<LedgerEntry> {
     return this.#change(() => { const entry = this.#entry(runId); if (entry.status === 'withheld') entry.status = 'pending'; return structuredClone(entry); });
   }
+  /** pending → established once every affected instance's served revision is at or past the mutation's; otherwise the entry is returned unchanged. */
   establish(runId: string, served: ServedState): Promise<LedgerEntry> {
     return this.#change(() => {
       const entry = this.#entry(runId);

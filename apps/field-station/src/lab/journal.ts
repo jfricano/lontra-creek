@@ -22,6 +22,7 @@ import { runCli } from 'streamotter/cli';
 /** The journal file StreamOtter keeps in its state directory. */
 export const JOURNAL_FILE = 'journal.sqlite';
 
+/** Whether a state directory already holds a failure journal. */
 export const hasJournal = (stateDirectory: string): boolean => existsSync(join(stateDirectory, JOURNAL_FILE));
 
 /**

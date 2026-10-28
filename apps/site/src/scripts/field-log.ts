@@ -12,6 +12,7 @@ export type Tone = "k" | "w" | "s";
 /** Text, or a highlighted word such as a view's label. */
 export type LogPart = string | { tone: Tone; text: string };
 
+/** The page's SDK log: visible lines, and a screen-reader announcer that reads announcements made close together as one. */
 export interface SdkLog {
   /** Adds a line at the top and, with `announce`, says it to screen readers. */
   write(parts: readonly LogPart[], announce?: string): void;
@@ -58,11 +59,13 @@ export function createSdkLog(list: HTMLElement, announcer: HTMLElement, options:
   };
 }
 
+/** A subscription state's tone: `live` is fine, `stale`, `failed` and `resync-required` warn, and the rest are on their way. */
 export function subscriptionTone(state: SubscriptionState): Tone {
   if (state === "live") return "k";
   return state === "stale" || state === "failed" || state === "resync-required" ? "w" : "s";
 }
 
+/** A connection state's tone: `connected` is fine, everything else warns. */
 export function connectionTone(state: ConnectionState): Tone {
   return state === "connected" ? "k" : "w";
 }

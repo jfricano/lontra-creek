@@ -14,7 +14,9 @@
  */
 import { abortableWait } from "./lab-operation.ts";
 
+/** Requests this page may make at once: a little under half of the address's 20. */
 export const PAGE_BURST = 9;
+/** Requests a second this page earns back: a little under half of the address's 3. */
 export const PAGE_PER_SECOND = 1.4;
 /** Tokens a background request leaves for the visitor's own requests. */
 export const BACKGROUND_RESERVE = 3;
@@ -23,6 +25,7 @@ export const REFUSED_PAUSE_MS = 2_000;
 /** The longest a Retry-After is honored for: the field station's own answers are a second or two. */
 export const REFUSED_PAUSE_CAP_MS = 30_000;
 
+/** Overrides for the bucket's size, refill rate, clock, and wait; the page uses the defaults. */
 export interface BudgetOptions {
   burst?: number;
   perSecond?: number;
@@ -33,6 +36,7 @@ export interface BudgetOptions {
 
 const NEVER = new AbortController().signal;
 
+/** A token bucket every Lab request from this page waits on, with a pause for every request after a 429. */
 export class RequestBudget {
   readonly #burst: number;
   readonly #perSecond: number;
@@ -42,6 +46,7 @@ export class RequestBudget {
   #at: number;
   #heldUntil = 0;
 
+  /** Starts with a full bucket. */
   constructor(options: BudgetOptions = {}) {
     this.#burst = options.burst ?? PAGE_BURST;
     this.#perSecond = options.perSecond ?? PAGE_PER_SECOND;

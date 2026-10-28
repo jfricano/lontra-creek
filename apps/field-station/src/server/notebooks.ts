@@ -22,16 +22,20 @@ import { NOTEBOOK_MAX_ENTRIES, SIGHTING_ACTIVITIES, SIGHTING_OTTERS, SIGHTING_RE
 import { fromRecord, NOTEBOOK_TOPIC } from "../records.ts";
 import type { PublishQueue } from "./queue.ts";
 
+/** A notebook as the `notebook` channel delivers it. */
 export type Notebook = AppChannels["notebook"]["data"];
+/** One logged sighting, stamped with study time. */
 export type Entry = Notebook["entries"][number];
 
 /** How long field.notebooks keeps records: a few session lifetimes. */
 export const NOTEBOOK_RETENTION_MS = 2 * 60 * 60 * 1_000;
+/** The least time between two sightings in one notebook. */
 export const SIGHTING_INTERVAL_MS = 1_000;
 const MAX_OPEN_NOTEBOOKS = 5_000;
 /** Open notebooks one client address (an IPv4 address or an IPv6 /64) may hold, so one host can't fill the global cap. */
 export const MAX_OPEN_NOTEBOOKS_PER_CLIENT = 20;
 
+/** A sighting's choices, checked against the fixed lists. */
 export interface Sighting {
   otterId: string;
   reachId: string;
@@ -40,8 +44,10 @@ export interface Sighting {
 
 /** A refusal the site API passes on: the HTTP status and a message for the visitor. */
 export class NotebookError extends Error {
+  /** The HTTP status to answer with. */
   readonly status: number;
 
+  /** A refusal with an HTTP status and a message for the visitor. */
   constructor(status: number, message: string) {
     super(message);
     this.status = status;
@@ -77,6 +83,7 @@ export function parseSighting(body: Record<string, unknown>): Sighting | null {
   return { otterId, reachId, activity };
 }
 
+/** Every notebook the field station serves and publishes, held in memory and rebuilt from field.notebooks on start. */
 export class Notebooks {
   readonly #queue: PublishQueue;
   readonly #now: () => number;
@@ -85,6 +92,7 @@ export class Notebooks {
   readonly #books = new Map<string, Book>();
   #ready = false;
 
+  /** Notebooks published through `queue`, refusing sightings until load has run. */
   constructor(options: { queue: PublishQueue; tenantId: string; now?: () => number; log?: (message: string) => void }) {
     this.#queue = options.queue;
     this.#tenantId = options.tenantId;
@@ -102,6 +110,7 @@ export class Notebooks {
     return this.#ready;
   }
 
+  /** Notebooks still open, from every client; new ones are refused at MAX_OPEN_NOTEBOOKS. */
   get openCount(): number {
     let open = 0;
     for (const book of this.#books.values()) if (book.data.status === "open") open += 1;
@@ -199,6 +208,7 @@ export class Notebooks {
   }
 }
 
+/** A field.notebooks record value as a notebook record, or null for a tombstone or anything malformed. */
 function parseRecord(value: string | null): NotebookRecord | null {
   if (value === null) return null;
   let parsed: unknown;

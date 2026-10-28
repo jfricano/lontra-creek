@@ -26,6 +26,7 @@ import { FieldStation } from "./station.ts";
 const NOTEBOOK_SWEEP_MS = 10_000;
 const RETRY_MS = 5_000;
 
+/** Logs a line to stdout, prefixed with the current ISO time. */
 const log = (message: string): void => console.log(`${new Date().toISOString()} ${message}`);
 const config = readConfig();
 const kafka = await connectKafka(config.kafka, log, { benchPrefixes: benches(config.labBenches).map(bench => bench.topicPrefix) });
@@ -33,6 +34,7 @@ const queue = new PublishQueue(kafka.publisher, log);
 const station = new FieldStation({ queue, dataDir: config.dataDir, epoch: config.epoch, tickMs: config.tickMs, generation: config.generation, log });
 const notebooks = new Notebooks({ queue, tenantId: TENANT_ID, log });
 
+/** Starts a server on the configured host; resolves once it listens, rejects if it can't. */
 function listen(server: Server, port: number, name: string): Promise<void> {
   return new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -67,6 +69,7 @@ log(`Field station running: generation ${config.generation}, epoch ${station.epo
 
 let stopping = false;
 const timers = new Set<NodeJS.Timeout>();
+/** Runs once after a delay unless the process is stopping; stop clears any still pending. */
 function later(delayMs: number, run: () => void): void {
   if (stopping) return;
   const timer = setTimeout(() => {
@@ -76,6 +79,7 @@ function later(delayMs: number, run: () => void): void {
   timers.add(timer);
 }
 
+/** Schedules the next advance for when its tick is due, and the one after once it settles, failed or not. */
 function tick(): void {
   later(Math.max(0, station.nextTickAt() - Date.now()), () => {
     station.advance()
@@ -99,6 +103,7 @@ function loadNotebooks(): void {
   );
 }
 
+/** Every NOTEBOOK_SWEEP_MS, closes notebooks whose session has ended and publishes them. */
 function sweepNotebooks(): void {
   later(NOTEBOOK_SWEEP_MS, () => {
     if (notebooks.expire() > 0) void queue.flush();
@@ -111,6 +116,7 @@ void queue.flush();
 tick();
 loadNotebooks();
 
+/** Clears timers, closes the listeners, publishes what it can, checkpoints, closes the producer, and exits. Runs once. */
 async function stop(signal: string): Promise<void> {
   if (stopping) return;
   stopping = true;

@@ -8,6 +8,7 @@ import { REACHES, type Camera, type OtterProfile, type ReachId } from "./geograp
 import type { OtterState } from "./otters.ts";
 import { chance, int, type Rng } from "./random.ts";
 
+/** What the camera traps can record. */
 export type Species =
   | "river otter"
   | "American beaver"
@@ -17,16 +18,21 @@ export type Species =
   | "white-tailed deer"
   | "belted kingfisher";
 
+/** One camera-trap trigger. */
 export interface Frame {
+  /** Frame number on this camera, counting from 1. */
   number: number;
   tick: number;
   species: Species;
+  /** Animals in the frame; an otter frame counts a mother's pups when they are with her. */
   count: number;
 }
 
+/** A camera's frame count, last frame, and tallies for the current study day. */
 export interface CameraState {
   frames: number;
   lastFrame: Frame | null;
+  /** The 0-based study day the daily tallies count. */
   dayIndex: number;
   framesToday: number;
   otterFramesToday: number;
@@ -52,10 +58,15 @@ const WILDLIFE: readonly Visitor[] = [
 
 const OTTER_TRIGGER_CHANCE = 0.16;
 
+/** A camera with no frames, its tallies counting from the study day of `tick`. */
 export function initialCamera(tick: number): CameraState {
   return { frames: 0, lastFrame: null, dayIndex: dayIndex(tick), framesToday: 0, otterFramesToday: 0 };
 }
 
+/**
+ * Runs one tick of a camera: resets the tallies on a new study day, then records at
+ * most one frame, trying the tagged otters in its reach before other wildlife.
+ */
 export function stepCamera(
   camera: Camera,
   state: CameraState,

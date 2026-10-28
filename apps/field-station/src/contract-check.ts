@@ -10,6 +10,7 @@ import type { AppChannels } from "./generated/streamotter.generated.ts";
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 type Expect<T extends true> = T;
 
+/** Fails to compile unless the simulation's channels, payloads, and params equal the generated types. */
 export type ChannelContractsMatch = [
   Expect<Same<Exclude<keyof AppChannels, "notebook">, keyof ChannelViews>>,
   Expect<Same<AppChannels["creekOverview"]["data"], ChannelViews["creekOverview"]>>,

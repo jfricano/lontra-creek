@@ -2,6 +2,7 @@ import type { Trace } from 'streamotter/contracts';
 import type { LabFeedItem, LabFeedPage } from './contract.ts';
 import { LabError } from './errors.ts';
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+/** A feed item before the feed gives it an id and a time. */
 export type FeedEvent = DistributiveOmit<LabFeedItem, 'id' | 'at'>;
 /**
  * A bounded, lease-scoped feed. Internal identifiers never become public ids.
@@ -15,12 +16,15 @@ export class LabFeed {
   #sequence = 0;
   #items: LabFeedItem[] = [];
   #groups = new Map<string, string>();
+  /** Empties the feed and starts it for a lease at a process epoch; with no lease it records nothing. */
   reset(lease = '', epoch = 0): void { this.#lease = lease; this.#epoch = epoch; this.#sequence = 0; this.#items = []; this.#groups.clear(); }
+  /** Appends an item with the next id, keeping the newest 500; dropped while there is no lease. */
   add(item: FeedEvent, at = new Date().toISOString()): void {
     if (!this.#lease) return;
     this.#items.push({ ...item, at, id: `${this.#lease}:${this.#epoch}.${++this.#sequence}` } as LabFeedItem);
     if (this.#items.length > 500) this.#items.shift();
   }
+  /** Adds a StreamOtter trace with only its public fields, grouped by its request. Authorizations without a subscription and filtered maps are left out; `satellites` names the satellite client's subscriptions. */
   trace(trace: Trace, satellites: ReadonlySet<string>): void {
     if (trace.stage === 'authorize' && !trace.subscriptionId || trace.stage === 'map' && trace.outcome === 'filtered') return;
     let group = this.#groups.get(trace.requestId);
@@ -32,6 +36,7 @@ export class LabFeed {
       ...(trace.errorCode === undefined ? {} : { errorCode: trace.errorCode }),
       ...(trace.subscriptionId === undefined ? {} : { subscriber: satellites.has(trace.subscriptionId) ? 'satellite' : 'you' }) }, trace.at);
   }
+  /** Up to `limit` items (1 to 100) after the cursor `after`. `gap` is true when items in between were dropped or the cursor predates a bench process restart; a cursor from another lease, or past the end, is `invalid-request`. */
   page(after?: string, limit = 100): LabFeedPage {
     let sequence = 0; let restarted = false;
     if (after) {

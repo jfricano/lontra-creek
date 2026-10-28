@@ -54,6 +54,7 @@ export function renderOtter(element: HTMLElement, data: OtterStatus): void {
   setText(element, "note", data.note);
 }
 
+/** Fills a card's `[data-v]` fields from one channel's data. */
 export type Renderer<K extends ChannelName> = (element: HTMLElement, data: ChannelData<K>) => void;
 
 /** The renderer each channel's cards use unless a card brings its own. */
@@ -62,6 +63,7 @@ export const renderers: { readonly [K in ChannelName]?: Renderer<K> } = {
   otter: renderOtter
 };
 
+/** How bindCard draws a view; every option has a default. */
 export interface CardOptions<K extends ChannelName> {
   /** Fills the card's fields; defaults to the channel's entry in `renderers`. */
   render?: Renderer<K>;
@@ -71,6 +73,7 @@ export interface CardOptions<K extends ChannelName> {
   onCaughtUp?: (before: bigint, after: bigint) => void;
 }
 
+/** A card bound to a view by bindCard. */
 export interface Card {
   readonly element: HTMLElement;
   /** The view's state as the card shows it. */

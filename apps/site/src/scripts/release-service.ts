@@ -38,10 +38,12 @@ export function serviceLines(answer: ServiceAnswer, builtWith: string): string[]
   return lines;
 }
 
+/** How many of the new source-failure exercises the reported capabilities make available. */
 function runnable(summary: LabCapabilities): number {
   return NEW_SOURCE_EXERCISES.filter(id => scenarioAvailability(id, { kind: "summary", summary }).state === "available").length;
 }
 
+/** Asks the field station at `origin` for its Lab capabilities: `absent` on a 404, `unreachable` on any other failure or after 8 s. */
 async function readCapabilities(origin: string): Promise<CapabilityAnswer> {
   try {
     const response = await fetch(`${origin}/api/lab/capabilities`, { cache: "no-store", credentials: "include", signal: AbortSignal.timeout(8_000) });
@@ -53,6 +55,7 @@ async function readCapabilities(origin: string): Promise<CapabilityAnswer> {
   }
 }
 
+/** Fills the `/releases/` service block in `root` with what the field station answers; does nothing if the block's elements are missing. */
 export async function mountReleaseService(root: HTMLElement, builtWith: string): Promise<void> {
   const status = root.querySelector<HTMLElement>("[data-release-service-status]");
   const list = root.querySelector<HTMLElement>("[data-release-service-lines]");

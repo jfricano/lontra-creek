@@ -13,14 +13,18 @@
  */
 import type { ConnectionState, StateChange, Unlisten, WaitOptions } from "streamotter/client";
 
+/** The first retry's delay after a transient failure; the backoff returns to it once connected. */
 export const SIGN_IN_RETRY_BASE_MS = 1_000;
+/** The longest delay between retries; each retry doubles the delay, up to this. */
 export const SIGN_IN_RETRY_CAP_MS = 30_000;
 
 /** An HTTP answer that wasn't the one asked for. */
 export class HttpStatusError extends Error {
+  /** The status the API answered with, such as 429 or 502. */
   readonly status: number;
   /** The API's own error code, when its body had one. */
   readonly code: string | undefined;
+  /** An answer with HTTP `status`, and the API's own error `code` when the body had one. */
   constructor(message: string, status: number, code?: string) {
     super(message);
     this.name = "HttpStatusError";
@@ -40,6 +44,7 @@ export interface ReconnectingClient {
   reconnect(options?: WaitOptions): Promise<void>;
 }
 
+/** Reconnects a client after a transient sign-in failure, with backoff; see the module comment for what counts as transient. */
 export class SignInRetry {
   readonly #onFinal: (() => void) | undefined;
   #transient = false;
@@ -76,6 +81,7 @@ export class SignInRetry {
     }
   }
 
+  /** Follows `client`'s connection state, replacing any client attached before: `auth-required` after a transient failure schedules a reconnect and otherwise runs `onFinal`, `connected` resets the backoff, and `closed` stops. */
   attach(client: ReconnectingClient): void {
     this.#unlisten?.();
     this.#unlisten = client.on("state", ({ state }) => {
@@ -97,6 +103,7 @@ export class SignInRetry {
     this.#timer = null;
   }
 
+  /** Drops any pending retry and stops following the attached client. */
   stop(): void {
     this.cancel();
     this.#unlisten?.();

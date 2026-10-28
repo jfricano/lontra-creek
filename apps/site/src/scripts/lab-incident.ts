@@ -11,6 +11,7 @@
  */
 import type { LabIncidentSummary, LabIntent, LabScenarioId } from "../../../field-station/src/lab/contract.ts";
 
+/** One status mark in the incident panel: an icon and text, so its meaning never rests on color alone. */
 export interface Mark {
   icon: string;
   text: string;
@@ -20,6 +21,7 @@ export interface Mark {
   note?: string;
 }
 
+/** The mark for each evidence state: whether the failing record was saved as evidence. */
 export const EVIDENCE: Record<LabIncidentSummary["evidence"], Mark> = {
   saved: { icon: "✓", text: "Evidence saved", tone: "neutral", note: "The record isn't repaired, and the view isn't recovered by this." },
   unknown: { icon: "?", text: "Evidence status unknown", tone: "held", note: "No acknowledged quarantine write has been observed." },
@@ -27,6 +29,7 @@ export const EVIDENCE: Record<LabIncidentSummary["evidence"], Mark> = {
   "not-required": { icon: "–", text: "No evidence kept", tone: "neutral", note: "This policy holds the record in place to be retried; nothing is skipped." }
 };
 
+/** The mark for where the source stands relative to the failing record. */
 export const SOURCE: Record<LabIncidentSummary["source"], Mark> = {
   held: { icon: "⏸", text: "Source held at this record", tone: "held", note: "Nothing after it is processed or committed." },
   advanced: { icon: "→", text: "Source advanced past quarantined record", tone: "neutral", note: "The browser did not receive the excluded record." },
@@ -34,6 +37,7 @@ export const SOURCE: Record<LabIncidentSummary["source"], Mark> = {
   uncertain: { icon: "?", text: "Source position uncertain", tone: "held" }
 };
 
+/** The mark for each recovery requirement; `none` is left out of the announcement. */
 export const RECOVERY: Record<LabIncidentSummary["recovery"], Mark> = {
   none: { icon: "–", text: "No recovery requirement", tone: "neutral" },
   "coverage-not-ready": { icon: "⏸", text: "Saved, but not safe to continue: snapshot coverage not ready", tone: "held", note: "Skipping the record could hide a real state change." },
@@ -42,11 +46,13 @@ export const RECOVERY: Record<LabIncidentSummary["recovery"], Mark> = {
 };
 
 const NO_EFFECT = "This evaluation changed no source offset, sent no state, and published no business event.";
+/** The mark for an evaluation's result; incidentView puts the backend's summary before its note. */
 export const EVALUATION: Record<NonNullable<LabIncidentSummary["evaluation"]>["result"], Mark> = {
   passed: { icon: "✓", text: "Evaluation passed", tone: "neutral", note: `${NO_EFFECT} Nothing has been reprocessed.` },
   failed: { icon: "✕", text: "Evaluation failed", tone: "failed", note: NO_EFFECT }
 };
 
+/** The mark for how approved reprocessing ended. */
 export const REPROCESS: Record<NonNullable<LabIncidentSummary["reprocess"]>, Mark> = {
   reprocessed: { icon: "✓", text: "Reprocessed", tone: "neutral", note: "Gateway-local reprocessing ran. That isn't proof a business action completed or that every browser rendered it." },
   superseded: { icon: "✓", text: "Superseded by a newer snapshot", tone: "neutral", note: "A safe outcome: the old state was already obsolete. Each evaluation can be approved once; evaluating again offers a new approval." },
@@ -54,8 +60,10 @@ export const REPROCESS: Record<NonNullable<LabIncidentSummary["reprocess"]>, Mar
   unknown: { icon: "?", text: "Reprocessing outcome unknown", tone: "held", note: "The result is looked up again; the request is never repeated automatically." }
 };
 
+/** The mark shown once the study has been discarded and reset. */
 export const DISCARDED: Mark = { icon: "↺", text: "Study discarded and reset", tone: "neutral", note: "The held incident was not fixed." };
 
+/** The button label for each intent the incident can offer next. */
 export const INTENT_LABELS: Record<LabIntent, string> = {
   "scenario.start": "Start this scenario",
   "scenario.restore-calibration": "Restore calibration (application action)",
@@ -86,16 +94,19 @@ export const HOLD_IS_THE_END: Partial<Record<LabScenarioId, string>> = {
   "conflicting-readings": "Holding is where this story ends: nothing says which reading is true, and there is no force-skip, so each retry holds again. Returning the bench discards this study, which doesn't fix the incident."
 };
 
+/** Who a step in the incident timeline came from. */
 export type StepOrigin = "Application action" | "Library observation" | "Browser observation";
 const ORIGINS: Record<LabIncidentSummary["steps"][number]["origin"], StepOrigin> = { application: "Application action", library: "Library observation" };
 
 /** Something the page's own SDK reported, such as a subscription state change. */
 export interface BrowserStep { at: string; text: string }
+/** One timeline step, from the backend's projection or the page's own SDK. */
 export interface IncidentStep { at: string; origin: StepOrigin; text: string }
 
 /** How many steps the panel shows; the projection is bounded too. */
 export const STEPS_SHOWN = 50;
 
+/** What the incident panel renders, as incidentView builds it. */
 export interface IncidentView {
   label: string;
   reason: string;
@@ -119,6 +130,7 @@ export interface IncidentView {
   announcement: string;
 }
 
+/** The panel's view of one served incident. Browser steps from before the incident opened are dropped, and the merged timeline keeps the newest STEPS_SHOWN. */
 export function incidentView(incident: LabIncidentSummary, browser: readonly BrowserStep[] = []): IncidentView {
   // The backend's sentence about what this evaluation found comes first; the mark's fixed note still says what it didn't do.
   const evaluation = incident.evaluation ? { ...EVALUATION[incident.evaluation.result], note: `${incident.evaluation.summary} ${EVALUATION[incident.evaluation.result].note}` } : null;

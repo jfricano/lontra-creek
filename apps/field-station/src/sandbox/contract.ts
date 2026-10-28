@@ -7,9 +7,12 @@ import type { ManagementOperations, Result, WorkbenchDiscovery as PublishedWorkb
 
 // §3 Session lifecycle (/api/sandbox/status and /api/sandbox/session*).
 
+/** One of the sandbox's at most three slots; slot N's gateway is served at /sandbox/N/socket.io. */
 export type SlotId = 1 | 2 | 3;
+/** The sandbox's only mode: every slot runs synthetic fixture sources, never live data. */
 export type SandboxMode = "synthetic-fixture";
 
+/** What the running sandbox service has installed and how it runs, as status and leases report it. */
 export interface SandboxRuntime {
   /** Exact installed packages, from the running service, not the site build. */
   packages: { streamotter: string; workbench: string };
@@ -30,9 +33,11 @@ export interface SandboxStatus {
   nextFreeAt: string | null;
 }
 
+/** Why a session's sandbox place ended, as its `ended` lease reports it. */
 export type SandboxEndReason =
   | "left" | "returned" | "expired" | "idle" | "unclaimed" | "session-ended" | "slot-failed" | "sandbox-restarted";
 
+/** A session's sandbox place as GET /api/sandbox/session reports it: none, in line, holding a slot, or recently ended. */
 export type SandboxLease =
   | { status: "none"; now: string }
   | { status: "queued"; now: string; position: number; queueLength: number; joinedAt: string; nextFreeAt: string | null; sessionExpiresAt: string }
@@ -50,6 +55,7 @@ export type SandboxLease =
     }
   | { status: "ended"; now: string; reason: SandboxEndReason; endedAt: string };
 
+/** What a successful claim returns: the lease, its current study, and where the preview SDK connects. */
 export interface SandboxConnection {
   leaseId: string;
   studyId: string;
@@ -60,6 +66,7 @@ export interface SandboxConnection {
   gatewayPath: string;
 }
 
+/** The Lontra refusal codes, with each one's status on the lifecycle routes. */
 export type SandboxErrorCode =
   | "invalid-request"        // 400
   | "field-not-editable"     // 400: a candidate changes a server-owned or unlisted field
@@ -75,6 +82,7 @@ export type SandboxErrorCode =
   | "sandbox-unavailable"    // 503
   | "slot-unavailable";      // 503
 
+/** The body of every refusal on the lifecycle routes. */
 export interface SandboxError { error: string; code: SandboxErrorCode }
 
 // §6 WHC-1 host API at /api/sandbox/wb/v1: the published WHC-1 names and shapes from
@@ -119,19 +127,23 @@ export interface SandboxOperations {
   /** Only a preview session minted in the current study. */
   "dev.disconnect": Op<"POST", "/dev/disconnect", "POST /management/v1/dev/disconnect">;
 }
+/** The checked input of a sandbox operation. */
 export type SandboxRequest<O extends SandboxOperation> = SandboxOperations[O]["request"];
+/** The `data` a sandbox operation answers with. */
 export type SandboxResponse<O extends SandboxOperation> = SandboxOperations[O]["response"];
 /** Every /api/sandbox/wb/v1 response: StreamOtter's envelope. Lontra's own code, when there is one, is `error.details.code`. */
 export type SandboxResult<O extends SandboxOperation> = Result<SandboxResponse<O>>;
 
 // §7 Lontra-only download, outside WHC-1: POST /api/sandbox/session/repro.
 
+/** What POST /api/sandbox/session/repro returns: the file name and its JSON content. */
 export interface SandboxReproDownload {
   filename: "lontra-creek-sandbox-repro.json";
   /** JSON text of a SandboxReproBundle, at most 256 KB. */
   content: string;
 }
 
+/** The reproduction file: installed versions, the slot's scenario, this study's operation counts and traces, and what is missing. No identifiers or secrets. */
 export interface SandboxReproBundle {
   format: "lontra-creek.sandbox-repro";
   formatVersion: 1;
@@ -150,12 +162,14 @@ export interface SandboxReproBundle {
 
 // Private: field station ↔ sandbox service (sandbox:7620, Compose network only, bearer token).
 
+/** One slot as the sandbox service's private status reports it; `lease` is null while the slot holds none. */
 export interface SandboxServiceSlot {
   slot: SlotId;
   state: "starting" | "ready" | "leased" | "resetting" | "failed";
   lease: { leaseId: string; studyId: string; expiresAt: string; claimed: boolean } | null;
 }
 
+/** The sandbox service's GET /sandbox/v1/status answer, which the field station polls. */
 export interface SandboxServiceStatus {
   /** Changes when the service restarts, so the field station can say so. */
   bootId: string;

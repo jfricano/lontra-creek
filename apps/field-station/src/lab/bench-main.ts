@@ -9,5 +9,6 @@ await new Promise<void>((resolve, reject) => { api.once('error', reject); api.li
 await runtime.start();
 if (runtime.status().state === 'failed') console.error('Check the bench\'s private configuration and broker; the field station will retry its reset.');
 let stopping = false;
+/** Shuts down once: closes the API and the bench runtime, then exits. */
 async function stop() { if (stopping) return; stopping = true; api.close(); api.closeAllConnections(); await runtime.close(); process.exit(0); }
 process.on('SIGINT', () => void stop()); process.on('SIGTERM', () => void stop());

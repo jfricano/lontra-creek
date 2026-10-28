@@ -14,6 +14,7 @@ import { HttpStatusError } from "./sign-in-retry.ts";
 // this module without Vite's transform, does not.
 const API_ORIGIN = (import.meta.env?.PUBLIC_FIELD_STATION_ORIGIN ?? "").replace(/\/+$/, "");
 
+/** The site API's `/api/config` answer: where the gateway is, the data mode, and the tick length. */
 export interface FieldConfig {
   gatewayOrigin: string;
   gatewayPath: string;
@@ -22,14 +23,17 @@ export interface FieldConfig {
   tickMs: number;
 }
 
+/** Who a badge signs in as; only researchers may watch a holt. */
 export type Role = "volunteer" | "researcher";
 
+/** The site API's answer to a badge request: the badge, its gateway token, and when the token expires. */
 export interface BadgeResponse {
   badge: { subject: string; role: Role; name: string };
   token: string;
   expiresAt: string;
 }
 
+/** Asks the site API where the gateway is. Rejects when the request fails or the API answers with an error status. */
 export async function fetchConfig(signal?: AbortSignal): Promise<FieldConfig> {
   const response = await fetch(`${API_ORIGIN}/api/config`, { cache: "no-store", credentials: "include", ...(signal === undefined ? {} : { signal }) });
   if (!response.ok) throw new Error(`The field station answered ${response.status}.`);

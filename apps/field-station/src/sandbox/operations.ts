@@ -7,19 +7,26 @@
 import { isIdentifier, isPlainObject, streamError, type ErrorCode, type Json, type StreamError } from 'streamotter/contracts';
 import type { SandboxErrorCode, SandboxOperation, SandboxRequest, WorkbenchOperation } from './contract.ts';
 
+/** The WHC-1 host contract version the sandbox serves, reported in discovery and in reproduction bundles. */
 export const HOST_CONTRACT = 1;
+/** Where the field station mounts the WHC-1 host API; operation paths are relative to it. */
 export const API_BASE = '/api/sandbox/wb/v1';
+/** The largest body for config.validate and config.export (64 KB), and the largest candidate; discovery reports it as `maxRequestBytes`. */
 export const CONFIG_BODY_BYTES = 65_536;
 /** How deeply a candidate may nest objects and arrays. The slot's base needs far fewer; a deeper one would fail to serialize later. */
 export const CONFIG_DEPTH = 64;
+/** The largest body for any other operation and for the lifecycle routes (4 KB). */
 export const BODY_BYTES = 4_096;
+/** The largest download the sandbox hands out, an export or a reproduction bundle (256 KB). */
 export const DOWNLOAD_BYTES = 262_144;
 /** The most traces one page serves; a larger `limit` (the workbench asks for up to 500) is narrowed to it. */
 export const TRACE_LIMIT = 100;
 /** The largest `limit` accepted, the native maximum. */
 export const TRACE_QUERY_LIMIT = 500;
+/** The largest `count` one dev.fixtures.advance accepts. */
 export const ADVANCE_LIMIT = 10;
 
+/** The allowlist in contract order; a running sandbox serves only those its installed release also supports. */
 export const SANDBOX_OPERATIONS: readonly SandboxOperation[] = ['capabilities', 'health', 'sources', 'channels', 'config', 'config.validate', 'config.export', 'traces', 'source-checks', 'sources.resume', 'preview-sessions', 'dev.principals', 'dev.fixtures.advance', 'dev.disconnect'];
 
 /** Every WHC-1 route, allowlisted or not, so an unlisted operation is 403 and an unknown path 404. */
@@ -31,6 +38,7 @@ const ROUTES: Readonly<Record<string, WorkbenchOperation>> = {
   'GET /failures': 'failures.list', 'POST /failures/export': 'failures.export', 'POST /failures/evaluate': 'failures.evaluate', 'POST /failures/redrive': 'failures.redrive',
   'POST /sources/retry-current': 'sources.retry-current', 'POST /sources/reassess': 'sources.reassess', 'POST /sources/reopen-circuit': 'sources.reopen-circuit'
 };
+/** The WHC-1 operation a method and path (relative to the API base) name, allowlisted or not, or null for an unknown route. */
 export function routeOperation(method: string, path: string): WorkbenchOperation | null {
   return ROUTES[`${method} ${path}`] ?? (method === 'GET' && /^\/failures\/[^/]+$/.test(path) ? 'failures.show' : null);
 }
@@ -41,7 +49,9 @@ export function operationRoute(op: SandboxOperation): { method: 'GET' | 'POST'; 
   const [method, path] = route.split(' ') as ['GET' | 'POST', string];
   return { method, path };
 }
+/** Whether a value names an allowlisted operation. */
 export const isSandboxOperation = (op: unknown): op is SandboxOperation => SANDBOX_OPERATIONS.includes(op as SandboxOperation);
+/** The body limit for an operation: CONFIG_BODY_BYTES for config candidates, BODY_BYTES otherwise. */
 export const bodyLimit = (op: SandboxOperation): number => op.startsWith('config.') ? CONFIG_BODY_BYTES : BODY_BYTES;
 
 /** Status on the lifecycle routes, then the WHC-1 code and status the workbench routes use. */
@@ -60,25 +70,35 @@ const MESSAGES: Readonly<Record<SandboxErrorCode, string>> = {
 
 /** One refusal, rendered as `SandboxError` on lifecycle routes and as a WHC-1 `Result` error on workbench routes. */
 export class SandboxFault extends Error {
+  /** The Lontra code, also kept as `details.code` on the WHC-1 error. */
   readonly code: SandboxErrorCode;
+  /** The HTTP status on the lifecycle routes. */
   readonly status: number;
+  /** The StreamOtter error code on the workbench routes. */
   readonly wbCode: ErrorCode;
+  /** The HTTP status on the workbench routes. */
   readonly wbStatus: number;
+  /** The WHC-1 error details: `code` plus any extra details given. */
   readonly details: Readonly<Record<string, Json>>;
+  /** Statuses and the WHC-1 code come from the fault table unless `options` overrides them; the message defaults to the code's own. */
   constructor(code: SandboxErrorCode, message?: string, options: { wbCode?: ErrorCode; wbStatus?: number; details?: Readonly<Record<string, Json>> } = {}) {
     super(message ?? MESSAGES[code]); const [status, wbCode, wbStatus] = FAULTS[code];
     this.code = code; this.status = status; this.wbCode = options.wbCode ?? wbCode; this.wbStatus = options.wbStatus ?? wbStatus; this.details = { code, ...options.details };
   }
+  /** The fault as a WHC-1 error for the request `requestId`. */
   stream(requestId: string): StreamError { return streamError(this.wbCode, { message: this.message, requestId, details: this.details }); }
 }
+/** An `invalid-request` fault with its own message. */
 export const invalid = (message: string): SandboxFault => new SandboxFault('invalid-request', message);
 
+/** The body as an object that has every required key and no key outside the required and optional ones; otherwise an `invalid-request` fault. */
 function exact(value: unknown, required: readonly string[], optional: readonly string[] = []): Record<string, unknown> {
   if (!isPlainObject(value)) throw invalid('The body must be a JSON object.');
   for (const key of Object.keys(value)) if (!required.includes(key) && !optional.includes(key)) throw invalid(`Unknown field "${key.slice(0, 64)}".`);
   for (const key of required) if (!Object.hasOwn(value, key)) throw invalid(`"${key}" is required.`);
   return value;
 }
+/** A non-empty identifier of word characters, `.`, `:` or `-`, at most `max` long; otherwise an `invalid-request` fault naming the field. */
 const id = (value: unknown, name: string, max = 64): string => { if (typeof value !== 'string' || value.length === 0 || value.length > max || !/^[\w.:-]+$/.test(value)) throw invalid(`${name} must be an identifier of at most ${max} characters.`); return value; };
 
 /** Whether a JSON value nests objects and arrays deeper than `limit` (the value itself is level 1). Iterative, so any depth is safe to check. */

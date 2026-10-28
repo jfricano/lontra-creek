@@ -14,8 +14,11 @@
 import type { ErrorCode, Json, StateChange, StreamError, StreamEvent, Subscription, SubscriptionState, Unlisten } from "streamotter/client";
 import type { AppChannels } from "../generated/streamotter.generated.ts";
 
+/** A channel name from the generated contract. */
 export type ChannelName = keyof AppChannels & string;
+/** The subscription parameters channel `K` takes. */
 export type ChannelParams<K extends ChannelName> = AppChannels[K]["params"];
+/** The state channel `K` delivers. */
 export type ChannelData<K extends ChannelName> = AppChannels[K]["data"];
 
 /** The shared world's revisions are `generation × 10¹² + tick`. */
@@ -26,6 +29,7 @@ export function shortRevision(revision: bigint): string {
   return `r${(revision % TICKS_PER_GENERATION).toString()}`;
 }
 
+/** The SDK's state change, with the view's previous state and epoch added. */
 export interface ViewStateChange extends StateChange<SubscriptionState> {
   /** The view's state before this change. */
   previous: SubscriptionState;
@@ -33,6 +37,7 @@ export interface ViewStateChange extends StateChange<SubscriptionState> {
   epoch: number;
 }
 
+/** A snapshot or update as a view reports it: the SDK's event, its revision as a bigint, and the epoch it belongs to. */
 export interface ViewEvent<D extends Json> {
   /** The SDK's event, unchanged. */
   event: StreamEvent<D>;
@@ -48,6 +53,7 @@ export interface ViewEvent<D extends Json> {
   epoch: number;
 }
 
+/** One SDK subscription and what it has reported so far, as observe returns it. */
 export interface View<K extends ChannelName> {
   readonly channel: K;
   readonly params: ChannelParams<K>;
@@ -70,6 +76,7 @@ export interface View<K extends ChannelName> {
   close(): Promise<void>;
 }
 
+/** The View that observe returns, kept current by the subscription's own events. */
 class ChannelView<K extends ChannelName> implements View<K> {
   readonly channel: K;
   readonly params: ChannelParams<K>;

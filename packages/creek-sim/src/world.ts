@@ -19,20 +19,25 @@ import { initialOtter, stepOtter, type OtterState } from "./otters.ts";
 import { createRng, seedFrom } from "./random.ts";
 import { allViews, TOPICS, type View } from "./views.ts";
 
+/** Version of the serialized world's layout; restore rejects any other. */
 export const WORLD_FORMAT = 1;
 const TICKS_PER_GENERATION = 10n ** 12n;
 
+/** Who is in a holt, and the ticks someone last entered and left (null for never). */
 export interface HoltState {
   occupants: (OtterName | PupName)[];
   lastEntryTick: number | null;
   lastExitTick: number | null;
 }
 
+/** A whole world as plain JSON: its seed, generation, tick, random stream, and every model's state. */
 export interface WorldState {
   format: typeof WORLD_FORMAT;
   seed: number;
+  /** The revision generation; see revisionFor. */
   generation: number;
   tick: number;
+  /** The random stream's 32-bit state after the last tick. */
   rng: number;
   weather: WeatherState;
   stations: Record<StationId, StationState>;
@@ -43,6 +48,7 @@ export interface WorldState {
   published: Record<string, { tick: number; json: string }>;
 }
 
+/** The seed and revision generation for a new world. */
 export interface WorldOptions {
   /** A number, or a name such as "lontra-creek" that is hashed into one. */
   seed: number | string;
@@ -53,10 +59,16 @@ export interface WorldOptions {
 /** A view ready to publish: its topic, record key, and revision. */
 export type Emission = View & { topic: string; revision: string };
 
+/** The revision of a view last changed at `tick`: generation × 10^12 + tick, computed exactly with BigInt, as a decimal string. */
 export function revisionFor(generation: number, tick: number): string {
   return (BigInt(generation) * TICKS_PER_GENERATION + BigInt(tick)).toString();
 }
 
+/**
+ * A new world at tick 0; the same seed always gives the same world. Its first views
+ * count as published at tick 0. Throws a RangeError unless the generation is a
+ * positive safe integer.
+ */
 export function createWorld(options: WorldOptions): WorldState {
   const seed = typeof options.seed === "string" ? seedFrom(options.seed) : options.seed >>> 0;
   const generation = options.generation ?? 1;
@@ -125,26 +137,31 @@ export function currentEmissions(world: WorldState): Emission[] {
   return allViews(world).map(view => emission(world, view, world.published[view.key]!.tick));
 }
 
+/** The world as JSON, for a checkpoint. */
 export function serialize(world: WorldState): string {
   return JSON.stringify(world);
 }
 
+/** A world from serialize's JSON. Throws on any other format; the contents are not otherwise checked. */
 export function restore(text: string): WorldState {
   const world = JSON.parse(text) as WorldState;
   if (world.format !== WORLD_FORMAT) throw new Error(`Unsupported world format ${String(world.format)}; expected ${WORLD_FORMAT}.`);
   return world;
 }
 
+/** A record of one value per item, keyed by the item's id. */
 function byId<K extends string, T extends { id: K }, V>(items: readonly T[], make: (item: T) => V): Record<K, V> {
   const result = {} as Record<K, V>;
   for (const item of items) result[item.id] = make(item);
   return result;
 }
 
+/** A view with its topic and the revision for the tick it last changed. */
 function emission(world: WorldState, view: View, tick: number): Emission {
   return { ...view, topic: TOPICS[view.channel], revision: revisionFor(world.generation, tick) };
 }
 
+/** The views whose data changed since last published, each recorded as published at the current tick. */
 function collect(world: WorldState): Emission[] {
   const changed: Emission[] = [];
   for (const view of allViews(world)) {
@@ -156,6 +173,7 @@ function collect(world: WorldState): Emission[] {
   return changed;
 }
 
+/** Recomputes each holt's occupants (pups stay in unless out with their mother) and stamps entries and exits; nothing counts as an entry at tick 0. */
 function updateHolts(world: WorldState): void {
   for (const holt of HOLTS) {
     const occupants: (OtterName | PupName)[] = [];

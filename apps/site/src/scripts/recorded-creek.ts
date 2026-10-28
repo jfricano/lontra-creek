@@ -2,6 +2,7 @@ import type { GaugeReading, OtterStatus } from "../generated/streamotter.generat
 import { renderStation, renderOtter } from "./field-cards.ts";
 interface Frame { atMs: number; card: number; type: "state" | "data"; change?: { state: string }; event?: { data: GaugeReading | OtterStatus; revision: string; kind: string }; }
 interface Recording { recordedAt: string; where: string; durationMs: number; events: Frame[]; }
+/** Opens the recording dialog in `root` and replays /recordings/creek.json into its cards on the recorded timing, until it ends or the dialog closes. Does nothing when the page has no recording dialog. */
 export async function openRecording(root: HTMLElement): Promise<void> {
   const dialog = root.querySelector<HTMLDialogElement>("[data-recording]");
   if (!dialog) return;

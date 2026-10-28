@@ -38,6 +38,7 @@ export interface SlotBackend {
   open(slot: SlotId): Promise<SlotRuntime>;
 }
 
+/** The service's checked settings (sandboxEnvironment): its token, slots, API listener, the one site origin, and where slot gateways listen (slot N on portBase + N). */
 export interface SandboxSettings { serviceToken: string; slots: SlotId[]; host: string; port: number; siteOrigins: string[]; gatewayHost: string; portBase: number }
 
 /** What Node's image and the container runtime set; with SANDBOX_*, SITE_ORIGIN and NODE_ENV, the only variables the service runs with. */
@@ -81,12 +82,15 @@ const REPRO_TRACES = 500;
 const iso = (n: number): string => new Date(n).toISOString();
 const PATHS = /(?:^|[\s"'=:(])(?:\/(?:etc|home|root|var|tmp|usr|opt|srv|mnt|run|proc|Users|private)\/|file:|[A-Za-z]:\\)/;
 
+/** The sandbox service: each slot's runtime, lease, and study, behind the field station's private API. */
 export class SandboxService {
+  /** New on every start, so the field station can tell that the service restarted. */
   readonly bootId = randomUUID();
   readonly #backend: SlotBackend;
   readonly #token: string;
   readonly #now: () => number;
   readonly #slots = new Map<SlotId, Slot>();
+  /** Every slot starts as `starting` with no runtime; start() opens them. */
   constructor(options: { backend: SlotBackend; slots: readonly SlotId[]; serviceToken: string; now?: () => number }) {
     this.#backend = options.backend; this.#token = options.serviceToken; this.#now = options.now ?? Date.now;
     for (const id of options.slots) this.#slots.set(id, { id, state: 'starting', runtime: null, dirty: null, lease: null, study: null, tail: Promise.resolve() });
@@ -96,7 +100,9 @@ export class SandboxService {
   /** Settles once every slot's queued lifecycle work has finished (tests and shutdown). */
   async settled(): Promise<void> { for (const slot of this.#slots.values()) await slot.tail; }
 
+  /** Cleans every slot and opens its first runtime; a slot that cannot open stays `failed`. */
   async start(): Promise<void> { await Promise.all([...this.#slots.values()].map(slot => this.#run(slot, () => this.#clean(slot)))); }
+  /** Drops every lease and study and tears down every slot's runtime, ignoring cleanup failures (shutdown). */
   async close(): Promise<void> { await Promise.all([...this.#slots.values()].map(slot => this.#run(slot, async () => { slot.lease = null; slot.study = null; await this.#teardown(slot).catch(() => undefined); }))); }
 
   /** Revoke, then close; a failed close keeps the runtime as `dirty` and the slot `failed`. */
@@ -115,6 +121,7 @@ export class SandboxService {
     } catch { slot.state = 'failed'; if (next === 'leased') { slot.lease = null; slot.study = null; } }
   }
 
+  /** The private status: boot ID, availability, the allowlisted operations the installed release discovered, and each slot with its lease. */
   status(): SandboxServiceStatus {
     const described = this.#backend.describe();
     const slots = [...this.#slots.values()].map(slot => ({ slot: slot.id, state: slot.state, lease: slot.lease && slot.study ? { leaseId: slot.lease.leaseId, studyId: slot.study.id, expiresAt: iso(slot.lease.expiresAt), claimed: slot.lease.claimed } : null }));
@@ -129,6 +136,7 @@ export class SandboxService {
     return { healthy: status.availability === 'available' && slots > 0, availability: status.availability, slots };
   }
 
+  /** Leases a `ready` slot to a new lease and study; otherwise `slot-unavailable`. The lease must end in the future. */
   async lease(id: SlotId, input: { leaseId: string; studyId: string; expiresAt: string }): Promise<SandboxServiceStatus> {
     const slot = this.#slot(id); const expires = Date.parse(input.expiresAt);
     if (!/^[\w-]{1,80}$/.test(input.leaseId) || !/^[\w-]{1,80}$/.test(input.studyId) || !(expires > this.#now())) throw invalid('Invalid lease.');
@@ -145,6 +153,7 @@ export class SandboxService {
     if (slot.study.id !== studyId) throw new SandboxFault('stale-study');
     return slot.study;
   }
+  /** Marks the lease claimed, for its own lease and current study only; operations and reproduction bundles are refused until then. */
   claim(id: SlotId, input: { leaseId: unknown; studyId: unknown }): SandboxServiceStatus { const slot = this.#slot(id); this.#current(slot, input.leaseId, input.studyId); slot.lease!.claimed = true; return this.status(); }
 
   /** A new study on the same lease. The old study stops counting at once; cleanup follows in order. */
@@ -293,6 +302,7 @@ export class SandboxService {
     }
   }
 
+  /** The private HTTP server: GET /healthz for anyone, every other route only with the service's bearer token and a JSON object body of at most 72 KB. */
   api(): Server {
     const expected = Buffer.from(`Bearer ${this.#token}`);
     return createServer(async (request, response) => {

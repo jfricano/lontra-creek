@@ -11,6 +11,7 @@ export interface Lane {
   offset: number;
 }
 
+/** What the drawing takes from the creek overview: how fast the water moves, whether it rains, and how dark it is. */
 export interface Conditions {
   /** Current flow relative to baseflow. */
   flowRatio: number;
@@ -28,6 +29,7 @@ interface Capsule {
 const LINE_COUNT = 11;
 const GATE_INSET = 20;
 
+/** Draws the creek on a canvas: labelled lanes that carry updates into the gateway at the right edge. */
 export class CreekCanvas {
   private readonly context: CanvasRenderingContext2D;
   private width = 0;
@@ -48,6 +50,7 @@ export class CreekCanvas {
   private live = false;
   private visible = false;
 
+  /** Draws `lanes` on `canvas` and follows its size, whether it and the tab are visible, and the reduced-motion preference. The water stays still until setLive(true). */
   constructor(private readonly canvas: HTMLCanvasElement, private readonly lanes: readonly Lane[]) {
     const context = canvas.getContext("2d");
     if (context === null) throw new Error("Canvas unavailable");
@@ -63,12 +66,14 @@ export class CreekCanvas {
     this.resize();
   }
 
+  /** Pauses or resumes the animation for the visitor's motion toggle; pausing delivers any update still in flight. */
   setPaused(paused: boolean): void {
     this.paused = paused;
     this.setVisible(this.visible);
     this.draw();
   }
 
+  /** Whether live data is arriving: the water moves only while it is, and the canvas's label says which. */
   setLive(live: boolean): void {
     this.live = live;
     this.canvas.setAttribute("aria-label", live
@@ -78,6 +83,7 @@ export class CreekCanvas {
     this.draw();
   }
 
+  /** Updates flow, weather, and daylight. A running animation draws them on its next frame; with reduced motion they're drawn at once. */
   setConditions(conditions: Conditions): void {
     this.conditions = conditions;
     if (this.reduced) this.draw();
@@ -285,6 +291,7 @@ export class CreekCanvas {
   }
 }
 
+/** Mixes two `#rrggbb` colors, `t` (0 to 1) of the way from `a` to `b`, as an `rgb()` string. */
 function mix(a: string, b: string, t: number): string {
   const pa = [1, 3, 5].map(i => parseInt(a.slice(i, i + 2), 16));
   const pb = [1, 3, 5].map(i => parseInt(b.slice(i, i + 2), 16));

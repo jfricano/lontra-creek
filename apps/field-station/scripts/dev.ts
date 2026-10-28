@@ -19,8 +19,10 @@ import { dirname, join } from "node:path";
 process.env["FIELD_FIXTURE_DAYS"] ??= "7";
 const TICK_MS = Number(process.env["FIELD_TICK_MS"] ?? "2000");
 
-// Number("") is 0, not the default, so an empty or unset LONTRA_* variable
-// must be told apart from a bad one instead of silently binding to port 0.
+/**
+ * Number("") is 0, not the default, so an empty or unset LONTRA_* variable
+ * must be told apart from a bad one instead of silently binding to port 0.
+ */
 function parsePort(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined || raw === "") return fallback;
@@ -68,6 +70,7 @@ const management = await startManagementServer({ gateway, port: MANAGEMENT_PORT,
 // Replay the fixture in study time: one tick's records every TICK_MS.
 let tick = 0;
 let replaying = true;
+/** Releases the next fixture tick's records to the gateway through the management API, until the fixture ends. */
 async function advanceOneTick(): Promise<void> {
   if (tick >= fixtureTickSizes.length) {
     if (replaying) console.log("The fixture has ended. Restart to replay it from the beginning.");
@@ -85,6 +88,7 @@ async function advanceOneTick(): Promise<void> {
   if (!response.ok) console.error(`Advancing the fixture failed: ${response.status} ${await response.text()}`);
 }
 let ticker: NodeJS.Timeout | undefined;
+/** Advances one tick every TICK_MS, each after the previous advance has settled. */
 function schedule(): void {
   ticker = setTimeout(() => {
     advanceOneTick().catch(error => console.error("Advancing the fixture failed", error)).finally(schedule);
@@ -92,11 +96,13 @@ function schedule(): void {
 }
 schedule();
 
+/** Writes an uncached JSON response. */
 function json(response: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers });
   response.end(JSON.stringify(body));
 }
 
+/** Reads a JSON body of at most 4,096 characters as an object ({} when empty or a primitive). */
 async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
   let text = "";
   for await (const chunk of request) {
@@ -142,6 +148,7 @@ console.log([
 ].join("\n"));
 
 let stopping = false;
+/** Closes the API, the workbench, and the gateway, then exits. Runs once. */
 async function stop(): Promise<void> {
   if (stopping) return;
   stopping = true;

@@ -1,7 +1,9 @@
 /**
- * The two examples a sandbox session opens with (LC11-ADR-04, decision 4), shown on
- * /workbench/ as a **design fixture**: fixed values written into the page, not read
- * from a running sandbox. test/workbench-seed.test.ts holds them to their sources:
+ * The two examples a sandbox session opens with (LC11-ADR-04, decision 4). /workbench/'s
+ * "Same shape as your app" shows the station example in full, as a **design fixture**:
+ * fixed values written into the page, not read from a running sandbox. JOB_SEED is no
+ * longer rendered: it backs the jobProgress column of the page's In your app table and
+ * that table's test. test/workbench-seed.test.ts holds both seeds to their sources:
  * the station record is the one the creek simulation (seed "lontra-creek") publishes
  * for LC-03 after its first tick, and its state is what the field station's own Kafka
  * map handler makes of it; the jobProgress record is the first `jobs` fixture record

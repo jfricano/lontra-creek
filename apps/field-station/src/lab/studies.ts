@@ -34,6 +34,7 @@ const STUDY_ID = /^[A-Za-z0-9_-]{16}$/;
 export const CLOSE_WAIT_MS = 5_000;
 /** How long the guard waits for in-flight publications to record where they landed: well under the library's 10-second guard budget. */
 export const ASSESS_WAIT_MS = 3_000;
+/** Ledger summaries kept per bench; the oldest by closedAt are deleted. */
 export const LEDGER_SUMMARIES_KEPT = 20;
 /** Closed study IDs remembered per bench, so none is reopened. */
 const CLOSED_KEPT = 64;
@@ -58,6 +59,7 @@ interface Study {
   inFlight: Set<Promise<unknown>>;
 }
 
+/** Every bench's open study on the field station: its gate, its coverage ledger, and its served state. */
 export class LabStudies {
   readonly #root: string;
   readonly #world: WorldSource;
@@ -69,6 +71,7 @@ export class LabStudies {
   readonly #closed = new Map<BenchId, string[]>();
   /** Discards under way, by bench and study, so a repeated call joins the first. */
   readonly #discarding = new Map<string, Promise<LedgerSummary>>();
+  /** Studies live under <dataDir>/lab; the close and assess waits default to CLOSE_WAIT_MS and ASSESS_WAIT_MS. */
   constructor(options: { dataDir: string; world: WorldSource; now?: () => number; closeWaitMs?: number; assessWaitMs?: number; log?: (message: string) => void }) {
     this.#root = join(options.dataDir, 'lab'); this.#world = options.world; this.#now = options.now ?? Date.now; this.#closeWaitMs = options.closeWaitMs ?? CLOSE_WAIT_MS; this.#assessWaitMs = options.assessWaitMs ?? ASSESS_WAIT_MS; this.#log = options.log ?? (() => undefined);
   }
@@ -77,6 +80,7 @@ export class LabStudies {
   #remember(bench: BenchId, studyId: string): void { const list = this.#closed.get(bench) ?? []; if (!list.includes(studyId)) list.push(studyId); if (list.length > CLOSED_KEPT) list.shift(); this.#closed.set(bench, list); }
   /** The bench's open study, or null. */
   current(bench: BenchId): string | null { const study = this.#current.get(bench); return study?.state === 'open' ? study.studyId : null; }
+  /** Whether a scenario record may be published for the study: only for the bench's open one. */
   publishable(bench: BenchId, studyId: string): boolean { return this.current(bench) === studyId; }
 
   /** Opens a newly leased study. Any other study left on disk for the bench is a stray from a crash: summarized and removed. */

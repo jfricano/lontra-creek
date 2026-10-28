@@ -1,53 +1,46 @@
 ---
 import {Code} from "astro:components";
+import type {SubscriptionState} from "streamotter/contracts";
 import ReferencePage from "../layouts/ReferencePage.astro";
 import {ERROR_FACTS,SUBSCRIPTION_STATE_FACTS,MAP_HANDLER_FAILURE} from "../release-facts.ts";
 import handlerSource from "../snippets/recovery.ts?raw";
 import {excerpt} from "../snippets/excerpt.ts";
 import {RELEASE} from "../site.ts";
-import {AUTOMATIC_ADVANCE_LIMIT,DISPOSITION_LIFECYCLE,FAILURE_SOURCES,INSTALLED_VALIDATOR_ON_FAILURE_HANDLING,NOT_OFFERED,OPERATOR_TABLE,POLICIES,POLICY_MATRIX,REDRIVE_OUTCOMES} from "../failure-handling.ts";
-const accepted=INSTALLED_VALIDATOR_ON_FAILURE_HANDLING.valid;
+// The typical path, then the two ends a subscription can reach from it. Every state is shown, so a new one fails the build.
+const PATH=["idle","authorizing","synchronizing","live","stale","resync-required"] as const satisfies readonly SubscriptionState[];
+const ENDS=["failed","closed"] as const satisfies readonly SubscriptionState[];
+const missing=Object.keys(SUBSCRIPTION_STATE_FACTS).filter(state=>!([...PATH,...ENDS] as string[]).includes(state));
+if(missing.length) throw new Error(`when-it-breaks.astro does not place ${missing.join(", ")} on the state path.`);
+const errorCount=Object.keys(ERROR_FACTS).length;
 ---
 <ReferencePage title="When it breaks" description="Follow the state first, then the error. Some failures affect one view; others pause the shared source.">
-<section><h2>Explore a view’s state</h2><p>This is an explanatory diagram, not a connection to the demo. Select a state to see what it means.</p><div class="reference-card"><label for="state-picker">Subscription state</label><select id="state-picker">{Object.keys(SUBSCRIPTION_STATE_FACTS).map(state=><option value={state}>{state}</option>)}</select><p aria-label="Typical recovery path">authorizing → synchronizing → live ⇄ stale → resync-required<br/>A denied or broken subscription → failed. Unsubscribe → closed.</p>{Object.entries(SUBSCRIPTION_STATE_FACTS).map(([state,fact],i)=><div data-state-detail={state} hidden={i!==0}><h3>{state}</h3><p>{fact.description}</p></div>)}<span class="sr-only" role="status" id="state-announcement"></span></div></section>
-<section><h2>One failure, two perspectives</h2><p>{MAP_HANDLER_FAILURE.summary}</p><div class="reference-grid"><div class="reference-card"><h3>Already-open browser view</h3><p><code>stale / SOURCE_UNAVAILABLE</code></p><p>The view keeps its last data, visibly stale. A source pause is a state event; it does not invoke the subscription’s error listener.</p></div><div class="reference-card"><h3>Development gateway trace</h3><p><code>map / failed / HANDLER_FAILED</code></p><p>The trace identifies the operator’s cause without exposing payloads. The production gateway has no trace endpoint.</p></div></div><p>{MAP_HANDLER_FAILURE.recovery}</p><p>A subscription that starts synchronizing while the source is already paused can receive the source’s specific reason. The normalization above describes an already-open view becoming stale.</p><p>Pausing is the default response to a bad record. In {RELEASE} you can opt into more for two failure classes: see <a href="#source-failure-policies">the source-failure policies</a> below.</p></section>
+<section aria-labelledby="states-title"><h2 id="states-title">Explore a view’s state</h2><p>This is an explanatory diagram, not a connection to the demo. A subscription moves along the typical path below; <code>live</code> and <code>stale</code> alternate as its source pauses and recovers.</p>
+<nav class="state-row" aria-label="States on this page">{PATH.map((state,i)=><>{i>0&&<span aria-hidden="true">{PATH[i-1]==="live"?" ⇄ ":" → "}</span>}<a class="chip" data-state={state} href={`#state-${state}`}>{state}</a></>)}<span class="state-row-ends">Ends: {ENDS.map((state,i)=><>{i>0&&" "}<a class="chip" data-state={state} href={`#state-${state}`}>{state}</a></>)}</span></nav>
+<ol class="state-path" role="list" aria-label="Typical path">{PATH.map(state=><li id={`state-${state}`}><span class="chip" data-state={state}>{state}</span><p>{SUBSCRIPTION_STATE_FACTS[state].description}</p></li>)}</ol>
+<p class="state-ends-title">Two ends: <span class="chip" data-state="closed">closed</span>, from any state, when you unsubscribe or the client closes; <span class="chip" data-state="failed">failed</span>, when an attempt is denied or a handler fails for this subscription.</p>
+<ul class="state-path state-ends" role="list" aria-label="Where a subscription ends">{ENDS.map(state=><li id={`state-${state}`}><span class="chip" data-state={state}>{state}</span><p>{SUBSCRIPTION_STATE_FACTS[state].description}</p></li>)}</ul>
+<div class="reference-card worked"><h3>Worked example: Foul sensor on a Lab bench</h3><p>On a bench, your view of the creek goes <code>authorizing</code>, <code>synchronizing</code>, then <code>live</code>. Foul sensor removes LC-03's calibration table, so the next LC-03 reading fails in the map handler: the source pauses at that record, and your view turns <code>stale</code> with <code>SOURCE_UNAVAILABLE</code>, still showing its last revision. Restore calibration and resume the source, and the gateway retries the same record; your view takes a fresh snapshot and is <code>live</code> again.</p><p><a href="/lab/#control-fouled-sensor">Try it on a bench</a></p></div></section>
+<section><h2>One failure, two perspectives</h2><p>{MAP_HANDLER_FAILURE.summary}</p><div class="reference-grid"><div class="reference-card"><h3>Already-open browser view</h3><p><code>stale / SOURCE_UNAVAILABLE</code></p><p>The view keeps its last data, visibly stale. A source pause is a state event; it does not invoke the subscription’s error listener.</p></div><div class="reference-card"><h3>Development gateway trace</h3><p><code>map / failed / HANDLER_FAILED</code></p><p>The trace identifies the operator’s cause without exposing payloads. The production gateway has no trace endpoint.</p></div></div><p>{MAP_HANDLER_FAILURE.recovery}</p><p>A subscription that starts synchronizing while the source is already paused can receive the source’s specific reason. The normalization above describes an already-open view becoming stale.</p><p>Pausing is the default response to a bad record. In {RELEASE} you can opt into more for two failure classes: see <a href="#source-failure-policies">the source-failure policies</a> below.</p><p><a href="/lab/#control-fouled-sensor">See it: Foul sensor</a></p></section>
 <section><h2>Handle state and errors separately</h2><Code code={excerpt(handlerSource)} lang="ts" theme="night-owl" /><p>The sample is type-checked against the pinned package. A rejected wait does not necessarily stop the subscription underneath it.</p></section>
-<section><h2>Error reference</h2><p>The retryable flag below is the package default. Read the situation and any override: the flag alone does not describe the complete recovery policy.</p>{Object.entries(ERROR_FACTS).map(([code,fact])=><details><summary>{code} — {fact.publicMessage}</summary><p>{fact.meaning}</p><p><strong>Default retryable:</strong> {String(fact.defaultRetryable)}. {fact.retryableNotes}</p><ul>{fact.situations.map(s=><li>{s}</li>)}</ul><p><strong>Browser SDK:</strong> {fact.visibility.browserSdk}</p><p><strong>Gateway trace:</strong> {fact.visibility.gatewayTrace}</p><p><strong>Operator log:</strong> {fact.visibility.operatorLog}</p><p><a href={fact.sources[0]}>Pinned release reference ↗</a></p></details>)}</section>
-<section id="source-failure-policies" aria-labelledby="policies-title" data-failure-policies>
-<h2 id="policies-title">Source-failure policies in streamotter@{RELEASE}</h2>
-<p class="notice"><strong>Opt-in.</strong> Everything above is what happens without a <code>failureHandling</code> section, and it stays the default: a bad record pauses its source. {RELEASE} adds policies you can turn on per source and per failure class; the installed validator accepts a <code>failureHandling</code> section{accepted && <> (this demo's own configuration passes with a <code>quarantine-hold</code> policy added)</>}. The <a href={FAILURE_SOURCES.guide}>Handle bad records guide ↗</a> is the runbook. This section describes the library; what this demo runs is at the end.</p>
-<p>A class with no policy pauses. The policies:</p>
-<dl class="policy-terms">{Object.entries(POLICIES).map(([name,text])=><><dt><code>{name}</code></dt><dd>{text}</dd></>)}</dl>
-<p>There is no {NOT_OFFERED.map((name,i)=><>{i>0&&(i===NOT_OFFERED.length-1?", or ":", ")}<code>{name}</code></>)} option. Automatic continuation stops after {AUTOMATIC_ADVANCE_LIMIT.incidents} distinct incidents in {AUTOMATIC_ADVANCE_LIMIT.windowMs/1000} seconds on one source, by default; the next one is held until an operator reopens the circuit after a repair. A record with several problems takes the most serious class, so a quarantine policy never moves past a record that also has a mapping or integrity problem.</p>
-<div class="table-scroll" tabindex="0" role="region" aria-labelledby="matrix-title"><table><caption id="matrix-title">Failure-policy matrix</caption><thead><tr><th scope="col">Failure</th><th scope="col">Failure class</th><th scope="col">With no policy</th><th scope="col">The most a policy may do</th></tr></thead><tbody>{POLICY_MATRIX.map(row=><tr><th scope="row">{row.failure}</th><td>{row.classes.length?row.classes.map((name,i)=><>{i>0&&", "}<code>{name}</code></>):"Not a record failure"}</td><td>{row.byDefault}</td><td>{row.optIn}</td></tr>)}</tbody></table></div>
-<p class="source-line"><a href={FAILURE_SOURCES.policy}>Guide §3: choose a policy ↗</a> · <a href={FAILURE_SOURCES.barrier}>ADR-15B: failure classes ↗</a></p>
-<h3 id="record-disposition">Record disposition, step by step</h3>
-<p>One failing record under a quarantine policy. Each step is recorded separately, and none of them stands in for another.</p>
-<ol class="lifecycle">{DISPOSITION_LIFECYCLE.map(stage=><li><h4>{stage.name}</h4><p>{stage.what}</p><p><strong>Doesn't mean:</strong> {stage.notProof}</p><p class="source-line">Terms: {stage.terms.map((term,i)=><>{i>0&&", "}<code>{term}</code></>)} · <a href={stage.source}>Source ↗</a></p></li>)}</ol>
-<h3>What the browser sees</h3>
-<p>Subscription states don't change. <code>held</code>, <code>quarantine-unknown</code>, <code>advance-confirmed</code>, and the rest are incident facts for operators, not SDK states. An affected view goes stale with <code>SOURCE_UNAVAILABLE</code>, as without a policy, and becomes live again only through a fresh snapshot that satisfies the recovery boundary. There is no “live with gaps” state.</p>
-<h3>Operator actions on one incident</h3>
-<p>Commands of the local <code>streamotter</code> CLI, which reaches the gateway through its operator socket on the gateway's own machine. They are never browser controls, and visitors to this site can't reach them. Every action that changes state names the revision it expects; there is no force, wildcard, or bulk form.</p>
-<div class="table-scroll" tabindex="0" role="region" aria-label="Operator actions"><table><thead><tr><th scope="col">Command</th><th scope="col">What it does</th><th scope="col">Changes state</th></tr></thead><tbody>{OPERATOR_TABLE.map(action=><tr><th scope="row"><code>streamotter {action.command}</code></th><td>{action.what}</td><td>{action.mutates?"Yes":"No"}</td></tr>)}</tbody></table></div>
-<p>A redrive records one of four outcomes. None of them means a business action completed or that every browser rendered the result.</p>
-<dl class="policy-terms">{Object.entries(REDRIVE_OUTCOMES).map(([name,text])=><><dt><code>{name}</code></dt><dd>{text}</dd></>)}</dl>
-<p class="source-line"><a href={FAILURE_SOURCES.operate}>Guide §5.2: act ↗</a> · <a href={FAILURE_SOURCES.operator}>V1.1 API §6: operator service ↗</a> · <a href={FAILURE_SOURCES.redrive}>ADR-15C ↗</a></p>
-<h3>What this demo runs</h3>
-<p>The live creek's gateway and the walkthrough configure no failure policies: a bad record on the creek pauses its source, as described above. Only the Failure Lab's benches can run with failure handling, each bench's gateway on its own copy of the creek, and only when the Lab's deployment turns it on with <code>LAB_FAILURE_HANDLING</code>; it is off unless set. Set to <code>retry</code>, the benches get bounded retries for transient mapper errors. Set to <code>quarantine</code>, for a deployment whose Kafka authorization is verified for it, they also quarantine with a recovery guard. The Lab's <a href="/lab/#source-failures">Source failures section</a> lists the exercises built on these policies; it asks the demo's backend which of them its benches can run, and gives the reason for any it can't.</p>
-</section>
+<section id="source-failure-policies" aria-labelledby="policies-title"><h2 id="policies-title">Source-failure policies</h2>
+<p>Pausing is the default: a bad record pauses its source and views go stale. {RELEASE} adds opt-in policies per source and failure class (bounded retry, quarantine with a recovery guard, and no force-skip). The live creek runs none of them; the Failure Lab's benches can. <a href="/failure-reference/#source-failure-policies">Read the policies</a>.</p>
+<p id="record-disposition">Record disposition, step by step, is in the <a href="/failure-reference/#record-disposition">failure reference</a>.</p></section>
+<section id="what-this-demo-runs" aria-labelledby="demo-runs-title"><h2 id="demo-runs-title">What this demo runs</h2>
+<p>The live creek's gateway and the walkthrough configure no failure policies: a bad record on the creek pauses its source, as described above. Only the Failure Lab's benches can run with failure handling, each bench's gateway on its own copy of the creek, and only when the Lab's deployment turns it on with <code>LAB_FAILURE_HANDLING</code>; it is off unless set. Set to <code>retry</code>, the benches get bounded retries for transient mapper errors. Set to <code>quarantine</code>, for a deployment whose Kafka authorization is verified for it, they also quarantine with a recovery guard. The Lab's <a href="/lab/#source-failures">Source failures section</a> lists the exercises built on these policies; it asks the demo's backend which of them its benches can run, and gives the reason for any it can't.</p></section>
+<section aria-labelledby="errors-title"><h2 id="errors-title">Error reference</h2><p>All {errorCount} error codes in {RELEASE}, each with its message, its default retry behavior, and where it shows up, are in the <a href="/failure-reference/#error-reference">failure reference</a>.</p></section>
 </ReferencePage>
-<script>
-const picker=document.querySelector<HTMLSelectElement>("#state-picker")!;
-picker.addEventListener("change",()=>{for(const node of document.querySelectorAll<HTMLElement>("[data-state-detail]"))node.hidden=node.dataset["stateDetail"]!==picker.value;document.querySelector("#state-announcement")!.textContent=`Showing ${picker.value}.`;});
-</script>
 <style>
-.policy-terms { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:10px 18px; margin-block:16px; }
-.policy-terms dd { margin:0; }
-caption { text-align:left; font-weight:700; padding-bottom:10px; }
-.lifecycle { display:grid; gap:14px; padding-inline-start:24px; }
-.lifecycle li { padding:16px 18px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); }
-.lifecycle h4 { margin:0 0 6px; }
-.source-line { font-size:.88rem; color:var(--ink-2); }
-[data-failure-policies] h3 { margin-top:32px; }
-@media (max-width:560px) { .policy-terms { grid-template-columns:minmax(0,1fr); } .policy-terms dd { margin-bottom:8px; } }
+.state-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 2px; margin-top:16px; color:var(--ink-2); }
+/* The chips here are links: a touch target of at least 24px (WCAG 2.5.8); the badge look stays everywhere else. */
+.state-row a.chip { text-decoration:none; padding:8px 10px; font-size:.78rem; }
+.state-row-ends { margin-left:18px; display:inline-flex; gap:6px; align-items:center; }
+.state-path { display:grid; gap:10px; padding:0; margin:16px 0 0; list-style:none; }
+.state-path li { display:grid; grid-template-columns:10.5rem minmax(0,1fr); gap:6px 18px; align-items:start; padding:14px 18px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); }
+.state-path .chip { justify-self:start; margin-top:3px; }
+.state-path p { margin:0; }
+.state-ends-title { margin-top:20px; }
+.state-ends { margin-top:10px; }
+.worked { margin-top:24px; }
+.worked p + p { margin-top:12px; }
+@media (max-width:560px) { .state-path li { grid-template-columns:minmax(0,1fr); } }
 </style>

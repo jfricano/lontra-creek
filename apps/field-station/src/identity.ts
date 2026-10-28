@@ -11,8 +11,10 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { TENANT_ID } from "@lontra-creek/sim";
 import type { Principal } from "streamotter/contracts";
 
+/** A visitor's role; only researchers may read the holt channel. */
 export type Role = "volunteer" | "researcher";
 
+/** Who a visitor is, as signed into their gateway tokens. */
 export interface Badge {
   subject: string;
   role: Role;
@@ -20,11 +22,13 @@ export interface Badge {
   name: string;
 }
 
+/** A signed gateway token and its expiry as an ISO 8601 time. */
 export interface IssuedToken {
   token: string;
   expiresAt: string;
 }
 
+/** An environment secret of at least 32 characters. Otherwise the development value, except in production, where it throws. */
 function secret(env: NodeJS.ProcessEnv, name: string, development: string): string {
   const configured = env[name];
   if (configured !== undefined && configured.length >= 32) return configured;
@@ -55,10 +59,12 @@ export function relayToken(env: NodeJS.ProcessEnv = process.env): string {
   return secret(env, "LAB_RELAY_TOKEN", "lontra-creek-development-relay-token-never-in-production");
 }
 
+/** HMAC-SHA256 of a token payload under the secret, base64url. */
 function sign(payload: string, secret: string): string {
   return createHmac("sha256", secret).update(payload).digest("base64url");
 }
 
+/** Signs a gateway token for a badge, valid for ttlSeconds, with a fresh session ID every time. */
 export function issueToken(badge: Badge, options: { secret: string; ttlSeconds: number; now?: number }): IssuedToken {
   const expiresAt = new Date((options.now ?? Date.now()) + options.ttlSeconds * 1_000).toISOString();
   const payload = Buffer.from(JSON.stringify({ sub: badge.subject, role: badge.role, name: badge.name, sid: randomUUID(), exp: expiresAt })).toString("base64url");
@@ -85,6 +91,7 @@ export function verifyToken(token: string, secret: string, now = Date.now()): Pr
   return { subject: sub, tenantId: TENANT_ID, sessionId: sid, expiresAt: exp, claims: { role, name } };
 }
 
+/** True when the principal's badge carries the researcher role. */
 export function isResearcher(principal: Principal): boolean {
   return principal.claims["role"] === "researcher";
 }

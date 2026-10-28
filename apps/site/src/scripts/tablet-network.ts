@@ -14,18 +14,22 @@
  */
 import { bootstrapTabletNetwork } from "./tablet-network-bootstrap.ts";
 
+/** Installs the tablet network if Base's head script hasn't already; later calls change nothing. */
 export function installTabletNetwork(): void {
   bootstrapTabletNetwork();
 }
 
+/** Whether this page's tablet network is up. */
 export function isOnline(): boolean {
   return bootstrapTabletNetwork().online;
 }
 
+/** Takes the tablet network down, closing this page's open WebSockets (except the dev server's reload socket), or brings it back. Setting the current value does nothing. */
 export function setOnline(value: boolean): void {
   bootstrapTabletNetwork().setOnline(value);
 }
 
+/** Calls `listener` each time the network goes down or comes back. Returns a function that stops it. */
 export function onNetworkChange(listener: (online: boolean) => void): () => void {
   return bootstrapTabletNetwork().onChange(listener);
 }

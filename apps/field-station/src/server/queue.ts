@@ -19,6 +19,7 @@ export interface Publisher {
   close(): Promise<void>;
 }
 
+/** The latest pending record per key, sent to a Publisher one batch at a time as described above. */
 export class PublishQueue {
   readonly #publisher: Publisher;
   readonly #log: (message: string) => void;
@@ -27,6 +28,7 @@ export class PublishQueue {
   #healthy = false;
   #lastError: string | null = null;
 
+  /** A queue that sends to `publisher` and logs when publishing fails or recovers (to the console by default). */
   constructor(publisher: Publisher, log: (message: string) => void = message => console.log(message)) {
     this.#publisher = publisher;
     this.#log = log;
@@ -37,10 +39,12 @@ export class PublishQueue {
     return this.#healthy;
   }
 
+  /** Records waiting for an acknowledgment, including those in the batch in flight. */
   get size(): number {
     return this.#pending.size;
   }
 
+  /** Queues a record, replacing any pending record with the same key. Sends nothing until flush. */
   set(record: OutgoingRecord): void {
     this.#pending.set(record.key, record);
   }

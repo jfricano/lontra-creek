@@ -16,6 +16,7 @@ const BASEFLOW_LC02 = 61;
 const WHY_DROPPED = `<span class="lc-why"><b>Why it matters:</b> a dashboard that keeps showing the last value it got looks current even after its connection dies. StreamOtter marks each view stale once it can no longer vouch for that view.</span>`;
 const WHY_RESTORED = `<span class="lc-why"><b>Why it matters:</b> each view is current again as soon as its fresh snapshot lands. The app's snapshot handler supplies that state, so there's nothing to replay or catch up on.</span>`;
 
+/** Runs the home page's live panel in `root`: three cards and the creek overview, the SDK log, the creek canvas, the drop and restore buttons, and the idle pause. Resolves once the site API has answered and the views are watched. */
 export async function mountLiveCreek(root: HTMLElement): Promise<void> {
   const log = createSdkLog($(root, "[data-log]"), $(root, "[data-announce]"));
   const connection = $(root, "[data-connection]");

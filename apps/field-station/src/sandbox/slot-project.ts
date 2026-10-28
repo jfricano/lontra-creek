@@ -19,6 +19,7 @@ import { fromRecord, instanceKey, toRecord, type FieldRecord } from '../records.
 import type { SlotId } from './contract.ts';
 import type { EditableMaxima } from './editor.ts';
 
+/** The slot's two channels: the creek's `station` and the scaffold's `jobProgress`. */
 export type SlotChannels = {
   station: ChannelContract<{ stationId: string }, Json, 1>;
   jobProgress: ChannelContract<{ jobId: string }, Json, 1>;
@@ -35,6 +36,7 @@ export const CREEK_FIXTURE_TICKS = TICKS_PER_DAY;
 export const CREEK_PRINCIPAL: Principal = { subject: 'creek-volunteer', tenantId: TENANT_ID, sessionId: 'sandbox-creek-volunteer', expiresAt: '2099-01-01T00:00:00.000Z', claims: { role: 'volunteer', name: 'Volunteer' } };
 /** The scaffold's own development principal, verbatim, who previews `jobProgress` (tenant local). */
 export const SCAFFOLD_PRINCIPAL: Principal = { subject: 'developer', tenantId: 'local', sessionId: 'dev-session', expiresAt: '2099-01-01T00:00:00.000Z', claims: {} };
+/** The slot's development principals by reference: the only ones a preview may name. */
 export const SLOT_PRINCIPALS: Readonly<Record<string, Principal>> = { 'creek-volunteer': CREEK_PRINCIPAL, developer: SCAFFOLD_PRINCIPAL };
 
 /** The scaffold's fixture records for its `jobs` source, verbatim. */

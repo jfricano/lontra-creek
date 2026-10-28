@@ -7,6 +7,7 @@ import type { CapabilityOptions } from './capabilities.ts';
 import { FAILURE_PROFILES } from './bench.ts';
 import { LabIntents, type IntentLease, type IntentPool } from './intents.ts';
 import type { LabStudies, ScenarioSink } from './studies.ts';
+/** A bench's private API by bench number; throws a LabError for an error answer (benchError), and otherwise only when the bench can't be reached. */
 export interface BenchClient { call<T>(bench: BenchId, path: string, method?: string, body?: unknown): Promise<T>; }
 /** The publisher gate (studies.ts): opened when a lease is granted on a study, closed before any reset is asked for. `current` is the study it holds open. */
 export interface StudyGate { open(bench: BenchId, studyId: string): void; close(bench: BenchId, studyId: string): Promise<unknown>; current(bench: BenchId): string | null; }
@@ -35,6 +36,7 @@ export class LeasePool {
   #tail: Promise<unknown> = Promise.resolve();
   /** Set once initialize() has reset every bench. The API listens first, and nothing is granted or polled before then. */
   #initialized = false;
+  /** Every bench is `unavailable` until initialize() resets it. Leases last MAX_LEASE_MS unless given (a longer one is a RangeError), and the line holds 50. The pool registers with the shared address cap, or with its own when none is given. */
   constructor(options: { client: BenchClient; benches: BenchId[]; gatewayOrigin: string; now?: () => number; leaseMs?: number; queueMax?: number; cap?: AddressCap; studies?: StudyGate; capabilities?: CapabilityOptions }) {
     this.#client = options.client; this.#studies = options.studies; this.capabilityOptions = options.capabilities ?? { profile: 'off', localExercises: false }; this.#profile = this.capabilityOptions.profile; this.#now = options.now ?? Date.now; this.#leaseMs = options.leaseMs ?? MAX_LEASE_MS; this.#queueMax = options.queueMax ?? 50; this.#origin = options.gatewayOrigin;
     if (this.#leaseMs > MAX_LEASE_MS) throw new RangeError(`A lease can last at most ${MAX_LEASE_MS / 1000} seconds; benches refuse longer ones.`);
@@ -43,8 +45,11 @@ export class LeasePool {
   }
   /** Places (leases and places in line) this client address holds here; the cap counts every pool. */
   placesFor(address: string): number { return [...this.#places.values()].filter(p => p.address === address).length; }
+  /** Whether this deployment has any benches. */
   get enabled(): boolean { return this.#slots.size > 0; }
+  /** Runs an operation in the pool's queue, after every one queued before it; a failure doesn't stop the queue. */
   run<T>(operation: () => Promise<T>): Promise<T> { const next = this.#tail.then(operation); this.#tail = next.catch(() => undefined); return next; }
+  /** Resets every bench in turn, in the queue; nothing is granted or polled until it has. */
   async initialize(): Promise<void> { await this.run(async () => { for (const bench of this.#slots.keys()) await this.#reset(bench); this.#initialized = true; }); }
   async #reset(bench: BenchId): Promise<void> {
     const slot = this.#slots.get(bench)!; slot.state = 'resetting'; slot.resetAt = this.#now(); slot.nextPoll = 0;
@@ -79,6 +84,7 @@ export class LeasePool {
     this.#ended.set(place.session.subject, { status: 'ended', now: iso(this.#now()), reason, endedAt: iso(this.#now()), bench: place.lease?.bench ?? null });
     if (place.lease) await this.#reset(place.lease.bench);
   }
+  /** Ends what is due, polls each bench every 5 s (and retries an unavailable one), and grants ready benches to the line in order. Runs in the queue. */
   async sweep(): Promise<void> {
     if (!this.#initialized) return;
     const now = this.#now();
@@ -133,11 +139,14 @@ export class LeasePool {
     }
   }
   #open(bench: BenchId, studyId: string | undefined): boolean { if (!studyId) return false; try { this.#studies!.open(bench, studyId); return true; } catch { return false; } }
+  /** Keeps the session's place alive, unless it has already gone idle; the next sweep ends an idle place. */
   heartbeat(session: SessionClaims): void { const place = this.#places.get(session.subject); if (place && this.#now() - place.heartbeat < (place.lease ? 30_000 : 90_000)) place.heartbeat = this.#now(); }
+  /** The public Lab status: each bench's state, the line's length, and when the first lease ends while no bench is ready. */
   status(): LabStatus {
     const leases = [...this.#places.values()].flatMap(p => p.lease ? [p.lease] : []);
     return { enabled: this.enabled, now: iso(this.#now()), benches: [...this.#slots].map(([bench, slot]) => ({ bench, state: slot.state })), queueLength: [...this.#places.values()].filter(p => !p.lease).length, nextFreeAt: [...this.#slots.values()].some(s => s.state === 'ready') || !leases.length ? null : iso(Math.min(...leases.map(l => l.expires))) };
   }
+  /** The session's lease as its page sees it: in line, holding a bench, recently ended, or none. */
   view(session: SessionClaims): LabLease {
     const now = iso(this.#now()); const place = this.#places.get(session.subject);
     if (!place) return { ...(this.#ended.get(session.subject) ?? { status: 'none' }), now };
@@ -145,6 +154,7 @@ export class LeasePool {
     if (!lease) { const queue = [...this.#places.values()].filter(p => !p.lease); return { status: 'queued', now, position: queue.indexOf(place) + 1, queueLength: queue.length, joinedAt: iso(place.joined), nextFreeAt: this.status().nextFreeAt, sessionExpiresAt: iso(place.session.exp) }; }
     return { status: lease.claimed ? 'active' : 'ready', now, leaseId: lease.id, bench: lease.bench, grantedAt: iso(lease.granted), expiresAt: iso(lease.expires), claimBy: lease.claimed ? null : iso(lease.granted + 30_000), nextActionAt: iso(lease.nextAction), benchState: this.#slots.get(lease.bench)!.status!.scenario };
   }
+  /** Joins the line and sweeps, so a free bench is granted at once; idempotent. Refused when no bench is available, the address holds its places, or the line is full. */
   async join(session: SessionClaims, address: string): Promise<LabLease> {
     if (this.#places.has(session.subject)) return this.view(session);
     if (!this.enabled || [...this.#slots.values()].every(s => s.state === 'unavailable')) throw new LabError('lab-unavailable', 503);
@@ -157,10 +167,13 @@ export class LeasePool {
     const place = this.#places.get(old.subject); if (!place) return;
     await this.#end(place, 'session-ended'); this.#ended.set(next.subject, this.#ended.get(old.subject)!); this.#ended.delete(old.subject);
   }
+  /** Leaves the line (`left`) or returns the bench (`returned`), which resets it, then sweeps. */
   async leave(session: SessionClaims): Promise<LabLease> { const place = this.#places.get(session.subject); if (place) await this.#end(place, place.lease ? 'returned' : 'left'); await this.sweep(); return this.view(session); }
   #lease(session: SessionClaims, active = false): NonNullable<Place['lease']> { const lease = this.#places.get(session.subject)?.lease; if (!lease || active && !lease.claimed) throw new LabError('no-lease', 409); return lease; }
   async #call<T>(session: SessionClaims, path: string, body?: unknown): Promise<T> { const lease = this.#lease(session); try { return await this.#client.call<T>(lease.bench, path, body === undefined ? 'GET' : 'POST', body); } catch (error) { if (error instanceof LabError && error.status < 500) throw error; await this.#end(this.#places.get(session.subject)!, 'bench-failed'); throw new LabError('bench-unavailable', 503); } }
+  /** A bench token for the session's lease, which claims it, with where the SDK connects. */
   async token(session: SessionClaims): Promise<LabToken> { const lease = this.#lease(session); const token = await this.#call<{ token: string; expiresAt: string }>(session, '/bench/v1/tokens', { leaseId: lease.id }); lease.claimed = true; return { ...token, bench: lease.bench, gatewayOrigin: this.#origin, gatewayPath: `/lab/${lease.bench}/socket.io` }; }
+  /** Carries out a scenario action on the claimed lease, at most one a second. */
   async action(session: SessionClaims, action: LabAction): Promise<LabActionResult> { const lease = this.#lease(session, true); if (this.#now() < lease.nextAction) throw new LabError('too-many-actions', 429); const result = await this.#call<{ at: string; scenario: BenchStatus['scenario'] }>(session, '/bench/v1/actions', { leaseId: lease.id, action }); lease.nextAction = this.#now() + 1000; this.#slots.get(lease.bench)!.status!.scenario = result.scenario; return { action, at: result.at, nextActionAt: iso(lease.nextAction), benchState: result.scenario }; }
   /** The intent surface's view of the pool (intents.ts). */
   intentPool(): IntentPool {
@@ -173,6 +186,7 @@ export class LeasePool {
       bench: (bench, path, method, body) => this.#client.call(bench, path, method, body)
     };
   }
+  /** The claimed lease's bench feed after the cursor `after`. */
   async feed(session: SessionClaims, after?: string): Promise<LabFeedPage> { const lease = this.#lease(session, true); return this.#call(session, `/bench/v1/feed?leaseId=${encodeURIComponent(lease.id)}&after=${encodeURIComponent(after ?? '')}`); }
 }
 /**
@@ -195,6 +209,7 @@ export function capabilityOptions(env: NodeJS.ProcessEnv): CapabilityOptions {
   if (!FAILURE_PROFILES.includes(profile)) throw new Error('LAB_FAILURE_HANDLING must be off, retry, or quarantine.');
   return { profile, localExercises: env['LAB_LOCAL_EXERCISES'] === '1' };
 }
+/** The pool for LAB_BENCH_API_URLS (none: the Lab is disabled), with intents attached, and the benches' service tokens. Throws on more than three benches, a short token, or a bad lease or queue setting. */
 export function configuredLab(env: NodeJS.ProcessEnv, gatewayOrigin: string, cap?: AddressCap, studies?: LabStudies, sink?: ScenarioSink): { pool: LeasePool; tokens: string[] } {
   const urls = (env['LAB_BENCH_API_URLS'] ?? '').split(',').filter(Boolean).map(value => new URL(value).origin);
   if (urls.length > 3) throw new Error('At most three Lab benches are supported.');

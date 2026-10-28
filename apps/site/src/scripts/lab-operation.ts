@@ -14,10 +14,12 @@
 import type { LabErrorCode, LabIncidentSummary, LabIntent, LabIntentRequest, LabOperation, LabScenarioId } from "../../../field-station/src/lab/contract.ts";
 import { HttpStatusError } from "./sign-in-retry.ts";
 
+/** How often a pending operation is looked up, and the first resend's delay (each later resend waits twice as long). */
 export const OPERATION_POLL_MS = 1_000;
 /** How many times a lost answer is sent again, with the same `requestId`, before the page says it doesn't know. */
 export const RESEND_LIMIT = 3;
 
+/** An operation's status as the field station reports it; isPending says which ones can still change. */
 export type OperationStatus = LabOperation["status"];
 
 /** The only statuses that change: the page keeps looking the operation up, and the controls wait. Every other status is final. */
@@ -26,6 +28,7 @@ export function isPending(status: OperationStatus): boolean { return status === 
 /** A fresh idempotency key for one visitor decision: a UUID is 36 of `A-Z a-z 0-9 -`, inside the contract's 8 to 64. */
 export function newRequestId(): string { return crypto.randomUUID(); }
 
+/** The body that starts `scenario` on the visitor's bench. */
 export function startRequest(scenario: LabScenarioId, requestId: string): LabIntentRequest {
   return { intent: "scenario.start", requestId, scenario };
 }
@@ -103,6 +106,7 @@ export function isLostAnswer(error: unknown): boolean {
   return !(error instanceof HttpStatusError) || (error.status >= 500 && error.code === undefined);
 }
 
+/** One step of runIntent's progress: the operation as last reported, a refusal, or a lost answer. */
 export type RunUpdate =
   | { kind: "operation"; operation: LabOperation }
   /** Refused before any operation was recorded. */
@@ -110,6 +114,7 @@ export type RunUpdate =
   /** No answer after every resend, or the operation is no longer on this lease: the outcome isn't known. */
   | { kind: "lost"; text: string };
 
+/** The requests and waits runIntent makes: post an intent, look up an operation by ID, and wait (ending early when `signal` aborts). */
 export interface RunIo {
   post(body: LabIntentRequest, signal: AbortSignal): Promise<LabOperation>;
   get(operationId: string, signal: AbortSignal): Promise<LabOperation>;

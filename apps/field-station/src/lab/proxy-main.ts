@@ -15,8 +15,10 @@ import type { AddressInfo } from "node:net";
 import { bench } from "./benches.ts";
 import { proxyControl, startProxy, type Endpoint } from "./proxy.ts";
 
+/** Logs one line, prefixed with the time. */
 const log = (message: string): void => console.log(`${new Date().toISOString()} ${message}`);
 
+/** The `<host>:<port>` in an environment variable, or `fallback` when it is unset; an IPv6 host may be bracketed. */
 function endpoint(name: string, fallback: string): Endpoint {
   const value = process.env[name] ?? fallback;
   const match = /^(.+):(\d+)$/.exec(value);
@@ -40,6 +42,7 @@ await new Promise<void>((resolve, reject) => {
 });
 log(`Control API on ${controlAt.host}:${(control.address() as AddressInfo).port}.`);
 
+/** Closes the control API and the proxy, then exits. */
 async function stop(signal: string): Promise<void> {
   log(`${signal}: stopping.`);
   control.close();

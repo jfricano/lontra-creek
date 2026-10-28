@@ -1,6 +1,7 @@
 import type { FieldClient } from "../scripts/field-client.ts";
 
 // These examples are compiled with the page against the pinned package.
+/** Watches LC-02's gauge and logs its states and data. */
 // snippet:start
 export function dawnSurvey(field: FieldClient) {
   const gauge = field.watch("station", { stationId: "LC-02" });

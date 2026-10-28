@@ -4,8 +4,10 @@
  */
 
 export const TENANT_ID = "lontra-creek";
+/** The watershed's ID, the one parameter value of the creekOverview channel. */
 export const WATERSHED_ID = "lontra";
 
+/** The seven reaches, headwater to confluence. */
 export type ReachId =
   | "alder-spring"
   | "cedar-riffle"
@@ -15,11 +17,13 @@ export type ReachId =
   | "heron-marsh"
   | "confluence";
 
+/** One stretch of the creek and what serves it. */
 export interface Reach {
   id: ReachId;
   name: string;
   /** Distance from Alder Spring, in kilometres. */
   fromKm: number;
+  /** Where the reach ends, in kilometres from Alder Spring. */
   toKm: number;
   /** The telemetry receiver that hears tagged otters in this reach. */
   receiver: ReceiverId;
@@ -29,8 +33,10 @@ export interface Reach {
   station: StationId;
 }
 
+/** Telemetry receivers, one per reach, numbered downstream. */
 export type ReceiverId = "RX-01" | "RX-02" | "RX-03" | "RX-04" | "RX-05" | "RX-06" | "RX-07";
 
+/** Every reach, headwater first; an otter's reach and range are indices into this list. */
 export const REACHES: readonly Reach[] = [
   { id: "alder-spring", name: "Alder Spring", fromKm: 0, toKm: 1.6, receiver: "RX-01", prey: 0.55, station: "LC-01" },
   { id: "cedar-riffle", name: "Cedar Riffle", fromKm: 1.6, toKm: 3.9, receiver: "RX-02", prey: 0.8, station: "LC-01" },
@@ -41,10 +47,13 @@ export const REACHES: readonly Reach[] = [
   { id: "confluence", name: "Marrow River confluence", fromKm: 12.6, toKm: 14.2, receiver: "RX-07", prey: 0.65, station: "LC-04" }
 ];
 
+/** Each reach's index in REACHES. */
 export const REACH_INDEX: Readonly<Record<ReachId, number>> = Object.fromEntries(REACHES.map((reach, index) => [reach.id, index])) as Record<ReachId, number>;
 
+/** The four gauge stations, numbered downstream. */
 export type StationId = "LC-01" | "LC-02" | "LC-03" | "LC-04";
 
+/** A gauge station's fixed parameters, which the hydrology model turns into readings. */
 export interface Station {
   id: StationId;
   name: string;
@@ -66,6 +75,7 @@ export interface Station {
   baseTurbidityNtu: number;
 }
 
+/** Every gauge station, upstream first: storm runoff is routed from each station to the next in this order. */
 export const STATIONS: readonly Station[] = [
   { id: "LC-01", name: "Cedar Riffle", reach: "cedar-riffle", baseflowCfs: 38, area: 1.0, baseStageFt: 2.1, zeroFlowStageFt: 0.5, meanWaterTempC: 10.2, tempSwingC: 1.1, oxygenSwing: 0.05, oxygenDeficit: 0, baseTurbidityNtu: 2.8 },
   { id: "LC-02", name: "Kestrel Bend", reach: "kestrel-bend", baseflowCfs: 61, area: 0.45, baseStageFt: 2.4, zeroFlowStageFt: 0.6, meanWaterTempC: 10.9, tempSwingC: 1.4, oxygenSwing: 0.06, oxygenDeficit: 0.01, baseTurbidityNtu: 3.4 },
@@ -73,23 +83,28 @@ export const STATIONS: readonly Station[] = [
   { id: "LC-04", name: "Heron Marsh", reach: "heron-marsh", baseflowCfs: 118, area: 0.5, baseStageFt: 1.9, zeroFlowStageFt: 0.4, meanWaterTempC: 12.3, tempSwingC: 2.0, oxygenSwing: 0.12, oxygenDeficit: 0.07, baseTurbidityNtu: 6.5 }
 ];
 
+/** The three camera traps. */
 export type CameraId = "CT-1" | "CT-2" | "CT-3";
 /** The reaches with a camera trap; the `reach` channel covers only these. */
 export type CameraReachId = "cedar-riffle" | "beaver-flats" | "heron-marsh";
 
+/** A camera trap and the reach it watches. */
 export interface Camera {
   id: CameraId;
   reach: CameraReachId;
 }
 
+/** Every camera trap, one per camera reach. */
 export const CAMERAS: readonly Camera[] = [
   { id: "CT-1", reach: "cedar-riffle" },
   { id: "CT-2", reach: "beaver-flats" },
   { id: "CT-3", reach: "heron-marsh" }
 ];
 
+/** The two den sites. */
 export type HoltId = "A" | "B";
 
+/** A den site. Only the researcher-only holt channel says where it is. */
 export interface Holt {
   id: HoltId;
   name: string;
@@ -98,15 +113,20 @@ export interface Holt {
   gridRef: string;
 }
 
+/** The den sites: Holt A at Beaver Flats and Holt B at Heron Marsh. */
 export const HOLTS: readonly Holt[] = [
   { id: "A", name: "Holt A", reach: "beaver-flats", gridRef: "LC 4417 2203" },
   { id: "B", name: "Holt B", reach: "heron-marsh", gridRef: "LC 4581 2046" }
 ];
 
+/** Tag IDs of the tracked otters. */
 export type OtterId = "LO-07" | "LO-03" | "LO-11";
+/** Names of the tracked otters. */
 export type OtterName = "Pebble" | "Birch" | "Juniper";
+/** Names of Pebble's pups, which have no tag or channel of their own. */
 export type PupName = "Sprout" | "Skipper";
 
+/** A tagged otter's fixed traits, which steer the behavior model. */
 export interface OtterProfile {
   id: OtterId;
   name: OtterName;
@@ -124,6 +144,7 @@ export interface OtterProfile {
   disperser: boolean;
 }
 
+/** The tagged otters, in the order they are stepped each tick; they share one random stream, so the order is part of the replay. */
 export const OTTERS: readonly OtterProfile[] = [
   { id: "LO-07", name: "Pebble", sex: "female", ageClass: "adult", range: [2, 4], startReach: 3, den: "A", pups: ["Sprout", "Skipper"], roaming: 0.9, disperser: false },
   { id: "LO-03", name: "Birch", sex: "male", ageClass: "adult", range: [0, 6], startReach: 5, den: "B", pups: [], roaming: 1.5, disperser: false },

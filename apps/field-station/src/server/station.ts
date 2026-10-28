@@ -24,6 +24,7 @@ import {
 import { toRecord } from "../records.ts";
 import type { OutgoingRecord, PublishQueue } from "./queue.ts";
 
+/** The name the hosted world's seed is hashed from. */
 export const SEED = "lontra-creek";
 const CHECKPOINT_FORMAT = 1;
 const CHECKPOINT_FILE = "world.json";
@@ -31,6 +32,7 @@ const CHECKPOINT_EVERY_MS = 60 * 60 * 1_000;
 /** Ticks computed per slice while catching up, so the process stays responsive. */
 const CATCH_UP_SLICE = 2_000;
 
+/** What a FieldStation runs on: its publish queue, checkpoint directory, clock, and world generation. */
 export interface StationOptions {
   queue: PublishQueue;
   dataDir: string;
@@ -42,6 +44,7 @@ export interface StationOptions {
   log?: (message: string) => void;
 }
 
+/** An emission as a queue record: its channel's topic, its instance key, and its JSON value. */
 export function outgoing(emission: Emission): OutgoingRecord {
   const record = toRecord(emission);
   return { topic: emission.topic, key: record.key, value: JSON.stringify(record.value) };
@@ -54,6 +57,7 @@ interface Checkpoint {
   world: WorldState;
 }
 
+/** The world on the wall clock, the views it serves for snapshots, and its checkpoints. Call start, then advance each tick. */
 export class FieldStation {
   readonly #options: StationOptions;
   readonly #now: () => number;
@@ -65,32 +69,39 @@ export class FieldStation {
   #lastCheckpointAt = 0;
   #ready = false;
 
+  /** A station that does nothing until start. */
   constructor(options: StationOptions) {
     this.#options = options;
     this.#now = options.now ?? Date.now;
     this.#log = options.log ?? (message => console.log(message));
   }
 
+  /** True once start has caught up, so views can be served. */
   get ready(): boolean {
     return this.#ready;
   }
 
+  /** True once the broker has acknowledged a batch, until a send fails. */
   get kafkaHealthy(): boolean {
     return this.#options.queue.healthy;
   }
 
+  /** Records waiting for the broker, notebooks included. */
   get pendingCount(): number {
     return this.#options.queue.size;
   }
 
+  /** When tick 0 happened, as an ISO 8601 time. */
   get epoch(): string {
     return new Date(this.#epochMs).toISOString();
   }
 
+  /** The world's current tick; 0 before start. */
   get tick(): number {
     return this.#world?.tick ?? 0;
   }
 
+  /** The revision generation this station was configured with. */
   get generation(): number {
     return this.#options.generation;
   }
@@ -118,6 +129,7 @@ export class FieldStation {
     return this.#ready && this.#world !== null ? structuredClone(this.#world) : null;
   }
 
+  /** The study's status for /api/status: tick, study day and time, generation, Kafka state, and pending records. */
   status(): { tick: number; studyDay: number; studyTime: string; generation: number; kafka: "connected" | "unavailable"; pending: number } {
     const time = studyTime(this.tick);
     return { tick: this.tick, studyDay: time.day, studyTime: time.clock, generation: this.generation, kafka: this.kafkaHealthy ? "connected" : "unavailable", pending: this.pendingCount };
@@ -188,6 +200,7 @@ export class FieldStation {
     return this.#options.queue.flush();
   }
 
+  /** Writes the world to world.json in the data directory, through a temporary file and a rename. Does nothing before start. */
   async checkpoint(): Promise<void> {
     const world = this.#world;
     if (world === null) return;

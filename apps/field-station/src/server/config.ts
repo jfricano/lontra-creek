@@ -7,6 +7,7 @@ import { fieldStationSecret, serviceToken } from "../identity.ts";
 import { MAX_BENCHES } from "../lab/benches.ts";
 import { GATEWAY_PATH } from "../project.ts";
 
+/** How the field station's producer reaches Kafka. */
 export interface KafkaSettings {
   brokers: string[];
   /** A CA file turns TLS on. */
@@ -15,15 +16,19 @@ export interface KafkaSettings {
   sasl: { username: string; password: string } | null;
 }
 
+/** The field station's settings, as readConfig reads them at startup. */
 export interface ServerConfig {
   production: boolean;
   kafka: KafkaSettings;
   secret: string;
   serviceToken: string;
+  /** Where the world checkpoint and other local state are written (FIELD_DATA_DIR, default .data). */
   dataDir: string;
   /** When the hosted study began: tick 0. Null outside production means "keep the checkpoint's, or now". */
   epoch: string | null;
+  /** Real milliseconds per tick (FIELD_TICK_MS, default 2000, at least 100). */
   tickMs: number;
+  /** The revision generation (FIELD_GENERATION, default 1); raise it when the simulation's logic changes. */
   generation: number;
   /** Origins allowed to call /api with credentials. */
   siteOrigins: string[];
@@ -37,6 +42,7 @@ export interface ServerConfig {
   labBenches: number;
 }
 
+/** An integer variable of at least `minimum`, or the fallback when unset or empty; throws a RangeError otherwise. */
 function integer(env: NodeJS.ProcessEnv, name: string, fallback: number, minimum: number): number {
   const raw = env[name];
   if (raw === undefined || raw === "") return fallback;
@@ -45,10 +51,16 @@ function integer(env: NodeJS.ProcessEnv, name: string, fallback: number, minimum
   return value;
 }
 
+/** Splits a comma-separated list, trimming items and dropping empty ones. */
 function list(value: string): string[] {
   return value.split(",").map(item => item.trim()).filter(item => item !== "");
 }
 
+/**
+ * Reads and checks the settings. Throws on invalid values and, in production, when
+ * FIELD_EPOCH, a single exact SITE_ORIGIN, GATEWAY_PUBLIC_ORIGIN, either secret, or
+ * Kafka TLS with SCRAM credentials is missing.
+ */
 export function readConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const production = env["NODE_ENV"] === "production";
   const required = (name: string): string => {

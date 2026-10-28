@@ -31,6 +31,7 @@ import { labCapabilities, parseIntent } from '../lab/capabilities.ts';
 
 type Headers = Record<string, string>;
 
+/** Writes a JSON response that is never cached or content-sniffed. */
 function send(response: ServerResponse, status: number, body: unknown, headers: Headers = {}): void {
   response.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
@@ -41,6 +42,7 @@ function send(response: ServerResponse, status: number, body: unknown, headers: 
   response.end(JSON.stringify(body));
 }
 
+/** Reads a JSON body of at most 4 KB as an object ({} when empty or not an object); throws when too large or not JSON. */
 async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
   let text = "";
   for await (const chunk of request) {
@@ -62,6 +64,7 @@ export class RateLimiter {
   readonly #perSecond: number;
   readonly #now: () => number;
 
+  /** A limiter that allows `burst` requests at once and refills `perSecond`. */
   constructor(options: { burst: number; perSecond: number; now?: () => number }) {
     this.#burst = options.burst;
     this.#perSecond = options.perSecond;
@@ -89,6 +92,7 @@ export class RateLimiter {
   }
 }
 
+/** The key a request's client is counted under: X-Client-IP when Caddy set it, else the socket address, through addressKey. */
 export function clientAddress(request: IncomingMessage): string {
   const header = request.headers["x-client-ip"];
   return addressKey((typeof header === "string" && header !== "" ? header : request.socket.remoteAddress) ?? "unknown");
@@ -111,6 +115,11 @@ export function addressKey(address: string): string {
   return `${groups.slice(0, 4).map(group => group.replace(/^0+(?=.)/, "")).join(":")}::/64`;
 }
 
+/**
+ * The public listener: /healthz, then /api with CORS for the site's origins and a
+ * request budget per client (the Lab and the sandbox share a separate one): the Lab,
+ * the sandbox, config, status, badges, and notebook sightings.
+ */
 export function publicApi(options: { config: ServerConfig; station: FieldStation; notebooks: Notebooks; lab?: LeasePool; sandbox?: SandboxPool; limiter?: RateLimiter; log?: (message: string) => void }): Server {
   const { config, station, notebooks } = options;
   const limiter = options.limiter ?? new RateLimiter({ burst: 30, perSecond: 1 });
@@ -271,6 +280,11 @@ function assessRequest(body: Record<string, unknown>): RecoveryAssessRequest | n
   return { studyId, sourceId, record: { topic: r["topic"], partition: r["partition"] as number, offset: r["offset"] } };
 }
 
+/**
+ * The internal listener: snapshots under /internal/views with the service token, and
+ * each Lab bench's snapshots and study routes under /lab-internal/N/ with that
+ * bench's own token.
+ */
 export function internalApi(options: { serviceToken: string; station: FieldStation; notebooks: Notebooks; labTokens?: readonly string[]; studies?: LabStudies }): Server {
   const expected = Buffer.from(`Bearer ${options.serviceToken}`);
   const authorized = (request: IncomingMessage): boolean => {

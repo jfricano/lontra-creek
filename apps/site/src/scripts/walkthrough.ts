@@ -9,6 +9,7 @@ import { excerpt } from "../snippets/excerpt.ts";
 
 const root = document.querySelector<HTMLElement>("[data-walkthrough]");
 if (root !== null) void mount(root);
+/** Runs the /field-station walkthrough in `root`: chapter navigation, the volunteer session and its views, and each chapter's controls. */
 async function mount(root: HTMLElement): Promise<void> {
   function el<T extends HTMLElement = HTMLElement>(selector: string): T {
     const result = root.querySelector<T>(selector); if (!result) throw new Error(`Missing ${selector}`); return result;

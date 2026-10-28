@@ -6,6 +6,7 @@ export interface Rng {
   state: number;
 }
 
+/** A generator seeded with `seed`, truncated to an unsigned 32-bit integer. */
 export function createRng(seed: number): Rng {
   return { state: seed >>> 0 };
 }
@@ -19,6 +20,7 @@ export function next(rng: Rng): number {
   return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
 }
 
+/** A float in [low, high), from one draw. */
 export function range(rng: Rng, low: number, high: number): number {
   return low + (high - low) * next(rng);
 }
@@ -28,6 +30,7 @@ export function int(rng: Rng, low: number, high: number): number {
   return Math.floor(range(rng, low, high + 1));
 }
 
+/** True with the given probability, from one draw. */
 export function chance(rng: Rng, probability: number): boolean {
   return next(rng) < probability;
 }

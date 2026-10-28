@@ -9,16 +9,21 @@ import { daily, MINUTES_PER_TICK, TICKS_PER_DAY } from "./clock.ts";
 import { STATIONS, type Station, type StationId } from "./geography.ts";
 import { int, next, normal, range, type Rng } from "./random.ts";
 
+/** The weather views report: "storm" is rain at intensity 0.7 or more. */
 export type Weather = "clear" | "rain" | "storm";
 
+/** The rain schedule: one rain at a time, 18 to 48 ticks long, the next due 1.2 to 3.5 study days after one ends. */
 export interface WeatherState {
   raining: boolean;
   /** Rainfall intensity, 0–1. */
   intensity: number;
+  /** Ticks of rain left while raining. */
   rainTicksLeft: number;
+  /** The tick at or after which the next rain starts while dry. */
   nextRainTick: number;
 }
 
+/** One gauge station's changing state: storm storage, noise-free values, and what the instruments report. */
 export interface StationState {
   /** Quickflow storage above this station, in cfs·hours. */
   storage: number;
@@ -27,6 +32,7 @@ export interface StationState {
   /** Noise-free flow now and one tick ago; trends and turbidity use these. */
   trueFlowCfs: number;
   previousTrueFlowCfs: number;
+  /** Noise-free turbidity, smoothed toward its storm-driven target each tick. */
   trueTurbidityNtu: number;
   /** Slow, weather-driven drift in water temperature. */
   tempDriftC: number;
@@ -48,11 +54,13 @@ const RATING_EXPONENT = 1.6;
 /** Flow above this multiple of baseflow counts as high water for otters. */
 export const HIGH_FLOW_RATIO = 1.8;
 
+/** Dry weather with the first rain due at tick 60 to 110 (10:00 to 14:10 on study day 1). */
 export function initialWeather(rng: Rng): WeatherState {
   // The first rain comes a few study hours in, so a fresh world shows a storm early.
   return { raining: false, intensity: 0, rainTicksLeft: 0, nextRainTick: int(rng, 60, 110) };
 }
 
+/** Advances the rain schedule one tick: counts a rain down, or starts the next one when due with an intensity from 0.35 to 1. */
 export function stepWeather(weather: WeatherState, tick: number, rng: Rng): void {
   if (weather.raining) {
     weather.rainTicksLeft -= 1;
@@ -68,11 +76,13 @@ export function stepWeather(weather: WeatherState, tick: number, rng: Rng): void
   }
 }
 
+/** "clear" when dry, "storm" at intensity 0.7 or more, otherwise "rain". */
 export function weatherLabel(weather: WeatherState): Weather {
   if (!weather.raining) return "clear";
   return weather.intensity >= 0.7 ? "storm" : "rain";
 }
 
+/** Every station at baseflow with no storm storage, measured once at the given hour. */
 export function initialStations(hour: number, rng: Rng): Record<StationId, StationState> {
   const stations = {} as Record<StationId, StationState>;
   for (const station of STATIONS) {
@@ -96,6 +106,11 @@ export function initialStations(hour: number, rng: Rng): Record<StationId, Stati
   return stations;
 }
 
+/**
+ * Advances every station one tick. Each reservoir takes this tick's rain over its
+ * catchment plus what the station upstream released TRANSIT_TICKS ago, then the
+ * instruments are read.
+ */
 export function stepStations(stations: Record<StationId, StationState>, weather: WeatherState, hour: number, rng: Rng): void {
   // One cloud over a small watershed: every station shares this tick's rainfall.
   const rainfall = weather.raining ? weather.intensity * (0.6 + 0.8 * next(rng)) : 0;
@@ -113,6 +128,7 @@ export function stepStations(stations: Record<StationId, StationState>, weather:
   });
 }
 
+/** Recomputes true flow and every instrument reading from storage and the hour, keeping the previous true flow for the trend and turbidity. */
 function measure(station: Station, state: StationState, hour: number, rng: Rng): void {
   const quick = state.storage / RESERVOIR_HOURS;
   const quickShare = quick / station.baseflowCfs;

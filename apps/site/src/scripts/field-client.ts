@@ -23,16 +23,19 @@ export const UNREACHABLE_AFTER_MS = 15_000;
 /** How long restoring the connection waits for the gateway. */
 export const RECONNECT_TIMEOUT_MS = 15_000;
 
+/** Who the newest token signs in as: the badge's subject, role, and display name. */
 export type Badge = BadgeResponse["badge"];
 
 /** The site API didn't answer, so there is no gateway to connect to. */
 export class FieldStationUnavailableError extends Error {
+  /** `options.cause` carries the failed site API request's error. */
   constructor(options?: ErrorOptions) {
     super("The field station is not answering.", options);
     this.name = "FieldStationUnavailableError";
   }
 }
 
+/** A page's connection to the field station, as openFieldClient returns it. */
 export interface FieldClient {
   /** The site API's answer: the gateway's origin and path, the mode, the tick length. */
   readonly config: FieldConfig;
@@ -72,7 +75,9 @@ export interface FieldClient {
 
 /** Exported for tests only; pages create clients through openFieldClient(). */
 export class PageFieldClient implements FieldClient {
+  /** The site API's answer this client was created with. */
   readonly config: FieldConfig;
+  /** The SDK client; each token it asks for comes from a badge for the current role. */
   readonly client: Client<AppChannels>;
   readonly #badgeListeners = new Set<(badge: Badge) => void>();
   readonly #unreachableListeners = new Set<() => void>();
@@ -84,6 +89,7 @@ export class PageFieldClient implements FieldClient {
   #badge: Badge | null = null;
   #everConnected = false;
 
+  /** Creates the SDK client for the configured gateway, signing in with badges for `role` and retrying transient sign-in failures. */
   constructor(config: FieldConfig, createClient: typeof import("streamotter/client").createClient, role: Role) {
     this.config = config;
     this.#role = role;
@@ -129,32 +135,39 @@ export class PageFieldClient implements FieldClient {
     this.#unreachableTimer = null;
   }
 
+  /** "Local replay of the simulation" in fixture mode, otherwise "Live on Kafka". */
   get sourceLabel(): string {
     return this.config.mode === "fixture" ? "Local replay of the simulation" : "Live on Kafka";
   }
 
+  /** The role the next token is asked for; a failed switchRole puts the previous one back. */
   get role(): Role {
     return this.#role;
   }
 
+  /** The badge behind the newest token, or null before the first one is issued. */
   get badge(): Badge | null {
     return this.#badge;
   }
 
+  /** Whether the client has reached `connected` at least once; the unreachable notice never fires after that. */
   get everConnected(): boolean {
     return this.#everConnected;
   }
 
+  /** Whether this page's tablet network is up. */
   get online(): boolean {
     return isOnline();
   }
 
+  /** Subscribes at the channel's generated version; the first call starts the unreachable countdown. */
   watch<K extends ChannelName>(channel: K, params: ChannelParams<K>): View<K> {
     this.#startUnreachableTimer();
     const channelVersion = channelVersions[channel] as AppChannels[K]["version"];
     return observe(channel, params, this.client.subscribe(channel, { channelVersion, params }));
   }
 
+  /** Drops any pending sign-in retry and reconnects as `role`. On failure the previous role is restored and the error rethrown. */
   switchRole(role: Role, options?: WaitOptions): Promise<void> {
     this.#signIn.cancel();
     const previous = this.#role;
@@ -167,19 +180,25 @@ export class PageFieldClient implements FieldClient {
     });
   }
 
+  /** Takes the tablet network down, which closes this page's gateway sockets. */
   dropConnection(): void {
     setOnline(false);
   }
 
+  /** Brings the tablet network back, drops any pending sign-in retry, and reconnects now, waiting up to RECONNECT_TIMEOUT_MS by default. */
   restoreConnection(options: WaitOptions = { timeoutMs: RECONNECT_TIMEOUT_MS }): Promise<void> {
     setOnline(true);
     this.#signIn.cancel();
     return this.client.reconnect(options);
   }
 
+  /** Listens for each badge issued, including the first. */
   on(event: "badge", listener: (badge: Badge) => void): Unlisten;
+  /** Listens for the tablet network going down or up. */
   on(event: "network", listener: (online: boolean) => void): Unlisten;
+  /** Listens for the gateway staying unreachable after the first watch(). */
   on(event: "unreachable", listener: () => void): Unlisten;
+  /** Network listeners go to the tablet network; badge and unreachable listeners stay on this client. Returns a function that removes the listener. */
   on(event: "badge" | "network" | "unreachable", listener: ((badge: Badge) => void) | ((online: boolean) => void) | (() => void)): Unlisten {
     if (event === "network") return onNetworkChange(listener as (online: boolean) => void);
     const set = (event === "badge" ? this.#badgeListeners : this.#unreachableListeners) as Set<typeof listener>;
@@ -189,6 +208,7 @@ export class PageFieldClient implements FieldClient {
     };
   }
 
+  /** Stops the unreachable countdown and sign-in retries, then closes the SDK client and every view. */
   close(): Promise<void> {
     this.#clearUnreachableTimer();
     this.#signIn.stop();

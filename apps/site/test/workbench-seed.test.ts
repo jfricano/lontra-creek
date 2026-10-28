@@ -9,7 +9,7 @@ import type { Json, SourceRecord } from "streamotter/contracts";
 import { scaffoldFiles } from "streamotter/cli";
 import { createKafkaHandlers } from "../../field-station/src/kafka-handlers.ts";
 import { toRecord, topicFor } from "../../field-station/src/records.ts";
-import { JOB_SEED, STATION_SEED } from "../src/data/workbench-seed.ts";
+import { IN_YOUR_APP, JOB_SEED, STATION_SEED } from "../src/data/workbench-seed.ts";
 
 const context = { signal: new AbortController().signal, requestId: "seed-test" };
 const sourceRecord = (key: string, value: unknown, position: SourceRecord["position"]): SourceRecord =>
@@ -49,4 +49,10 @@ test("the jobProgress design fixture is the pinned init scaffold's first jobs re
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("the In your app table's jobProgress column is the jobProgress design fixture's own values", () => {
+  const app = IN_YOUR_APP.map(row => row.app);
+  for (const expected of [JOB_SEED.channel, `jobId: "${JOB_SEED.params["jobId"]}"`, `revision "${JOB_SEED.state.revision}"`, `tenantId "${JOB_SEED.state.tenantId}"`]) assert.ok(app.includes(expected), expected);
+  for (const field of Object.keys(JOB_SEED.state.data).filter(field => field !== "jobId")) assert.ok(app.some(cell => cell.split(", ").includes(field)), field);
 });

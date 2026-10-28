@@ -24,10 +24,14 @@ export interface StudyStamp {
   time: string;
 }
 
+/** Flow direction since the previous tick: rising or falling when true flow changed by more than 0.3%. */
 export type Trend = "rising" | "falling" | "steady";
+/** Where the public may see an otter: its reach, "withheld" while it dens, or "outside" when it has left the watershed. */
 export type PublicReach = ReachId | "withheld" | "outside";
+/** An otter's activity as the public sees it; "away" while outside the watershed. */
 export type PublicActivity = Activity | "away";
 
+/** The `station` channel's payload: one gauge's rounded readings at the current tick. */
 export interface StationView {
   stationId: StationId;
   name: string;
@@ -42,6 +46,7 @@ export interface StationView {
   weather: Weather;
 }
 
+/** The `otter` channel's payload. While the otter dens, its reach and its last detection's receiver are withheld. */
 export interface OtterView {
   otterId: OtterId;
   name: OtterName;
@@ -56,6 +61,7 @@ export interface OtterView {
   note: string;
 }
 
+/** The `reach` channel's payload: a camera trap's last frame and today's tallies. */
 export interface ReachView {
   reachId: CameraReachId;
   name: string;
@@ -65,6 +71,7 @@ export interface ReachView {
   otterFramesToday: number;
 }
 
+/** The researcher-only `holt` channel's payload, with the den's grid reference. */
 export interface HoltView {
   holtId: HoltId;
   name: string;
@@ -76,6 +83,7 @@ export interface HoltView {
   lastExit: StudyStamp;
 }
 
+/** The `creekOverview` channel's payload: time, weather, and every station and otter in brief. */
 export interface OverviewView {
   watershed: typeof WATERSHED_ID;
   observed: StudyStamp;
@@ -85,6 +93,7 @@ export interface OverviewView {
   otters: { otterId: OtterId; name: OtterName; reachId: PublicReach; activity: PublicActivity }[];
 }
 
+/** Each simulation channel's payload type, by channel name. */
 export interface ChannelViews {
   station: StationView;
   otter: OtterView;
@@ -93,6 +102,7 @@ export interface ChannelViews {
   creekOverview: OverviewView;
 }
 
+/** Each simulation channel's parameters, by channel name. */
 export interface ChannelParams {
   station: { stationId: StationId };
   otter: { otterId: OtterId };
@@ -101,6 +111,7 @@ export interface ChannelParams {
   creekOverview: { watershed: typeof WATERSHED_ID };
 }
 
+/** The channels the simulation publishes; notebooks belong to the field station. */
 export type ChannelName = keyof ChannelViews;
 
 /** The Kafka topic each channel's records are published to. */
@@ -115,8 +126,10 @@ export const TOPICS: Readonly<Record<ChannelName, string>> = {
 /** One channel instance's current view. */
 export type View = { [K in ChannelName]: { channel: K; key: string; params: ChannelParams[K]; data: ChannelViews[K] } }[ChannelName];
 
+/** The stamp for something that hasn't happened. */
 export const NEVER: StudyStamp = { day: 0, time: "--:--" };
 
+/** A tick's study day and "HH:MM" time, or NEVER for null. */
 export function stamp(tick: number | null): StudyStamp {
   if (tick === null) return NEVER;
   const time = studyTime(tick);
@@ -130,11 +143,13 @@ function flow(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+/** Rounds to `digits` decimal places. */
 function fixed(value: number, digits: number): number {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
 }
 
+/** Classifies the relative change from previous to current; within 0.3% either way is steady. */
 function trend(current: number, previous: number): Trend {
   const change = (current - previous) / previous;
   if (change > 0.003) return "rising";
@@ -142,6 +157,7 @@ function trend(current: number, previous: number): Trend {
   return "steady";
 }
 
+/** A gauge's view: readings rounded for display, trend from noise-free flow. */
 function stationView(world: WorldState, id: StationId): StationView {
   const station = STATIONS.find(candidate => candidate.id === id)!;
   const state = world.stations[id];
@@ -160,6 +176,7 @@ function stationView(world: WorldState, id: StationId): StationView {
   };
 }
 
+/** An otter's reach and activity as the public may see them. */
 function publicPlace(state: OtterState): { reachId: PublicReach; reachName: string; activity: PublicActivity } {
   if (state.away) return { reachId: "outside", reachName: "Outside the watershed", activity: "away" };
   if (state.activity === "denning") return { reachId: "withheld", reachName: "Location withheld", activity: "denning" };
@@ -167,6 +184,7 @@ function publicPlace(state: OtterState): { reachId: PublicReach; reachName: stri
   return { reachId: reach.id, reachName: reach.name, activity: state.activity };
 }
 
+/** A one-line field note on what the otter is doing. */
 function otterNote(profile: OtterProfile, state: OtterState): string {
   const pups = profile.pups.join(" and ");
   if (state.away) return "Last heard at the confluence, heading into the Marrow River.";
@@ -186,6 +204,7 @@ function otterNote(profile: OtterProfile, state: OtterState): string {
   }
 }
 
+/** An otter's public view; a detection keeps its time but hides its receiver while the otter dens. */
 function otterView(world: WorldState, id: OtterId): OtterView {
   const profile = OTTERS.find(candidate => candidate.id === id)!;
   const state = world.otters[id];
@@ -207,6 +226,7 @@ function otterView(world: WorldState, id: OtterId): OtterView {
   };
 }
 
+/** A camera's view, with a "none" frame until its first trigger. */
 function reachView(world: WorldState, id: CameraId): ReachView {
   const camera = CAMERAS.find(candidate => candidate.id === id)!;
   const reach = REACHES.find(candidate => candidate.id === camera.reach)!;
@@ -224,6 +244,7 @@ function reachView(world: WorldState, id: CameraId): ReachView {
   };
 }
 
+/** A holt's restricted view. */
 function holtView(world: WorldState, id: HoltId): HoltView {
   const holt = HOLTS.find(candidate => candidate.id === id)!;
   const state = world.holts[id];
@@ -239,6 +260,7 @@ function holtView(world: WorldState, id: HoltId): HoltView {
   };
 }
 
+/** The watershed in brief, built from the station views and the otters' public places. */
 function overviewView(world: WorldState): OverviewView {
   const time = studyTime(world.tick);
   return {

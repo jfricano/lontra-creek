@@ -19,6 +19,7 @@ import { fromRecord, instanceKey, toRecord, type FieldRecord } from "./records.t
 
 const days = Number(process.env["FIELD_FIXTURE_DAYS"] ?? "2");
 if (!Number.isInteger(days) || days < 1 || days > 30) throw new RangeError("FIELD_FIXTURE_DAYS must be an integer from 1 to 30");
+/** Ticks the fixture records: FIELD_FIXTURE_DAYS study days (default 2, at most 30). */
 export const FIXTURE_TICKS = days * TICKS_PER_DAY;
 /** How many records each tick added to the fixture, in order; advancing by these replays one tick at a time. */
 export const fixtureTickSizes: number[] = [];
@@ -35,12 +36,14 @@ while (world.tick < FIXTURE_TICKS) {
   fixtureTickSizes.push(emissions.length);
 }
 
+/** Puts a record in the read model unless it already holds that instance at an equal or newer revision. */
 function apply(record: FieldRecord): void {
   const key = instanceKey(record.channel, record.params);
   const current = readModel.get(key);
   if (current === undefined || BigInt(record.revision) > BigInt(current.revision)) readModel.set(key, record);
 }
 
+/** One channel's handlers: map feeds the read model and snapshots read it; any notebook snapshot is empty and open. */
 function channel<K extends keyof AppChannels>(name: K): ChannelHandlers<AppChannels[K]> {
   type Contract = AppChannels[K];
   return {
@@ -62,6 +65,7 @@ function channel<K extends keyof AppChannels>(name: K): ChannelHandlers<AppChann
 
 const secret = fieldStationSecret();
 
+/** The handlers the development gateway runs: badges verified as in production, without the per-badge handshake cap. */
 export const handlers: HandlerRegistry<AppChannels> = {
   authenticate: ({ token }) => verifyToken(token, secret),
   channels: {
@@ -74,6 +78,7 @@ export const handlers: HandlerRegistry<AppChannels> = {
   }
 };
 
+/** A development-mode principal that expires in 2099. */
 function devPrincipal(subject: string, role: "volunteer" | "researcher", name: string): Principal {
   return { subject, tenantId: TENANT_ID, sessionId: `dev-${subject}`, expiresAt: "2099-01-01T00:00:00.000Z", claims: { role, name } };
 }

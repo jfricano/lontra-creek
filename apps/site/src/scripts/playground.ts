@@ -12,6 +12,7 @@ let timer:ReturnType<typeof setTimeout>;
 /** Set once the installed validator has loaded; until then a preset only fills the editor. */
 let validate:(()=>void)|undefined;
 // A preset is only text in the editor: whatever the validator says about it is its own answer.
+/** Loads the picked preset (the first if none matches) into the editor and its note, then validates it if the validator has loaded. */
 const load=()=>{const preset=PLAYGROUND_PRESETS.find(entry=>entry.id===picker.value)??PLAYGROUND_PRESETS[0]!;picker.value=preset.id;note.textContent=preset.note;editor.value=presetText(preset);clearTimeout(timer);validate?.();};
 picker.addEventListener("change",load);
 document.querySelector("#reset-config")!.addEventListener("click",load);
@@ -36,7 +37,9 @@ let field:import("./field-client.ts").FieldClient|null=null;
 let generation=0;
 let stopIdle: (() => void) | undefined;
 const rows:string[]=[];
+/** Adds a line to the top of the console log, keeping the newest 40. */
 const append=(text:string)=>{rows.unshift(text);rows.splice(40);log.textContent=rows.join("\n");};
+/** Closes the console's client and stops the idle watch; a connect still in flight closes its client when it finishes. */
 const disconnect=async()=>{stopIdle?.();stopIdle=undefined;generation++;const active=field;field=null;await active?.close();connect.disabled=false;close.disabled=true;consoleStatus.textContent="Disconnected.";};
 connect.addEventListener("click",async()=>{
   const attempt=++generation;connect.disabled=true;consoleStatus.textContent="Connecting…";

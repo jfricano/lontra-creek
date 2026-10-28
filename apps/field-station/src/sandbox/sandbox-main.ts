@@ -9,5 +9,6 @@ await service.start();
 await new Promise<void>((resolve, reject) => { api.once('error', reject); api.listen(settings.port, settings.host, resolve); });
 const timer = setInterval(() => service.sweep(), 1000);
 let stopping = false;
+/** Shuts down once: stops the sweep and the API, closes every slot, then exits. */
 async function stop() { if (stopping) return; stopping = true; clearInterval(timer); api.close(); api.closeAllConnections(); await service.close(); process.exit(0); }
 process.on('SIGINT', () => void stop()); process.on('SIGTERM', () => void stop());

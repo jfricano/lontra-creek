@@ -37,6 +37,7 @@ export function operationStatus(result: OperationResult['result']): LabOperation
 }
 /** What an intent came to: the status, the library's (or the bench's) outcome word, and the incident revision it produced. */
 export interface Outcome { status: LabOperation['status']; outcome: string; incidentRevision: number | null }
+/** A library result as an intent's outcome. */
 const fromResult = (result: OperationResult): Outcome => ({ status: operationStatus(result.result), outcome: result.outcome, incidentRevision: result.incidentRevision });
 /** A call that threw. Malformed input changed nothing; anything else may have had an effect the bench can't see. */
 function thrown(error: unknown, readOnly = false): Outcome {
@@ -55,7 +56,9 @@ interface PlanBinding { leaseId: string; studyId: string; failureId: string; inc
 export class PlanTokens {
   readonly #tokens = new Map<string, PlanBinding>();
   readonly #now: () => number;
+  /** `now` decides expiry. */
   constructor(now: () => number = Date.now) { this.#now = now; }
+  /** A new token for a plan. Expired tokens go first, then the oldest past MAX_TOKENS. */
   mint(binding: PlanBinding): string {
     for (const [token, plan] of this.#tokens) if (plan.expiresAt <= this.#now()) this.#tokens.delete(token);
     while (this.#tokens.size >= MAX_TOKENS) this.#tokens.delete(this.#tokens.keys().next().value!);
@@ -80,6 +83,7 @@ export class PlanTokens {
     if (plan.incidentRevision !== scope.incidentRevision) return 'stale-revision';
     return plan.expiresAt <= this.#now() ? 'plan-expired' : plan;
   }
+  /** Forgets every token. */
   clear(): void { this.#tokens.clear(); }
 }
 
@@ -110,6 +114,7 @@ export function benchIncident(detail: IncidentDetail, ordinal: number): BenchInc
 }
 
 interface Operation extends BenchOperation { leaseId: string; fingerprint: string }
+/** What makes two intent requests the same, so an operation ID reused for another request is caught. */
 const fingerprintOf = (request: BenchIntentRequest): string => JSON.stringify([request.intent, request.scenario ?? null, request.incident ?? null, request.planToken ?? null]);
 
 /**
@@ -117,19 +122,23 @@ const fingerprintOf = (request: BenchIntentRequest): string => JSON.stringify([r
  * operations become `cancelled`, tokens are forgotten, and late results write nothing.
  */
 export class BenchFailures {
+  /** The study this state belongs to. */
   readonly studyId: string;
   readonly #number: number;
   readonly #now: () => number;
   readonly #operations = new Map<string, Operation>();
+  /** The study's plan tokens. */
   readonly tokens: PlanTokens;
   #evaluation: (NonNullable<BenchIncidentFacts['evaluation']> & { failureId: string }) | null = null;
   #reprocess: (NonNullable<BenchIncidentFacts['reprocess']> & { failureId: string }) | null = null;
   #snapshots: string[] = [];
   #steps: BenchIncidentFacts['steps'] = [];
   #closed = false;
+  /** State for bench `number`'s study `studyId`. */
   constructor(options: { number: number; studyId: string; now?: () => number }) {
     this.#number = options.number; this.studyId = options.studyId; this.#now = options.now ?? Date.now; this.tokens = new PlanTokens(this.#now);
   }
+  /** True once close() has run. */
   get closed(): boolean { return this.#closed; }
   /** An application action the bench took, for the projection's steps. */
   step(text: string): void { if (this.#closed) return; this.#steps.push({ at: iso(this.#now()), text }); if (this.#steps.length > MAX_STEPS) this.#steps.shift(); }
@@ -137,11 +146,13 @@ export class BenchFailures {
   observeSnapshot(at: string): void { if (this.#closed) return; this.#snapshots.push(at); if (this.#snapshots.length > 200) this.#snapshots.shift(); }
   /** The gateway restarted: the library kept its plans in memory, so no token may still offer one. */
   forgetPlans(): void { this.tokens.clear(); if (this.#evaluation) this.#evaluation.planToken = null; }
+  /** Closes the study's state at a reset: unfinished operations become `cancelled` and every token is forgotten. Idempotent. */
   close(): void {
     if (this.#closed) return;
     this.#closed = true; this.tokens.clear();
     for (const operation of this.#operations.values()) if (!FINAL.has(operation.status)) Object.assign(operation, { status: 'cancelled', outcome: 'study-closed', updatedAt: iso(this.#now()) });
   }
+  /** The operation as the field station sees it, for its own lease only; null otherwise. */
   operation(leaseId: string, operationId: string): BenchOperation | null {
     const operation = this.#operations.get(operationId);
     if (!operation || operation.leaseId !== leaseId) return null;

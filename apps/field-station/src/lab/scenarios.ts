@@ -34,23 +34,28 @@ export interface ScenarioRun {
   step: string;
 }
 
+/** A new run ID, `<scenario>.<random>`. */
 const runId = (scenario: LabScenarioId): string => `${scenario}.${randomBytes(6).toString('base64url')}`;
 /** A reading that differs from the station's current one: the ledger refuses a mutation that changes nothing. */
 const shifted = (current: number, by: number): number => Math.round((current + by) * 10) / 10;
 
+/** The station's field record at the run's revision, carrying exactly the view the ledger derived. */
 function fieldRecord(stationId: string, revision: string, views: readonly View[]): FieldRecord {
   const view = views.find(item => item.key === `station:${stationId}`);
   if (!view) throw new RangeError(`The mutation doesn't change station ${stationId}'s view.`);
   return { tenantId: TENANT_ID, channel: 'station', params: { stationId }, revision, data: view.data as unknown as FieldRecord['data'] };
 }
 
+/** A run whose record goes to the bench's copy of the gauges topic, keyed by its station, with `value` encoding the field record. */
 function run(bench: BenchId, scenarioId: LabScenarioId, mutation: StationReading, coverage: ScenarioRun['coverage'], step: string, value: (record: FieldRecord) => string): ScenarioRun {
   const topic = `${benchFor(bench).topicPrefix}${topicFor('station')}`;
   return { scenarioId, runId: runId(scenarioId), mutation, coverage, step,
     record: (revision, views) => ({ topic, key: `station:${mutation.stationId}`, value: value(fieldRecord(mutation.stationId, revision, views)) }) };
 }
 
+/** A field record marked for the v2 projection (PROJECTION_V2). */
 const v2 = (record: FieldRecord): string => JSON.stringify({ ...record, mapping: PROJECTION_V2 });
+/** An LC-03 flow reading at the world's current tick, `by` cfs off the current one. */
 const flow = (world: WorldState, by: number): StationReading => ({ kind: 'station-reading', stationId: 'LC-03', tick: world.tick, reading: { flowCfs: shifted(world.stations['LC-03'].flowCfs, by) } });
 
 /**

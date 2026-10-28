@@ -67,7 +67,7 @@ export const PAGES: readonly Page[] = [
     href: "/lab/",
     label: "Failure Lab",
     question: "What happens when it breaks?",
-    summary: "Borrow an isolated bench for five minutes. Cut the relay, stall a laptop, restart the gateway, or foul a sensor, and follow each record through the gateway. The Source failures track lists the quarantine exercises and whether this demo's backend can run each one.",
+    summary: "Borrow an isolated bench for five minutes. Cut the relay, stall a laptop, restart the gateway, or foul a sensor, and follow each record through the gateway. The Source failures section lists the quarantine exercises and whether this demo's backend can run each one.",
     ready: true
   },
   {

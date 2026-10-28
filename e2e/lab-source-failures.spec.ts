@@ -398,7 +398,8 @@ test("when the incident goes (status none) while its next step has focus, focus 
   await expect(act(page)).toHaveText("Make snapshot coverage ready (application action)");
   await act(page).focus();
   lab.setIncident(null);
-  await expect(panel(page).locator("[data-lab-incident-empty]")).toBeVisible({ timeout: 5_000 });
+  // The incident poll runs every 2 s within the page's request budget (lab-budget.ts), so the empty state can take a few polls: the config's 10 s, not 5.
+  await expect(panel(page).locator("[data-lab-incident-empty]")).toBeVisible();
   await expect(panel(page).locator("[data-lab-incident-title]")).toBeFocused();
 });
 

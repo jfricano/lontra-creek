@@ -54,7 +54,8 @@ export function problemText(problem: Problem): string {
 export type UnavailableReason = NonNullable<SandboxStatus["reason"]> | "unreachable";
 
 const UNAVAILABLE: Readonly<Record<NonNullable<SandboxStatus["reason"]>, { headline: string; detail: string }>> = {
-  "disabled": { headline: "The workbench sandbox is not enabled on this deployment.", detail: "This field station runs no sandbox service, so no session can start here." },
+  // The public site's answer today: the page's own fallback line says what follows, so there is nothing to add.
+  "disabled": { headline: "The hosted sandbox isn't on yet.", detail: "" },
   "seam-unavailable": {
     headline: "The workbench sandbox is not available yet.",
     detail: "A sandbox session runs the published StreamOtter workbench, which needs a release that publishes its host contract (WHC-1). The StreamOtter the sandbox service runs does not, so it has nothing to run and no session can start. Nothing on this page simulates one."
@@ -91,7 +92,8 @@ export function availabilityView(status: SandboxStatus | null, problem: Problem 
   const pool = free > 0
     ? `${free} of ${status.slots.length} sandbox ${status.slots.length === 1 ? "slot is" : "slots are"} free.${waiting}`
     : `All ${status.slots.length} sandbox ${status.slots.length === 1 ? "slot is" : "slots are"} in use. Starting a session puts you in line.${waiting}${status.nextFreeAt ? ` One frees within ${minutesUntil(status.nextFreeAt, status.now)} min at the latest.` : ""}`;
-  return { available: true, reason: null, headline: "The workbench sandbox is available.", detail: "Start a session to borrow an isolated slot running synthetic fixture data. Nothing is allocated until you press Start.", pool };
+  // No length: the lease is a deployment setting (SANDBOX_LEASE_SECONDS) the status doesn't report; a session's clock shows the real time left.
+  return { available: true, reason: null, headline: "The workbench sandbox is available.", detail: "A timed session on an isolated slot with synthetic fixture data. Nothing starts until you press Start.", pool };
 }
 
 const MODE_LABELS: Readonly<Record<SandboxRuntime["mode"], string>> = { "synthetic-fixture": "Synthetic fixture" };
@@ -104,7 +106,7 @@ export function runtimeLabels(runtime: SandboxRuntime | null): RuntimeLabels | n
   return {
     mode: MODE_LABELS[runtime.mode] ?? runtime.mode,
     packages: `streamotter@${runtime.packages.streamotter} · @streamotter/workbench@${runtime.packages.workbench}`,
-    contract: runtime.contractVersion === null ? "No host contract reported" : `Host contract ${runtime.contractVersion}`
+    contract: runtime.contractVersion === null ? "None reported" : `Version ${runtime.contractVersion}`
   };
 }
 
@@ -127,8 +129,16 @@ export function formatRemaining(ms: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export type Phase = "checking" | "unavailable" | "idle" | "queued" | "ready" | "active" | "resetting" | "ended";
+export type Phase = "checking" | "unavailable" | "idle" | "refused" | "queued" | "ready" | "active" | "resetting" | "ended";
+/**
+ * The page's three layouts: no sandbox to use (the screenshots and Run it locally lead), one to
+ * start (Start leads), or a session on screen (the mounted workbench leads). Checking counts as
+ * off, so a page without JavaScript, which never leaves it, keeps the screenshot layout.
+ */
+export type Layout = "off" | "available" | "live";
 export type Control = "start" | "claim" | "return" | "reset" | "repro";
+/** A refused Start, and the status's availability when the refusal arrived: it holds only while that status does. */
+export interface Refusal { text: string; under: SandboxStatus["availability"] | "unknown" }
 
 export interface SessionInput {
   status: SandboxStatus | null;
@@ -143,10 +153,13 @@ export interface SessionInput {
   connectedStudy: string | null;
   /** The service's clock, corrected for this browser's offset from it. */
   now: number;
+  /** Why the field station refused this page's last Start, until a later status answer or Check again clears it. */
+  refused: Refusal | null;
 }
 
 export interface SessionView {
   phase: Phase;
+  layout: Layout;
   headline: string;
   detail: string;
   clock: string;
@@ -160,8 +173,15 @@ export interface SessionView {
 const NONE: Record<Control, boolean> = { start: false, claim: false, return: false, reset: false, repro: false };
 
 export function sessionView(input: SessionInput): SessionView {
+  const availability = availabilityView(input.status, input.statusProblem);
+  const view = phaseView(input, availability);
+  const layout: Layout = view.phase === "active" || view.phase === "resetting" ? "live"
+    : view.phase === "checking" || view.phase === "unavailable" || (view.phase === "ended" && !availability.available) ? "off" : "available";
+  return { ...view, layout };
+}
+
+function phaseView(input: SessionInput, availability: AvailabilityView): Omit<SessionView, "layout"> {
   const { status, lease, busy, now } = input;
-  const availability = availabilityView(status, input.statusProblem);
   const base = { clock: "", enabled: { ...NONE }, returnLabel: "End session", claimLabel: "Open the workbench", runtime: status?.runtime ?? null };
   if (input.checking) return { ...base, phase: "checking", headline: "Checking the sandbox…", detail: "Asking the field station for the sandbox's status and this browser's session." };
   if (lease && lease.status === "queued") {
@@ -170,7 +190,9 @@ export function sessionView(input: SessionInput): SessionView {
       detail: `Keep this page open: it checks in for you, and the line forgets a place that stops checking in. A browser can slow a tab left in the background enough to miss check-ins.${lease.nextFreeAt ? ` A slot frees within ${minutesUntil(lease.nextFreeAt, lease.now)} min at the latest.` : ""}` };
   }
   if (lease && (lease.status === "ready" || lease.status === "active" || lease.status === "resetting")) {
-    const held = { ...base, runtime: lease.runtime, clock: `${formatRemaining(Date.parse(lease.expiresAt) - now)} left in this session` };
+    // One status line for every held phase, all from the lease: slot, time left, mode, version.
+    const mode = (MODE_LABELS[lease.runtime.mode] ?? lease.runtime.mode).toLowerCase();
+    const held = { ...base, runtime: lease.runtime, clock: `Slot ${lease.slot} · ${formatRemaining(Date.parse(lease.expiresAt) - now)} left · ${mode} · streamotter@${lease.runtime.packages.streamotter}` };
     if (lease.status === "ready") {
       // The countdown goes in the clock, outside the polite status region, which would otherwise announce it every second.
       const claim = lease.claimBy ? formatRemaining(Date.parse(lease.claimBy) - now) : null;
@@ -183,14 +205,18 @@ export function sessionView(input: SessionInput): SessionView {
       return { ...held, phase: "resetting", enabled: { ...NONE, return: !busy }, headline: `Starting a fresh study on slot ${lease.slot}…`,
         detail: "The previous study's candidate, traces, and previews are being discarded. The workbench reopens when the slot is ready." };
     }
+    // Only the status line above the mounted workbench; the workbench's own banner says what the study is.
     return { ...held, phase: "active", enabled: { ...NONE, claim: !busy && input.connectedStudy !== lease.studyId, return: !busy, reset: !busy, repro: !busy },
-      headline: `Your sandbox session is running on slot ${lease.slot}.`,
-      detail: "An isolated synthetic study: nothing in it reaches the field station, its Kafka topics, or another visitor." };
+      headline: `Your sandbox session is running on slot ${lease.slot}.`, detail: "" };
   }
   const start = { ...NONE, start: availability.available && !busy };
+  // A refused Start is the state's headline, with Start off, while the status it was refused under still holds.
+  if (input.refused !== null && availability.available && input.refused.under === status?.availability) {
+    return { ...base, phase: "refused", headline: input.refused.text, detail: "Start is off until the field station's status next answers, or until you press Check again." };
+  }
   if (lease && lease.status === "ended") {
     return { ...base, phase: "ended", enabled: start, headline: endedText(lease.reason),
-      detail: availability.available ? "Start a new session when you are ready. Nothing starts on its own." : `${availability.headline} ${availability.detail}` };
+      detail: availability.available ? "Start a new session when you are ready. Nothing starts on its own." : [availability.headline, availability.detail].filter(Boolean).join(" ") };
   }
   if (!availability.available) return { ...base, phase: "unavailable", headline: availability.headline, detail: availability.detail };
   return { ...base, phase: "idle", enabled: start, headline: availability.headline, detail: availability.detail };

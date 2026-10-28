@@ -8,12 +8,15 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { issueToken, type Badge, type IssuedToken, type Role } from "./identity.ts";
 
+/** Name of the HttpOnly cookie that carries the signed session, sent only to /api. */
 export const SESSION_COOKIE = "lc_session";
+/** How long a session lasts from when it is created: 30 minutes, not extended by use. */
 export const SESSION_SECONDS = 30 * 60;
 const TOKEN_SECONDS = 10 * 60;
 
 const NAMES: Readonly<Record<Role, string>> = { volunteer: "Volunteer", researcher: "Field biologist" };
 
+/** What the session cookie holds: the visitor's subject, their role, and when it expires. */
 export interface SessionClaims {
   subject: string;
   role: Role;
@@ -21,10 +24,12 @@ export interface SessionClaims {
   exp: number;
 }
 
+/** HMAC-SHA256 of a cookie payload, base64url, under a key derived from the secret, so a session signature never verifies as a badge's. */
 function sign(payload: string, secret: string): string {
   return createHmac("sha256", `${secret}:session`).update(payload).digest("base64url");
 }
 
+/** The raw value of the named cookie in a Cookie header, or null if it isn't there. */
 function readCookie(header: string | undefined, name: string): string | null {
   for (const part of (header ?? "").split(";")) {
     const [key, ...value] = part.trim().split("=");
@@ -51,6 +56,7 @@ export function readSession(cookieHeader: string | undefined, secret: string, no
   }
 }
 
+/** What badgeFor returns: the visitor's badge, a gateway token for it, and any cookie to set. */
 export interface BadgeResult {
   badge: Badge;
   token: IssuedToken;

@@ -15,6 +15,7 @@ import { CONFIG_BODY_BYTES, HOST_CONTRACT, invalid, SANDBOX_OPERATIONS, SandboxF
 
 /** The sandbox service's private API (service.ts); throws a SandboxFault for a request it cannot encode, and otherwise only when the service cannot be reached. */
 export interface SandboxClient { request(path: string, method?: string, body?: unknown): Promise<{ status: number; body: unknown }>; }
+/** The pool's timings, in milliseconds, with its queue size and its per-lease operation budget (operations per second and burst). */
 export interface SandboxTimings {
   leaseMs: number; claimMs: number; idleMs: number; queueIdleMs: number; endedMs: number; queueMax: number; opsPerSecond: number; opsBurst: number;
   pollMs: number; failMs: number; resetDeadlineMs: number; retryMs: number;
@@ -30,6 +31,7 @@ export const SANDBOX_DEFAULTS: SandboxTimings = { leaseMs: 600_000, claimMs: 30_
  * lease; only no answer at all ends it.
  */
 export const SANDBOX_CALL_TIMEOUT_MS = 3000;
+/** The longer wait, for a slot operation or a reproduction bundle (see SANDBOX_CALL_TIMEOUT_MS). */
 export const SANDBOX_OPS_TIMEOUT_MS = 15_000;
 /** How often the field station sweeps the pool: the service poll interval while a slot or study resets. A sweep polls only when the poll is due. */
 export const SANDBOX_SWEEP_MS = 1000;
@@ -64,11 +66,13 @@ export class SandboxPool {
   #nextPoll = 0;
   #polling = false;
   #initialized = false;
+  /** Every slot is `unavailable` until initialize() returns it. The pool registers with the shared address cap, or with its own when none is given. */
   constructor(options: { client: SandboxClient; slots: SlotId[]; gatewayOrigin: string; cap?: AddressCap; now?: () => number; timings?: Partial<SandboxTimings> }) {
     this.#client = options.client; this.#now = options.now ?? Date.now; this.#origin = options.gatewayOrigin; this.#t = { ...SANDBOX_DEFAULTS, ...options.timings };
     this.#cap = options.cap ?? new AddressCap(); this.#cap.register(this); this.#lastSeen = this.#now();
     for (const slot of options.slots) this.#slots.set(slot, { state: 'unavailable', resetAt: 0, retryAt: 0, version: 0, busy: 0 });
   }
+  /** How many places, leases and places in line, this client address holds in the sandbox (for the shared address cap). */
   placesFor(address: string): number { let n = 0; for (const place of this.#places.values()) if (place.address === address) n++; return n; }
   /** Every slot is returned before anything is granted, which also ends whatever an earlier field station left behind. Until then the pool is unavailable. */
   async initialize(): Promise<void> { await Promise.all([...this.#slots.keys()].map(slot => this.#return(slot, null))); this.#initialized = true; }
@@ -172,7 +176,9 @@ export class SandboxPool {
 
   /** Polls the service on the next sweep, whatever the poll interval. */
   refresh(): void { this.#nextPoll = 0; }
+  /** Keeps the session's place alive, unless it has already gone idle; the next sweep ends an idle place. */
   heartbeat(session: SessionClaims): void { const place = this.#places.get(session.subject); if (place && this.#now() - place.heartbeat < (place.lease ? this.#t.idleMs : this.#t.queueIdleMs)) place.heartbeat = this.#now(); }
+  /** The public status: availability and why not, each slot's state, the line's length, and when the first lease ends while no slot is ready. */
   status(): SandboxStatus {
     const now = iso(this.#now()); const service = this.#service;
     const leases = [...this.#places.values()].flatMap(p => p.lease ? [p.lease] : []);
@@ -181,10 +187,12 @@ export class SandboxPool {
     return { now, availability: reason ? 'unavailable' : 'available', ...(reason ? { reason } : {}), runtime: service?.runtime ?? null, slots, queueLength: [...this.#places.values()].filter(p => !p.lease).length,
       nextFreeAt: slots.some(s => s.state === 'ready') || !leases.length ? null : iso(Math.min(...leases.map(l => l.expires))) };
   }
+  /** The WHC-1 discovery answer: `workbench`, plus the allowlisted operations the service reports while it is available. */
   discovery(): WorkbenchDiscovery {
     const service = this.#service;
     return { hostContract: HOST_CONTRACT, operations: ['workbench', ...service?.availability === 'available' ? SANDBOX_OPERATIONS.filter(op => service.operations.includes(op)) : []], limits: { maxRequestBytes: CONFIG_BODY_BYTES } };
   }
+  /** The session's lease as its page sees it: in line, holding a slot, recently ended, or none. */
   view(session: SessionClaims): SandboxLease {
     const now = iso(this.#now()); const place = this.#places.get(session.subject);
     if (!place) return { ...(this.#ended.get(session.subject) ?? { status: 'none' }), now };
@@ -210,6 +218,7 @@ export class SandboxPool {
     const place = this.#places.get(old.subject); if (!place) return;
     this.#end(place, 'session-ended'); this.#ended.set(next.subject, this.#ended.get(old.subject)!); this.#ended.delete(old.subject); this.sweep();
   }
+  /** Leaves the line (`left`) or returns the slot (`returned`); without a place it only reports the session's lease. */
   async leave(session: SessionClaims): Promise<SandboxLease> { const place = this.#places.get(session.subject); if (place) this.#end(place, place.lease ? 'returned' : 'left'); this.sweep(); return this.view(session); }
   #lease(session: SessionClaims, active = false): Lease {
     const lease = this.#places.get(session.subject)?.lease;
@@ -234,6 +243,7 @@ export class SandboxPool {
     this.#end(place, 'slot-failed');
     throw new SandboxFault('slot-unavailable');
   }
+  /** Claims the session's granted lease on its slot and returns where previews connect; operations are refused until a claim. */
   async claim(session: SessionClaims): Promise<SandboxConnection> {
     const lease = this.#lease(session); const r = await this.#call(session, lease, lease.studyId, 'claim', { leaseId: lease.id, studyId: lease.studyId });
     // The lease may have ended, or its study been reset, while the slot answered.
@@ -272,6 +282,7 @@ export class SandboxPool {
     if (r.status === 200 && isPlainObject(body) && body.ok === true) return body.data;
     throw new WorkbenchFailure(r.status, isPlainObject(body) ? body.error : undefined);
   }
+  /** The reproduction bundle for the session's current study, within the operation budget; `stale-study` if the study moved on meanwhile. */
   async repro(session: SessionClaims): Promise<SandboxReproDownload> {
     const ticket = this.#ticket(session);
     const r = await this.#call(session, ticket.lease, ticket.studyId, 'repro', { leaseId: ticket.lease.id, studyId: ticket.studyId });
@@ -289,8 +300,11 @@ function fault(body: unknown): SandboxFault {
 }
 /** A WHC-1 error from the slot, rebuilt from its public fields only. */
 export class WorkbenchFailure extends Error {
+  /** The slot's HTTP status, or 502 when it is not a 4xx or 5xx. */
   readonly status: number;
+  /** The slot's WHC-1 error, rebuilt with only its public fields and details bounded to 16 KB. */
   readonly error: StreamError;
+  /** An unknown or missing error code becomes INTERNAL. */
   constructor(status: number, raw: unknown) {
     super('Workbench operation failed.'); this.status = status >= 400 && status < 600 ? status : 502;
     const e = isPlainObject(raw) ? raw : {}; const details = bounded(e['details']);
@@ -310,6 +324,7 @@ function bounded(raw: unknown): Record<string, Json> | undefined {
   return { ...code, issues, issuesTruncated: true };
 }
 
+/** The pool for SANDBOX_API_URL, or undefined when it is unset and the sandbox is disabled. Throws on a short SANDBOX_SERVICE_TOKEN or a bad slot, lease, or queue setting. */
 export function configuredSandbox(env: NodeJS.ProcessEnv, gatewayOrigin: string, cap?: AddressCap): SandboxPool | undefined {
   const url = env['SANDBOX_API_URL'];
   if (!url) return undefined;

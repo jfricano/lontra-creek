@@ -24,6 +24,7 @@ export interface Review {
   summary: string;
 }
 
+/** The time of day of an ISO timestamp, as `HH:MM:SS UTC`. */
 const time = (at: string): string => `${at.slice(11, 19)} UTC`;
 
 /** The review an incident offers, or null when it offers no approvable plan. */
@@ -53,6 +54,7 @@ export function reviewText(review: Review): { incident: string; evaluation: stri
   };
 }
 
+/** The approval dialog: shows one review, keeps checking it against the latest projection, and returns focus when it closes. */
 export class ApprovalDialog {
   readonly #dialog: HTMLDialogElement;
   #review: Review | null = null;
@@ -62,6 +64,7 @@ export class ApprovalDialog {
   #latest: (() => { current: LabIncidentSummary | null; nowMs: number }) | undefined;
   #problem: string | null = null;
 
+  /** Wires Cancel, Approve, and closing on `dialog`. Approve checks the review again and sends nothing while it has a problem. */
   constructor(dialog: HTMLDialogElement) {
     this.#dialog = dialog;
     this.#el("[data-lab-approval-cancel]").addEventListener("click", () => dialog.close());
@@ -92,6 +95,7 @@ export class ApprovalDialog {
     return element;
   }
 
+  /** Whether the dialog is showing. */
   get open(): boolean { return this.#dialog.open; }
 
   /**
@@ -121,5 +125,6 @@ export class ApprovalDialog {
     this.#el("[data-lab-approval-approve]").setAttribute("aria-disabled", String(problem !== null));
   }
 
+  /** Closes the dialog if it is open; focus goes back to the opener, or to the fallback when the opener is gone. */
   close(): void { if (this.#dialog.open) this.#dialog.close(); }
 }

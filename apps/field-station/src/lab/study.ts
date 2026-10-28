@@ -34,6 +34,7 @@ const STUDY_ID = /^[A-Za-z0-9_-]{16}$/;
  */
 const PRIVATE = 0o700;
 
+/** The persisted study.json: the study's identity, plus what a restarted bench process needs to resume it. */
 export interface StudyDescriptor extends BenchStudy {
   format: typeof FORMAT;
   bench: number;
@@ -50,10 +51,12 @@ export interface StudyDescriptor extends BenchStudy {
 
 /** URL-safe and short enough that `lab-N-<studyId>` passes rc.3's identifier rule ([A-Za-z][A-Za-z0-9_-]{0,63}). */
 export function newStudyId(): string { return randomBytes(12).toString('base64url'); }
+/** A study's source generation, `lab-N-<studyId>`. */
 export const generationFor = (bench: number, studyId: string): string => `lab-${bench}-${studyId}`;
 /** Inside the prefix bench N's Kafka ACLs allow (`Bench.consumerGroupPrefix`, streamotter-lab-N-). */
 export const consumerGroupFor = (bench: number, studyId: string): string => `${benchNamed(bench).consumerGroupPrefix}${studyId}`;
 
+/** A new `provisioning` study for a bench: no lease, calibration present, the broken projection, and nothing armed. */
 export function newStudy(bench: number, at: number, studyId = newStudyId()): StudyDescriptor {
   return { format: FORMAT, bench, studyId, generation: generationFor(bench, studyId), consumerGroup: consumerGroupFor(bench, studyId), createdAt: new Date(at).toISOString(), phase: 'provisioning', restarts: { gateway: 0, process: 0 }, lease: null, calibration: 'present', mapping: 'broken', blips: 0, blip: 0 };
 }
@@ -79,8 +82,11 @@ export function parseStudy(bench: number, text: string): StudyDescriptor | null 
 export class StudyStore {
   readonly #root: string;
   readonly #bench: number;
+  /** The bench's files live under <stateDir>/lab-N. */
   constructor(stateDir: string, bench: number) { this.#root = join(stateDir, `lab-${bench}`); this.#bench = bench; }
+  /** The bench's state directory, <stateDir>/lab-N. */
   get root(): string { return this.#root; }
+  /** A study's directory; throws for a malformed study ID, so no ID can name a path outside it. */
   directory(studyId: string): string { if (!STUDY_ID.test(studyId)) throw new Error('Invalid study ID.'); return join(this.#root, 'studies', studyId); }
   /** The study's failure journal directory: the gateway's `stateDirectory`. */
   journal(studyId: string): string { return join(this.directory(studyId), 'journal'); }
@@ -90,6 +96,7 @@ export class StudyStore {
     try { text = await readFile(join(this.#root, 'study.json'), 'utf8'); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
     return parseStudy(this.#bench, text) ?? 'corrupt';
   }
+  /** Writes study.json, creating the study's directory first. */
   async save(study: StudyDescriptor): Promise<void> {
     await mkdir(this.directory(study.studyId), { recursive: true, mode: PRIVATE });
     await this.#write(join(this.#root, 'study.json'), study);
@@ -110,6 +117,7 @@ export class StudyStore {
     dated.sort((a, b) => a.at.localeCompare(b.at));
     for (const { name } of dated.slice(0, dated.length - SUMMARIES_KEPT)) await rm(join(dir, name), { force: true });
   }
+  /** Every discarded study's summary, oldest first by closedAt. */
   async summaries(): Promise<StudySummary[]> {
     const dir = join(this.#root, 'summaries');
     let files: string[]; try { files = await readdir(dir); } catch { return []; }

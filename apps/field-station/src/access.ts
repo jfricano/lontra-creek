@@ -7,6 +7,7 @@ import type { Principal } from "streamotter/contracts";
 import { isResearcher } from "./identity.ts";
 import type { RecordChannel } from "./records.ts";
 
+/** Whether a principal may read a channel instance: holts need a researcher, a notebook its owner, and anything else any signed-in visitor. */
 export function mayRead(channel: RecordChannel, principal: Principal, params: Readonly<Record<string, unknown>>): boolean {
   if (channel === "holt") return isResearcher(principal);
   if (channel === "notebook") return params["observerId"] === principal.subject;

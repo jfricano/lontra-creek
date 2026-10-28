@@ -10,13 +10,20 @@ import { CONFIG_BODY_BYTES, SandboxFault } from './operations.ts';
 
 /** The editable limits and the slot's server maximum for each. */
 export const EDITABLE_LIMITS = ['receiptTimeoutMs', 'maxSubscriptionsPerConnection', 'maxPendingFramesPerSubscription'] as const;
+/** The slot's server maximum for each editable limit (SLOT_MAXIMA in slot-project.ts). */
 export type EditableMaxima = Readonly<Record<(typeof EDITABLE_LIMITS)[number], number>>;
+/** The highest version a candidate may give one of the base's channels. */
 export const VERSION_MAX = 99;
 
+/** The JSON pointer (RFC 6901) for a path of keys; the empty path is the whole document. */
 const pointer = (path: readonly string[]): string => path.map(key => `/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`).join('');
+/** Whether two values are the same canonical JSON; undefined equals only undefined. */
 const same = (a: unknown, b: unknown): boolean => a === b || a !== undefined && b !== undefined && canonicalJson(a) === canonicalJson(b);
+/** The FIELD_NOT_EDITABLE issue for a difference at a server-owned path. */
 const refuse = (path: readonly string[]): ConfigIssue => ({ path: pointer(path), code: 'FIELD_NOT_EDITABLE', message: `${pointer(path) || 'The document'} is server-owned in the sandbox.` });
+/** The VALUE_OUT_OF_BOUNDS issue for an editable value outside 1 to `max`. */
 const bound = (path: readonly string[], max: number): ConfigIssue => ({ path: pointer(path), code: 'VALUE_OUT_OF_BOUNDS', message: `${pointer(path)} must be an integer from 1 to ${max}.` });
+/** Whether a value is an integer from 1 to `max`. */
 const within = (value: unknown, max: number): boolean => typeof value === 'number' && Number.isSafeInteger(value) && value >= 1 && value <= max;
 
 /** The first refused difference, in the base's key order and then the candidate's added keys, or null. */

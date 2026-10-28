@@ -14,12 +14,15 @@ import { WorkbenchFailure } from './leases.ts';
 import { API_BASE, BODY_BYTES, bodyLimit, checkInput, CONFIG_BODY_BYTES, HOST_CONTRACT, invalid, isSandboxOperation, queryInput, routeOperation, SandboxFault } from './operations.ts';
 
 type Headers = Record<string, string>;
+/** What publicApi passes each sandbox request; `pool` is undefined while the sandbox is disabled. */
 export interface SandboxRouteContext { pool: SandboxPool | undefined; siteOrigins: readonly string[]; secret: string; secure: boolean; cors: Headers; address: string; /** Seconds until the shared Lab request budget allows this client again; 0 when it does now. */ wait: number; }
 
+/** Writes a JSON response that is never cached or sniffed. */
 function send(response: ServerResponse, status: number, body: unknown, headers: Headers): void {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', ...headers });
   response.end(JSON.stringify(body));
 }
+/** The request body as text; `candidate-too-large` once its declared or actual size passes `limit` bytes. */
 async function readBody(request: IncomingMessage, limit: number): Promise<string> {
   const declared = Number(request.headers['content-length'] ?? 0);
   if (declared > limit) throw new SandboxFault('candidate-too-large');
@@ -28,8 +31,10 @@ async function readBody(request: IncomingMessage, limit: number): Promise<string
   return Buffer.concat(chunks).toString('utf8');
 }
 const LIFECYCLE = ['GET /api/sandbox/status', 'POST /api/sandbox/session', 'GET /api/sandbox/session', 'POST /api/sandbox/session/claim', 'POST /api/sandbox/session/reset', 'POST /api/sandbox/session/return', 'POST /api/sandbox/session/repro'];
+/** The public status while no sandbox service is configured. */
 export const DISABLED = (now: number): SandboxStatus => ({ now: new Date(now).toISOString(), availability: 'unavailable', reason: 'disabled', runtime: null, slots: [], queueLength: 0, nextFreeAt: null });
 
+/** Serves one /api/sandbox request: the WHC-1 host API under API_BASE, otherwise the lifecycle routes, whose refusals are SandboxError bodies. */
 export async function sandboxRoute(request: IncomingMessage, response: ServerResponse, url: URL, context: SandboxRouteContext): Promise<void> {
   if (url.pathname === API_BASE || url.pathname.startsWith(`${API_BASE}/`)) return workbenchRoute(request, response, url, context);
   // The page is on another origin, so it reads Retry-After only if it is exposed.

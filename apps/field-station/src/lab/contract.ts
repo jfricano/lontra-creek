@@ -1,8 +1,10 @@
 /** Public and private Lab API types. See docs/contracts/lab-api.md. */
 import type { ErrorCode, FailureClass, FailurePolicy, IncidentEventName, IncidentNextAction, IncidentProgress, IncidentQuarantine, IncidentRecovery, IncidentSummary, SourceStatus, TraceStage } from "streamotter/contracts";
 
+/** One of the Lab's benches, 1 to 3; bench N's gateway is served at /lab/N/socket.io. */
 export type BenchId = 1 | 2 | 3;
 
+/** A connections-track scenario action: the `{ action }` body of POST /api/lab/actions. */
 export type LabAction =
   | "sensor.foul"      // remove LC-03's calibration table
   | "sensor.restore"   // put it back; the source stays paused
@@ -34,6 +36,7 @@ export interface LabBenchState {
   receiptTimeoutMs: number;
 }
 
+/** Why a session's Lab place ended, as its `ended` lease reports it. */
 export type LabEndReason =
   | "left"            // left the line
   | "returned"        // returned the bench early
@@ -44,6 +47,7 @@ export type LabEndReason =
   | "bench-failed"    // the bench stopped answering or lost the lease
   | "lab-restarted";  // the field station restarted and reset every bench
 
+/** A session's Lab place as GET /api/lab/lease reports it: none, in line, holding a bench, or recently ended. */
 export type LabLease =
   | { status: "none"; now: string }
   | {
@@ -71,6 +75,7 @@ export type LabLease =
     }
   | { status: "ended"; now: string; reason: LabEndReason; endedAt: string; bench: BenchId | null };
 
+/** What POST /api/lab/lease/token returns: the bench token, which claims the lease, and where the SDK connects. */
 export interface LabToken {
   token: string;
   /** The lease's end. The bench closes the connection then, whatever the page does. */
@@ -82,6 +87,7 @@ export interface LabToken {
   gatewayPath: string;
 }
 
+/** The answer to a scenario action: when it ran, when the next one is accepted, and the bench's state after it. */
 export interface LabActionResult {
   action: LabAction;
   at: string;
@@ -94,6 +100,7 @@ interface FeedBase {
   at: string;
 }
 
+/** One entry of the leaseholder's bench feed, redacted. */
 export type LabFeedItem =
   /** A StreamOtter trace, redacted (section 6). */
   | (FeedBase & {
@@ -124,6 +131,7 @@ export type LabFeedItem =
       event: "lease-started" | "satellite-connected" | "satellite-disconnected" | "gateway-stopped" | "gateway-started" | "gap";
     });
 
+/** One page of the bench feed (GET /api/lab/trace), at most 100 items. */
 export interface LabFeedPage {
   items: LabFeedItem[];
   /** Pass as `after` on the next request. */
@@ -162,12 +170,14 @@ export type LabScenarioId =
   | "slow-client"           // existing satellite.start
   | "relay-restart";        // existing gateway.restart
 
+/** Why a scenario or feature is unavailable on this backend. */
 export type LabUnavailableCode =
   | "lab-disabled"              // this deployment has no benches
   | "library-lacks-capability"  // the installed StreamOtter release is known not to provide what the scenario needs
   | "not-integrated"            // the installed release isn't one this backend's Lab has been verified against for the scenario
   | "deployment-restricted";    // this deployment's failure-handling profile (LAB_FAILURE_HANDLING) doesn't run it, or it is a local and CI exercise
 
+/** Whether a scenario or feature is available on this backend, and if not, why. */
 export interface LabAvailability {
   available: boolean;
   /** Null when available; `text` is one sentence for visitors. */
@@ -305,6 +315,7 @@ export type LabIncidentView =
   | { status: "none"; now: string }
   | { status: "open"; now: string; incident: LabIncidentSummary };
 
+/** The Lab's refusal codes, with each one's HTTP status. */
 export type LabErrorCode =
   | "invalid-request"     // 400
   | "no-session"          // 401
@@ -319,11 +330,13 @@ export type LabErrorCode =
   | "lab-unavailable"     // 503: the Lab is off, or no bench is working
   | "bench-unavailable";  // 503: the lease's bench didn't answer, or answered that it failed; the lease ends as bench-failed
 
+/** The body of every Lab API refusal. */
 export interface LabError {
   error: string;
   code: LabErrorCode;
 }
 
+/** One bench's private status (GET /bench/v1/status), which the field station polls. */
 export interface BenchStatus {
   bench: BenchId;
   /**
@@ -418,6 +431,7 @@ export interface RecoveryAssessRequest {
   record?: RecordCoordinates;
 }
 
+/** Why the coverage ledger holds instead of answering recoverable. */
 export type RecoveryHoldReason =
   | "coverage-withheld"   // the scenario deliberately withholds snapshot coverage ("Snapshot coverage not ready")
   | "coverage-pending"    // the authoritative update is released but the served state hasn't reached it
@@ -425,6 +439,7 @@ export type RecoveryHoldReason =
   | "no-coordinates"      // the incident names no record, so no ledger entry can be matched
   | "obligation-limit";   // the study already holds as many recovery obligations as it may (64): it promises no more
 
+/** The answer to POST /lab-internal/N/recovery/assess: hold, with why, or recoverable behind a cumulative barrier. */
 export type RecoveryAssessment =
   | { decision: "hold"; studyId: string; reason: RecoveryHoldReason; evidenceRef: string | null }
   | {

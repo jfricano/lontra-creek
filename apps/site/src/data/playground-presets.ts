@@ -10,6 +10,7 @@
  */
 import base from "./playground-config.json" with { type: "json" };
 
+/** One configuration the playground can load into its editor. */
 export interface PlaygroundPreset {
   id: string;
   label: string;
@@ -30,6 +31,7 @@ const kafka = {
 };
 const quarantine = { topic: "jobs.streamotter.quarantine", capture: "full-record" };
 
+/** The playground's presets, listed by group in the picker and in this order within each; the first is selected when the page loads. */
 export const PLAYGROUND_PRESETS: readonly PlaygroundPreset[] = [
   {
     id: "init-example",

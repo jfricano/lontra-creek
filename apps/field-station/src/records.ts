@@ -9,12 +9,15 @@ import type { Json } from "streamotter/contracts";
 /** The simulation's channels, and visitors' notebooks. */
 export type RecordChannel = ChannelName | "notebook";
 
+/** The compacted Kafka topic notebooks are published to, one key per notebook. */
 export const NOTEBOOK_TOPIC = "field.notebooks";
 
+/** A published record's value: one channel instance's full state and its revision. */
 export interface FieldRecord {
   tenantId: string;
   channel: RecordChannel;
   params: Record<string, string>;
+  /** A decimal integer as a string, higher for each newer state. */
   revision: string;
   data: Json;
 }
@@ -26,6 +29,7 @@ export function topicFor(channel: RecordChannel): string {
   return channel === "notebook" ? NOTEBOOK_TOPIC : TOPICS[channel];
 }
 
+/** The Kafka key and field record for a simulation emission. */
 export function toRecord(emission: Emission): { key: string; value: FieldRecord } {
   return {
     key: emission.key,

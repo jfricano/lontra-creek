@@ -21,6 +21,7 @@ export interface PublishedSeam {
   integrity: { script: string; hostStyle: string };
 }
 
+/** The pinned workbench release this site mounts, or null when there is none to mount. */
 export const PUBLISHED_SEAM: PublishedSeam | null = {
   package: "@streamotter/workbench",
   version: "0.2.0-rc.1",

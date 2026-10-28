@@ -41,10 +41,12 @@ const WORLD_RETENTION_MS = 6 * 60 * 60 * 1_000;
 const BENCH_RETENTION_MS = 60 * 60 * 1_000;
 const READ_TIMEOUT_MS = 60_000;
 
+/** Settings for a world or bench topic: three partitions, one replica, records deleted after retentionMs. */
 function creekTopic(topic: string, retentionMs: number): ITopicConfig {
   return { topic, numPartitions: PARTITIONS, replicationFactor: 1, configEntries: [{ name: "retention.ms", value: String(retentionMs) }] };
 }
 
+/** The topics the field station creates when missing: the world's topics, then field.notebooks. */
 export const TOPIC_CONFIGS: readonly ITopicConfig[] = [
   ...[...new Set(Object.values(TOPICS))].map(topic => creekTopic(topic, WORLD_RETENTION_MS)),
   {
@@ -75,6 +77,7 @@ export function withBenchCopies(records: readonly OutgoingRecord[], prefixes: re
   return [...records, ...copies];
 }
 
+/** The field station's use of Kafka, as connectKafka returns it. */
 export interface KafkaIO {
   publisher: Publisher;
   /**
@@ -86,6 +89,11 @@ export interface KafkaIO {
   readAll(topic: string): Promise<(string | null)[]>;
 }
 
+/**
+ * Sets up the client and returns the publisher, the scenario sender, and readAll.
+ * It doesn't connect yet: the producer connects on first use, creating any missing
+ * topics first, and again after a failed batch.
+ */
 export async function connectKafka(
   settings: KafkaSettings,
   log: (message: string) => void,

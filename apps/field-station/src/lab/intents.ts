@@ -113,9 +113,11 @@ export function evidenceOf(incident: BenchIncident, evaluation: BenchIncidentFac
   if (incident.quarantine === 'not-required') return 'not-required';
   return 'unknown';
 }
+/** Where the source stands with the incident's record: advanced, processed, or uncertain as the library reports it, otherwise held. */
 export function sourceOf(incident: BenchIncident): LabIncidentSummary['source'] {
   return incident.progress === 'advanced' || incident.progress === 'processed' || incident.progress === 'uncertain' ? incident.progress : 'held';
 }
+/** Whether a ledger entry was published at the incident's position; a null position or an unpublished entry matches nothing. */
 const sameRecord = (entry: LedgerEntry, position: BenchIncident['position']): boolean =>
   position !== null && entry.publication !== null && entry.publication.topic === position.topic && entry.publication.partition === position.partition && entry.publication.offset === position.offset;
 
@@ -199,12 +201,14 @@ const DETAIL: Record<string, string> = {
   'advance-timeout': 'StreamOtter didn\'t advance past the bad-projection record in time.',
   'not-applicable': 'That doesn\'t apply to the bench\'s current state.'
 };
+/** The visitor's sentence for an operation's status and outcome; null while it is pending and once it succeeded. */
 function detailFor(status: LabOperation['status'], outcome: string): string | null {
   if (status === 'succeeded' || status === 'accepted' || status === 'running') return null;
   if (status === 'cancelled') return DETAIL['study-closed']!;
   return DETAIL[outcome] ?? (status === 'refused' ? 'StreamOtter refused it; nothing changed.' : status === 'failed' ? 'It was attempted and failed.' : 'Its outcome couldn\'t be observed. It is not repeated: look at the incident again.');
 }
 
+/** The source-failures intents for every lease of one pool: operations, the incident projection, and its revision. */
 export class LabIntents {
   readonly #pool: IntentPool;
   readonly #studies: LabStudies | undefined;
@@ -214,6 +218,7 @@ export class LabIntents {
   readonly #leases = new Map<string, LeaseState>();
   /** Ended leases by session subject, for ENDED_KEPT_MS. */
   readonly #ended = new Map<string, LeaseState>();
+  /** `pollMs` is how often running bench work is looked up again (default 500 ms). */
   constructor(options: { pool: IntentPool; studies?: LabStudies; sink?: ScenarioSink; now?: () => number; pollMs?: number }) {
     this.#pool = options.pool; this.#studies = options.studies; this.#sink = options.sink; this.#now = options.now ?? Date.now; this.#pollMs = options.pollMs ?? POLL_MS;
   }

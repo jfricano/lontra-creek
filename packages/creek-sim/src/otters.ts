@@ -9,21 +9,28 @@ import { hourIndex, TICKS_PER_DAY } from "./clock.ts";
 import { HOLTS, REACH_INDEX, REACHES, type HoltId, type OtterProfile, type ReceiverId } from "./geography.ts";
 import { chance, int, next, weighted, type Rng } from "./random.ts";
 
+/** What an otter is doing. "denning" is inside a holt, where receivers can't hear its tag. */
 export type Activity = "denning" | "resting" | "foraging" | "traveling" | "grooming" | "playing";
 
+/** A tagged otter's changing state, stepped once per tick. */
 export interface OtterState {
   /** Index into REACHES. */
   reach: number;
   activity: Activity;
+  /** Ticks until the otter chooses its next activity. */
   ticksLeft: number;
+  /** Index into REACHES of where the otter is traveling to. */
   targetReach: number;
   /** 0 (fed) to 1 (hungry). */
   hunger: number;
+  /** Dives since the current study hour began. */
   divesThisHour: number;
+  /** The study hour divesThisHour counts, as clock.ts hourIndex. */
   hourIndex: number;
   lastDetection: { tick: number; receiver: ReceiverId } | null;
   /** Outside the watershed, beyond the confluence. */
   away: boolean;
+  /** Ticks until an away otter comes back in at the downstream end of its range. */
   awayTicksLeft: number;
   /** The holt this otter is in while denning. */
   den: HoltId | null;
@@ -31,16 +38,19 @@ export interface OtterState {
   pupsWithHer: boolean;
 }
 
+/** What stepOtter needs from the world this tick. */
 export interface OtterContext {
   tick: number;
   hour: number;
   rng: Rng;
+  /** Whether the gauge for a reach (by index) is at high water. */
   highFlow(reach: number): boolean;
 }
 
 const LEAVE_CHANCE = 0.01;
 const DETECTION_CHANCE = 0.5;
 
+/** An otter resting at its start reach, moderately hungry, that chooses its first activity on its first step. */
 export function initialOtter(profile: OtterProfile, tick: number): OtterState {
   return {
     reach: profile.startReach,
@@ -58,6 +68,7 @@ export function initialOtter(profile: OtterProfile, tick: number): OtterState {
   };
 }
 
+/** A bell curve from 0 to 1 that peaks at `peak` hours with spread `width`, wrapping around midnight. */
 function around(hour: number, peak: number, width: number): number {
   const distance = Math.min(Math.abs(hour - peak), 24 - Math.abs(hour - peak));
   return Math.exp(-(distance * distance) / (2 * width * width));
@@ -70,11 +81,17 @@ export function activityLevel(hour: number): number {
   return 0.12 + 0.88 * Math.max(crepuscular, nocturnal);
 }
 
+/** Index of the reach with this otter's holt, or -1 if it has none. */
 function denReach(profile: OtterProfile): number {
   const holt = HOLTS.find(candidate => candidate.id === profile.den);
   return holt === undefined ? -1 : REACH_INDEX[holt.reach];
 }
 
+/**
+ * Advances one otter one tick: the away countdown, the current activity's effect on
+ * hunger, dives, and position, a possible detection, then a new activity when the
+ * current one runs out.
+ */
 export function stepOtter(profile: OtterProfile, state: OtterState, context: OtterContext): void {
   const hour = hourIndex(context.tick);
   if (hour !== state.hourIndex) {
@@ -128,6 +145,7 @@ export function stepOtter(profile: OtterProfile, state: OtterState, context: Ott
   if (state.ticksLeft <= 0) choose(profile, state, context);
 }
 
+/** Picks the next activity, weighted by time of day, hunger, prey, and high water; resting near the otter's own holt becomes denning there. */
 function choose(profile: OtterProfile, state: OtterState, context: OtterContext): void {
   const level = activityLevel(context.hour);
   const high = context.highFlow(state.reach);
@@ -179,6 +197,7 @@ function choose(profile: OtterProfile, state: OtterState, context: OtterContext)
   }
 }
 
+/** Starts a trip: a disperser drifts up to two reaches upstream or three downstream, within its range; a resident picks another reach in its range. */
 function beginTravel(profile: OtterProfile, state: OtterState, context: OtterContext): void {
   const [low, high] = profile.range;
   const span = high - low + 1;

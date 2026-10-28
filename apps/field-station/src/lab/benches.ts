@@ -15,6 +15,7 @@ import { TOPICS } from "@lontra-creek/sim";
 /** Benches are numbered from 1; the pool is small and fixed (docs/PLAN.md, The Failure Lab). */
 export const MAX_BENCHES = 9;
 
+/** One bench's names, shared by the field station, the broker, the proxies, and the benches. */
 export interface Bench {
   readonly number: number;
   /** The bench gateway's StreamOtter project. */
@@ -37,8 +38,10 @@ export interface Bench {
   readonly gatewayPath: string;
 }
 
+/** The creek topics each bench copies: every channel's but the holts'. */
 export const CREEK_TOPICS: readonly string[] = [...new Set(Object.entries(TOPICS).filter(([channel]) => channel !== "holt").map(([, topic]) => topic))];
 
+/** Bench `number`'s names; a RangeError unless it is from 1 to MAX_BENCHES. */
 export function bench(number: number): Bench {
   if (!Number.isSafeInteger(number) || number < 1 || number > MAX_BENCHES) {
     throw new RangeError(`A bench number is from 1 to ${MAX_BENCHES}.`);

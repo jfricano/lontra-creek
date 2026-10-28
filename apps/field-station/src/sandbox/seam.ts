@@ -34,6 +34,7 @@ const HANDLER_BODY_BYTES = 131_072;
 export const CALL_TIMEOUT_MS = 10_000;
 const STOP_TIMEOUT_MS = 5000;
 
+/** Where publishedBackend's slot gateways listen and whom they allow. */
 export interface PublishedBackendOptions {
   /** The site origins previews connect from; the slot gateways allow exactly these. */
   siteOrigins: readonly string[];
@@ -62,9 +63,13 @@ function checkedManifest(manifest: unknown): WorkbenchHostManifest | null {
 
 /** A StreamOtter error from the slot's management handler, with its public fields; service.ts passes it through. */
 export class SlotError extends Error {
+  /** StreamOtter's error code, INTERNAL when the slot gave none. */
   readonly code: string;
+  /** True only when the slot said so. */
   readonly retryable: boolean;
+  /** The handler's error details, when they are an object. */
   readonly details: Readonly<Record<string, Json>> | undefined;
+  /** Keeps only the public fields of a handler's error, whatever its shape. */
   constructor(error: unknown) {
     const e = isPlainObject(error) ? error : {};
     super(typeof e['message'] === 'string' ? e['message'] : 'The slot did not answer.');
@@ -118,8 +123,11 @@ export function publishedBackend(options: PublishedBackendOptions): SlotBackend 
 
 /** One study's gateway and its private management listener. */
 export class PublishedRuntime implements SlotRuntime {
+  /** The slot's server-owned project (slotConfig), which candidates are compared to. */
   readonly base: ProjectConfig;
+  /** The slot's two development principals, `creek-volunteer` and `developer`. */
   readonly principalRefs = Object.keys(SLOT_PRINCIPALS);
+  /** The slot's server maxima for the editable limits (SLOT_MAXIMA). */
   readonly maxima = SLOT_MAXIMA;
   /** Where the slot's gateway listens. */
   readonly gatewayAddress: { origin: string; path: string };
@@ -138,6 +146,7 @@ export class PublishedRuntime implements SlotRuntime {
   /** What the slot's own handler answers, read once when the runtime opens. */
   get discovery(): WorkbenchDiscovery { return this.#discovery; }
 
+  /** Starts a fresh gateway for the slot and its private management listener, then reads the handler's discovery; on failure stops both and throws. */
   static async open(slot: SlotId, options: { host: string; port: number; siteOrigins: readonly string[] }): Promise<PublishedRuntime> {
     const base = slotConfig(slot, options); const { handlers, development } = slotRuntimeParts();
     const gateway = createGateway<SlotChannels>({ config: base, handlers, development, mode: 'development', logger: silentLogger });
@@ -179,6 +188,7 @@ export class PublishedRuntime implements SlotRuntime {
     return this.#request(method, query.size ? `${path}?${query}` : path);
   }
 
+  /** Revokes each slot principal on the gateway in turn, which closes every preview connection of this study. */
   async revoke(): Promise<void> {
     for (const principal of Object.values(SLOT_PRINCIPALS)) await this.#gateway.revoke({ kind: 'subject', tenantId: principal.tenantId, subject: principal.subject });
   }

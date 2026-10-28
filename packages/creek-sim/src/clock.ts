@@ -5,12 +5,16 @@
  */
 
 export const MINUTES_PER_TICK = 5;
+/** Ticks in one study hour: 12. */
 export const TICKS_PER_HOUR = 60 / MINUTES_PER_TICK;
+/** Ticks in one study day: 288. */
 export const TICKS_PER_DAY = 24 * TICKS_PER_HOUR;
 const START_MINUTE = 5 * 60;
 
+/** Part of the study day by hour: dawn from 05:30, day from 07:00, dusk from 19:00, night from 20:30. */
 export type Daylight = "dawn" | "day" | "dusk" | "night";
 
+/** A tick as a study day and a time of day. */
 export interface StudyTime {
   /** Study day, starting at 1. */
   day: number;
@@ -21,10 +25,12 @@ export interface StudyTime {
   daylight: Daylight;
 }
 
+/** Study minutes since midnight before day 1; tick 0 is minute 300 (05:00). */
 function minutes(tick: number): number {
   return START_MINUTE + tick * MINUTES_PER_TICK;
 }
 
+/** A tick's study day, fractional hour, "HH:MM" clock, and daylight. */
 export function studyTime(tick: number): StudyTime {
   const total = minutes(tick);
   const minuteOfDay = total % 1440;
@@ -37,6 +43,7 @@ export function studyTime(tick: number): StudyTime {
   };
 }
 
+/** The part of the day for a fractional hour from 0 to 24. */
 export function daylight(hour: number): Daylight {
   if (hour >= 5.5 && hour < 7) return "dawn";
   if (hour >= 7 && hour < 19) return "day";

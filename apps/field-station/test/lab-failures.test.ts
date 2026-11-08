@@ -27,7 +27,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
-import { mkdtemp, readdir, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -136,7 +136,7 @@ interface Bench {
 let operations = 0;
 const operationId = () => `lop_${String(++operations).padStart(22, '0')}`;
 
-async function bench(t: TestContext, profile: 'retry' | 'quarantine', records: readonly FixtureRecord[], stateDir?: string): Promise<Bench> {
+async function bench(t: TestContext, profile: 'retry' | 'quarantine', records: readonly FixtureRecord[], stateDir?: string, leased = true): Promise<Bench> {
   const dir = stateDir ?? await mkdtemp(join(tmpdir(), 'lab-failures-'));
   if (!stateDir) t.after(() => rm(dir, { recursive: true, force: true }));
   const port = await freePort(); const seen: Bench['seen'] = { journals: [] };
@@ -147,7 +147,7 @@ async function bench(t: TestContext, profile: 'retry' | 'quarantine', records: r
   await runtime.start();
   t.after(() => runtime.close());
   assert.equal(runtime.status().state, 'ready', 'the bench provisions a study on the real library');
-  await runtime.run(() => runtime.lease('lease-1', new Date(Date.now() + 240_000).toISOString()));
+  if (leased) await runtime.run(() => runtime.lease('lease-1', new Date(Date.now() + 240_000).toISOString()));
   const self: Bench = {
     runtime, stateDir: dir, port, seen,
     async advance(count = 1) {
@@ -203,6 +203,23 @@ describe('the study journal, created only by the published CLI', () => {
     await createJournal(config, join(dir, 'journal'), dir);
     await assert.rejects(createJournal(config, join(dir, 'journal'), dir), /exited 2/);
     assert.deepEqual(await readdir(dir), ['journal'], 'the refused init leaves no config file behind');
+  });
+
+  test('a clean study whose journal lock names a replaced container is discarded at boot; the library\'s own refusal is what triggers it', async t => {
+    const dir = await mkdtemp(join(tmpdir(), 'lab-failures-')); t.after(() => rm(dir, { recursive: true, force: true }));
+    const first = await bench(t, 'retry', [], dir, false);
+    const old = first.runtime.status().study!;
+    await first.runtime.close();
+    // What a container stopped before its journal closed leaves behind (gateway.stop's deadline expired): its lock,
+    // naming the old container's hostname. The pid is the old container's node process under init.
+    await writeFile(join(dir, 'lab-1', 'studies', old.studyId, 'journal', 'journal.lock'), JSON.stringify({ pid: 7, projectId: null, startedAt: new Date().toISOString(), hostname: '38c9d520496d' }), { mode: 0o600 });
+    const logged: string[] = []; t.mock.method(console, 'error', (line: string) => { logged.push(line); });
+    const second = await bench(t, 'retry', [], dir, false);
+    const fresh = second.runtime.status().study!;
+    assert.notEqual(fresh.studyId, old.studyId);
+    assert.deepEqual(await readdir(join(dir, 'lab-1', 'studies')), [fresh.studyId], 'the old study and its lock are gone');
+    assert.equal(logged.length, 1); assert.match(logged[0]!, /^Bench resume refused: .*names a gateway on host 38c9d520496d \(pid 7\), which cannot be checked from .* Discarding the clean study and provisioning a new one\.$/);
+    assert.deepEqual(second.runtime.status().failures, { profile: 'retry', durable: true, handlerBuildId: handlerBuildId('broken') });
   });
 
   test('a second gateway cannot open a journal a running one holds', async t => {

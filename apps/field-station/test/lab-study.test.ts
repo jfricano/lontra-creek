@@ -14,6 +14,7 @@ import { createServer, type Server } from 'node:http';
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
+import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { after, before, beforeEach, describe, test, type TestContext } from 'node:test';
 import { validateProjectConfig, type Gateway, type ProjectConfig } from 'streamotter/contracts';
@@ -53,7 +54,8 @@ async function volume(t: TestContext) {
   const steps: string[] = [];
   const configs: ProjectConfig<LabChannels>[] = []; const handlers: HandlerRegistry<LabChannels>[] = [];
   const groups = new Set<string>();
-  const faults = { deleteGroup: false, close: false, discard: false };
+  /** `start`, when set, is thrown once by the next gateway start. */
+  const faults = { deleteGroup: false, close: false, discard: false, start: null as unknown };
   let holdClose: Promise<void> | null = null; let holdStart: Promise<void> | null = null; let releaseStart: (() => void) | null = null;
   const gate: StudyGateClient = {
     async close(studyId) { steps.push(`gate.close ${studyId}`); if (holdClose) await holdClose; if (faults.close) throw new Error('field station unavailable'); },
@@ -69,7 +71,9 @@ async function volume(t: TestContext) {
       listGroups: async prefix => [...groups].filter(group => group.startsWith(prefix)),
       services: async (config, registry) => {
         const group = config.sources['field']!.kind === 'kafka' ? (config.sources['field'] as { consumerGroup: string }).consumerGroup : '';
-        steps.push(`gateway.start ${group}`); configs.push(config); handlers.push(registry); groups.add(group);
+        steps.push(`gateway.start ${group}`);
+        if (faults.start) { const refused = faults.start; faults.start = null; throw refused; }
+        configs.push(config); handlers.push(registry); groups.add(group);
         if (holdStart) await holdStart;
         return { gateway: gateway(group), management: { origin: managementOrigin, async close() {} } };
       }
@@ -208,6 +212,36 @@ describe('restart keeps the study (LC11-A14 app side, A33)', () => {
     assert.deepEqual(v.steps, [`gate.close ${old.studyId}`, `deleteGroup ${old.consumerGroup}`, `gate.discard ${old.studyId}`, `gateway.start ${fresh.consumerGroup}`]);
     assert.ok(!v.groups.has(old.consumerGroup));
     assert.deepEqual(await readdir(join(v.stateDir, 'lab-1', 'studies')), [fresh.studyId]);
+  });
+
+  /** The library's refusal of a journal lock (StreamOtter 0.2.0-rc.1 journal.ts), as the bench's gateway start throws it. */
+  const lockRefusal = (host: string) => Object.assign(new Error(`journal.lock names a gateway on host ${host} (pid 7), which cannot be checked from ${hostname()}.`), { code: 'SOURCE_UNAVAILABLE', details: { reason: 'journal-locked', path: 'journal.lock', pid: 7, hostname: host } });
+  test('a clean study whose journal a replaced container left locked is discarded with the reset steps at boot', async t => {
+    const v = await volume(t); const first = await v.runtime(); const old = studyOf(first);
+    await first.close();
+    v.steps.length = 0; v.faults.start = lockRefusal('38c9d520496d');
+    t.mock.method(console, 'error', () => undefined);
+    const second = await v.runtime(); const fresh = studyOf(second);
+    assert.notEqual(fresh.studyId, old.studyId);
+    assert.equal(second.status().state, 'ready', 'ready at once, without the field station\'s reset');
+    assert.deepEqual(v.steps, [`gateway.start ${old.consumerGroup}`, `gate.close ${old.studyId}`, `deleteGroup ${old.consumerGroup}`, `gate.discard ${old.studyId}`, `gateway.start ${fresh.consumerGroup}`]);
+    assert.deepEqual(await readdir(join(v.stateDir, 'lab-1', 'studies')), [fresh.studyId]);
+  });
+
+  test('a lock that may have a live owner, or an open study\'s refused lock, still leaves the bench failed for the field station', async t => {
+    t.mock.method(console, 'error', () => undefined);
+    // A lock naming this host is checked by the library itself; refused, its owner may be alive.
+    const v = await volume(t); const first = await v.runtime(); const clean = studyOf(first); await first.close();
+    v.faults.start = lockRefusal(hostname());
+    const second = await v.runtime();
+    assert.deepEqual([second.status().state, studyOf(second).studyId], ['failed', clean.studyId]);
+    // An open study's lease belongs to the field station: it ends the lease, then resets.
+    const w = await volume(t); const leased = await w.runtime(); const open = studyOf(leased);
+    await lease(leased, w.at()); await leased.close();
+    w.faults.start = lockRefusal('38c9d520496d');
+    const restarted = await w.runtime();
+    assert.deepEqual([restarted.status().state, studyOf(restarted).studyId], ['failed', open.studyId]);
+    assert.ok(!w.steps.some(step => step.startsWith('deleteGroup') || step.startsWith('gate.discard')), 'nothing was discarded');
   });
 
   test('the field station keeps the lease while a restarted bench process boots, and the same study resumes', async t => {

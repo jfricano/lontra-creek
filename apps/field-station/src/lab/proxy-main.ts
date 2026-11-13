@@ -9,10 +9,14 @@
  * (default 0.0.0.0:<the bench's proxy port>), PROXY_TARGET (default
  * kafka:<the same port>, the broker's listener for this bench), and PROXY_CONTROL
  * (default 0.0.0.0:9180).
+ *
+ * This process imports only proxy.ts, bench-proxy.ts, and Node's own modules, and
+ * the production overlay starts it with a bounded heap (deploy/compose.lab.yaml):
+ * it has 64 MiB on the shared host. test/lab.test.ts holds it to those imports.
  */
 import type { AddressInfo } from "node:net";
 
-import { bench } from "./benches.ts";
+import { benchProxy } from "./bench-proxy.ts";
 import { proxyControl, startProxy, type Endpoint } from "./proxy.ts";
 
 /** Logs one line, prefixed with the time. */
@@ -26,7 +30,7 @@ function endpoint(name: string, fallback: string): Endpoint {
   return { host: match[1]!.replace(/^\[|\]$/g, ""), port: Number(match[2]) };
 }
 
-const { proxyPort } = bench(Number(process.env["LAB_BENCH"]));
+const { proxyPort } = benchProxy(Number(process.env["LAB_BENCH"]));
 const proxy = await startProxy({
   listen: endpoint("PROXY_LISTEN", `0.0.0.0:${proxyPort}`),
   target: endpoint("PROXY_TARGET", `kafka:${proxyPort}`),

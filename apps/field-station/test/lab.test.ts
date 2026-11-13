@@ -55,8 +55,9 @@ describe("bench names", () => {
       if (files.has(file)) return;
       files.add(file);
 
-      const source = readFileSync(file, "utf8");
-      for (const match of source.matchAll(/\bfrom\s+["']([^"']+)["']|\bimport\s*\(?\s*["']([^"']+)["']/g)) {
+      // Comments are prose: a sentence with `from "..."` in it is not an import.
+      const source = readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      for (const match of source.matchAll(/\bfrom\s*["'`]([^"'`]+)["'`]|\bimport\s*\(?\s*["'`]([^"'`]+)["'`]/g)) {
         const specifier = (match[1] ?? match[2])!;
         if (specifier.startsWith(".")) visit(resolve(dirname(file), specifier));
         else packages.add(specifier);

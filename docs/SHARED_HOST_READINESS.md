@@ -276,11 +276,14 @@ from the image already running), in MiB:
 | Before | 12.7 s | 52.8 | 54.9 | killed at the ceiling, 3 restarts |
 | After | 8.4 s | 31.9 | 34.5 | 45.3 peak, no restart |
 
-This is a five-minute local measurement, not ARM64 or shared-host evidence. A
-relay running alone is also charged for the image's file pages and reads at its
-ceiling whatever it needs, so compare anonymous memory, or measure with another
-container from the image running. ARM64 measurement at the shared limits and a
-longer run are still required before the headroom is accepted.
+This is a five-minute local measurement, not ARM64 or shared-host evidence; the
+shared-host readings and the November 11 kill are from the owner's rollout
+record, not from this repository. A relay that is the only container from the
+image is also charged for the image's file pages and can read at its ceiling
+whatever it needs, so compare anonymous memory, or measure with another
+container from the image running. ARM64 measurement at the shared limits,
+including how long the health check takes under load against its 5 s timeout,
+and a longer run are still required before the headroom is accepted.
 
 Every shared service also requires `LONTRA_CGROUP_PARENT=lontra.slice`. The
 provided `deploy/systemd/lontra.slice` defines an aggregate **5 GiB / 1 CPU /

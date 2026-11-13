@@ -8,8 +8,13 @@ x-lab-node: &lab-node
   logging:
     driver: json-file
     options: { max-size: 10m, max-file: "3" }
+# A proxy has 64 MiB on the shared host (compose.shared.lab.yaml). Its heap is bounded
+# so that relayed traffic is collected early instead of growing to that limit, and its
+# check opens the control port from Bash so that no second Node process starts in the
+# container every five seconds (docs/SHARED_HOST_READINESS.md, relay proxy memory).
+x-proxy-command: &proxy-command ["node", "--max-old-space-size=24", "src/lab/proxy-main.ts"]
 x-proxy-health: &proxy-health
-  test: ["CMD", "node", "-e", "require('node:net').connect(9180, '127.0.0.1').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"]
+  test: ["CMD", "/bin/bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9180"]
   interval: 5s
   timeout: 5s
   retries: 6
@@ -49,7 +54,7 @@ services:
 
   lab-1-kafka:
     <<: *lab-node
-    command: ["node", "src/lab/proxy-main.ts"]
+    command: *proxy-command
     environment:
       NODE_ENV: production
       LAB_BENCH: "1"
@@ -85,7 +90,7 @@ services:
 
   lab-2-kafka:
     <<: *lab-node
-    command: ["node", "src/lab/proxy-main.ts"]
+    command: *proxy-command
     environment:
       NODE_ENV: production
       LAB_BENCH: "2"
@@ -121,7 +126,7 @@ services:
 
   lab-3-kafka:
     <<: *lab-node
-    command: ["node", "src/lab/proxy-main.ts"]
+    command: *proxy-command
     environment:
       NODE_ENV: production
       LAB_BENCH: "3"

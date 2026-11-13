@@ -260,6 +260,31 @@ relay reached about **92% of its 64 MiB ceiling**; longer representative traffic
 retention growth, CPU throttling and combined-app tests remain necessary before
 accepting production headroom. No OOM was found in the final container inspect.
 
+**Relay proxy memory, November 2026.** On the shared host the three relays read
+about 48 MiB with peaks near 58 MiB, and on November 11 one was killed at its
+64 MiB ceiling while idle and restarted by itself. The ceiling stays; three
+changes lower what a relay uses. Its process no longer loads the simulation
+(`apps/field-station/src/lab/bench-proxy.ts`), its heap is bounded
+(`--max-old-space-size=24`), and its health check opens the control port from
+Bash instead of starting a second Node process every five seconds
+(`deploy/compose.lab.yaml`). Measured on November 13 with an amd64 build of this
+source at the shared limits from launch (0.03 CPU, 64 MiB, another container
+from the image already running), in MiB:
+
+| Relay | Control port open | Idle peak | Steady peak | Sustained 64 KiB and 1 MiB transfers |
+| --- | ---: | ---: | ---: | --- |
+| Before | 12.7 s | 52.8 | 54.9 | killed at the ceiling, 3 restarts |
+| After | 8.4 s | 31.9 | 34.5 | 45.3 peak, no restart |
+
+This is a five-minute local measurement, not ARM64 or shared-host evidence; the
+shared-host readings and the November 11 kill are from the owner's rollout
+record, not from this repository. A relay that is the only container from the
+image is also charged for the image's file pages and can read at its ceiling
+whatever it needs, so compare anonymous memory, or measure with another
+container from the image running. ARM64 measurement at the shared limits,
+including how long the health check takes under load against its 5 s timeout,
+and a longer run are still required before the headroom is accepted.
+
 Every shared service also requires `LONTRA_CGROUP_PARENT=lontra.slice`. The
 provided `deploy/systemd/lontra.slice` defines an aggregate **5 GiB / 1 CPU /
 2048 tasks** ceiling with no swap. The shared infrastructure owner must install

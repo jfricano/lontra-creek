@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import type { Server as HttpServer } from "node:http";
 import { connect, createServer, type AddressInfo, type Server, type Socket } from "node:net";
+import { basename, dirname, resolve } from "node:path";
 import { after, before, describe, test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { createWorld, currentEmissions } from "@lontra-creek/sim";
 import { validateProjectConfig, type Json, type SourceRecord } from "streamotter/contracts";
 import { createGateway } from "streamotter/gateway";
 import { benchConfig, benchHandlers } from "../src/lab/bench.ts";
-import { bench, benches, CREEK_TOPICS } from "../src/lab/benches.ts";
+import { benchProxy } from "../src/lab/bench-proxy.ts";
+import { bench, benches, CREEK_TOPICS, MAX_BENCHES } from "../src/lab/benches.ts";
 import { proxyControl, startProxy, type Proxy } from "../src/lab/proxy.ts";
 import { projectConfig } from "../src/project.ts";
 import { toRecord } from "../src/records.ts";
@@ -33,6 +37,36 @@ describe("bench names", () => {
     assert.deepEqual(benches(0), []);
     assert.throws(() => bench(0), RangeError);
     assert.throws(() => benches(10), RangeError);
+  });
+
+  test("a bench's proxy has the same name with or without the rest", () => {
+    for (const each of benches(MAX_BENCHES)) {
+      assert.deepEqual(benchProxy(each.number), { proxyHost: each.proxyHost, proxyPort: each.proxyPort });
+    }
+    assert.throws(() => benchProxy(0), RangeError);
+    assert.throws(() => benchProxy(MAX_BENCHES + 1), RangeError);
+  });
+
+  test("a proxy's process loads only its own files and Node's", () => {
+    // A proxy has 64 MiB on the shared host; benches.ts would bring the whole simulation with it.
+    const files = new Set<string>();
+    const packages = new Set<string>();
+    const visit = (file: string): void => {
+      if (files.has(file)) return;
+      files.add(file);
+
+      // Comments are prose: a sentence with `from "..."` in it is not an import.
+      const source = readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      for (const match of source.matchAll(/\bfrom\s*["'`]([^"'`]+)["'`]|\bimport\s*\(?\s*["'`]([^"'`]+)["'`]/g)) {
+        const specifier = (match[1] ?? match[2])!;
+        if (specifier.startsWith(".")) visit(resolve(dirname(file), specifier));
+        else packages.add(specifier);
+      }
+    };
+    visit(resolve(dirname(fileURLToPath(import.meta.url)), "../src/lab/proxy-main.ts"));
+
+    assert.deepEqual([...files].map(file => basename(file)).sort(), ["bench-proxy.ts", "proxy-main.ts", "proxy.ts"]);
+    assert.deepEqual([...packages].filter(specifier => !specifier.startsWith("node:")), []);
   });
 
   test("the field station publishes bench copies only when asked", () => {

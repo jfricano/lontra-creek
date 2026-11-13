@@ -11,12 +11,12 @@
  * the benches.
  */
 import { TOPICS } from "@lontra-creek/sim";
+import { benchProxy, MAX_BENCHES, type BenchProxy } from "./bench-proxy.ts";
 
-/** Benches are numbered from 1; the pool is small and fixed (docs/PLAN.md, The Failure Lab). */
-export const MAX_BENCHES = 9;
+export { MAX_BENCHES };
 
 /** One bench's names, shared by the field station, the broker, the proxies, and the benches. */
-export interface Bench {
+export interface Bench extends BenchProxy {
   readonly number: number;
   /** The bench gateway's StreamOtter project. */
   readonly projectId: string;
@@ -30,10 +30,6 @@ export interface Bench {
    */
   readonly consumerGroupPrefix: string;
   readonly consumerGroup: string;
-  /** The proxy's host name: the address the broker advertises to this bench. */
-  readonly proxyHost: string;
-  /** The proxy's port, and the broker listener's behind it. */
-  readonly proxyPort: number;
   /** Where visitors' WebSockets reach this bench's gateway. */
   readonly gatewayPath: string;
 }
@@ -43,9 +39,7 @@ export const CREEK_TOPICS: readonly string[] = [...new Set(Object.entries(TOPICS
 
 /** Bench `number`'s names; a RangeError unless it is from 1 to MAX_BENCHES. */
 export function bench(number: number): Bench {
-  if (!Number.isSafeInteger(number) || number < 1 || number > MAX_BENCHES) {
-    throw new RangeError(`A bench number is from 1 to ${MAX_BENCHES}.`);
-  }
+  const proxy = benchProxy(number);
   const topicPrefix = `lab-${number}.`;
   return {
     number,
@@ -54,8 +48,7 @@ export function bench(number: number): Bench {
     topics: CREEK_TOPICS.map(topic => `${topicPrefix}${topic}`),
     consumerGroupPrefix: `streamotter-lab-${number}-`,
     consumerGroup: `streamotter-lab-${number}-field`,
-    proxyHost: `lab-${number}-kafka`,
-    proxyPort: 9100 + number,
+    ...proxy,
     gatewayPath: `/lab/${number}/socket.io`
   };
 }
